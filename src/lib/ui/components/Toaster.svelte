@@ -3,14 +3,13 @@
   Renders the toast queue in a polite live region (Paper, 10 · States): one line 10 px above the
   tab bar and the resume line, as wide as the column on a phone; from 1024 px at the column's
   foot, 40 px up and as wide as its words. A screen with chrome at its foot raises it through
-  --toast-lift; the workout keeps it at the top until v2/10. Mount once in the root layout. A
-  surface-2 line; only a danger toast has a leading icon; an undo is a strong text link at the
-  end; only a toast that stays until it is dismissed has a ×.
+  --toast-lift; the workout keeps it at the top until v2/10. Mount once in the root layout. Each
+  line is a Toast.svelte, whose styles stay out of the stylesheet inlined into every page.
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { toast, type ToastItem } from '../toast.svelte';
-	import Icon from './Icon.svelte';
+	import Toast from './Toast.svelte';
 
 	// Part of every route's initial JS, not loaded on demand: a toast must never wait on the
 	// network (docs/performance.md). A dismissed toast stays, inert, until it has slid out. CSS
@@ -32,45 +31,14 @@
 
 <div class="toaster" role="status" aria-live="polite" aria-atomic="false">
 	{#each shown as item (item.id)}
-		<div
-			class="toast"
-			data-tone={item.tone}
-			data-leaving={item.leaving}
-			inert={item.leaving}
-			onanimationend={() => item.leaving && remove(item.id)}
-		>
-			{#if item.tone === 'danger'}
-				<span class="alert"><Icon name="alert" size={20} /></span>
-			{/if}
-			<p class="message">{item.message}</p>
-			{#if item.action}
-				<button
-					type="button"
-					class="action text-link"
-					data-strong
-					onclick={() => {
-						item.action?.onclick();
-						toast.dismiss(item.id);
-					}}>{item.action.label}</button
-				>
-			{/if}
-			{#if item.duration <= 0}
-				<button
-					type="button"
-					class="dismiss"
-					aria-label="Dismiss notification"
-					onclick={() => toast.dismiss(item.id)}
-				>
-					<Icon name="close" size={18} />
-				</button>
-			{/if}
-		</div>
+		<Toast {item} onleft={() => remove(item.id)} />
 	{/each}
 </div>
 
 <style>
 	/* Screen chrome at the foot: over the tab bar and the resume line (--nav-inset-bottom), and over
-	   any chrome a screen keeps there (--toast-lift: the composer, a section's Save bar). */
+	   any chrome a screen keeps there (--toast-lift: the composer, a section's Save bar). Its lines
+	   take no tap but Undo's and the ×'s (Toast.svelte). */
 	.toaster {
 		position: fixed;
 		z-index: var(--z-toast);
@@ -84,28 +52,25 @@
 		pointer-events: none;
 	}
 
-	/* A section's Save bar below 1024 px: 60 px of Save and 12 px either side. Until v2/22 sets
-	   --toast-lift in SectionScreen.svelte itself (docs/known-issues.md). */
-	@media (width < 64rem) {
-		:global(:root:has(#main [data-testid='save-bar'])) {
-			--toast-lift: calc(3.75rem + 2 * var(--space-3));
-		}
-	}
-
-	/* The workout keeps its toasts at the top until v2/10: its logger is at the foot. */
+	/* At the top, a line sliding down (--toast-from, Toast.svelte): on the workout until v2/10,
+	   whose logger is at the foot, and below 1024 px while a sheet, which covers the foot, is open. */
 	:global(:root:has(main.workout)) .toaster {
 		top: calc(var(--safe-top) + var(--space-3));
 		bottom: auto;
+		--toast-from: -16px;
 	}
 
-	/* Below 1024 px an open sheet covers the foot, so a toast stays at the top while it is open. */
 	@media (width < 64rem) {
 		:global(:root:has(.sheet-dialog[open])) .toaster {
 			top: calc(var(--safe-top) + var(--space-3));
 			bottom: auto;
-		}
-		:global(:root:has(.sheet-dialog[open])) .toast {
 			--toast-from: -16px;
+		}
+
+		/* A section's Save bar: 60 px of Save and 12 px either side. Until v2/22 sets --toast-lift
+		   in SectionScreen.svelte itself (docs/known-issues.md). */
+		:global(:root:has(#main [data-testid='save-bar'])) {
+			--toast-lift: calc(3.75rem + 2 * var(--space-3));
 		}
 	}
 
@@ -119,92 +84,11 @@
 			transform: none;
 			justify-items: start;
 		}
-	}
-
-	/* One at a time: a leaving toast and the next share one place. A tap on the words reaches
-	   the screen under them; only Undo or the × take one. */
-	.toast {
-		grid-area: 1 / 1;
-		pointer-events: none;
-		display: flex;
-		align-items: center;
-		gap: var(--space-3);
-		min-height: 3.25rem; /* 52, Paper */
-		padding: 0 var(--space-5); /* 20: the line and an Undo (Paper) */
-		border-radius: var(--radius-md); /* 16 */
-		background: var(--color-surface-2);
-		color: var(--color-text);
-		box-shadow: none;
-		/* Ease-out-cubic in; the same curve reversed (ease-in-cubic) out. */
-		animation: toast-in 260ms cubic-bezier(0.33, 1, 0.68, 1);
-	}
-	.toast[data-tone='danger'] {
-		padding-inline: var(--space-4-5); /* 18, with the alert (Paper) */
-	}
-	/* A plain line is centred in it (Paper, "It worked"). */
-	.toast:not([data-tone='danger']):not(:has(.action, .dismiss)) .message {
-		text-align: center;
-	}
-	.toast:has(.dismiss) {
-		padding-right: var(--space-1);
-	}
-	.toast[data-leaving] {
-		animation: toast-out 260ms cubic-bezier(0.32, 0, 0.67, 0) forwards;
-	}
-	:global(:root:has(main.workout)) .toast {
-		--toast-from: -16px;
-	}
-	@keyframes toast-in {
-		from {
-			opacity: 0;
-			transform: translateY(var(--toast-from, 16px));
+		/* Its line, 48 px with 14 px corners: here, where the build lowers the query for older
+		   browsers, not in Toast.svelte's injected styles. */
+		:global(:root:has(.app-nav)) .toaster > :global(.toast) {
+			min-height: 3rem;
+			border-radius: var(--radius-sm);
 		}
-	}
-	@keyframes toast-out {
-		to {
-			opacity: 0;
-			transform: translateY(var(--toast-from, 16px));
-		}
-	}
-
-	@media (width >= 64rem) {
-		:global(:root:has(.app-nav)) .toast {
-			min-height: 3rem; /* 48 */
-			border-radius: var(--radius-sm); /* 14 */
-		}
-	}
-
-	.alert {
-		display: grid;
-		flex: none;
-		color: var(--color-danger);
-	}
-
-	.message {
-		flex: 1;
-		font: var(--type-secondary);
-	}
-
-	.action,
-	.dismiss {
-		pointer-events: auto;
-	}
-
-	/* A strong text link (base.css .text-link[data-strong]): 600, underlined in its own colour. */
-	.action {
-		min-height: var(--touch-target);
-		padding: 0 0 0 var(--space-2);
-		font: var(--type-secondary);
-		font-weight: var(--weight-semibold);
-	}
-
-	.dismiss {
-		display: grid;
-		flex: none;
-		place-items: center;
-		width: var(--touch-target);
-		height: var(--touch-target);
-		border-radius: var(--radius-full);
-		color: var(--color-text-tertiary);
 	}
 </style>
