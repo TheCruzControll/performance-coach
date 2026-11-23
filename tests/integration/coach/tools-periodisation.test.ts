@@ -175,7 +175,7 @@ async function contextErrorIds(db: Executor) {
 }
 
 /** Fails when an evaluation context failed since `before` (a turn judged its weeks degraded). */
-async function expectNoContextErrors(db: Executor, before: string[]) {
+async function expectNoContextErrors(db: Executor, before: number[]) {
 	const failed = (await contextErrorIds(db)).filter((id) => !before.includes(id));
 	expect(failed, 'evaluation-context errors').toEqual([]);
 }
