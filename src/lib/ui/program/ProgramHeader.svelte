@@ -175,26 +175,22 @@
 	}
 
 	/*
-	 * Badge's neutral tone (components/Badge.svelte): words, never a colour, carry the kind. The
-	 * line's tag comes from data-tag, and a light week's pill shows its word after its number from
-	 * data-mark (its aria-label says it), so neither renders an element or a component for it.
+	 * Badge's neutral tone (components/Badge.svelte): mono lowercase words in the tertiary text
+	 * colour, no pill, so the words carry the kind. The line's tag comes from data-tag, and a light
+	 * week's pill shows its word after its number from data-mark (its aria-label says it), so
+	 * neither renders an element or a component for it.
 	 */
 	.kind::before,
 	.pill[data-mark]::before {
 		display: inline-flex;
 		flex: none;
 		align-items: center;
-		min-height: 1.375rem;
-		padding: 0 var(--space-2);
-		border-radius: var(--radius-full);
-		background: var(--color-surface-2);
-		box-shadow: inset 0 0 0 1px var(--color-border);
-		color: var(--color-text-secondary);
-		font-size: var(--text-2xs);
-		font-weight: var(--weight-semibold);
-		letter-spacing: var(--tracking-caps);
-		line-height: 1;
-		text-transform: uppercase;
+		font-family: var(--font-mono);
+		font-size: var(--text-xs);
+		font-weight: var(--weight-regular);
+		line-height: 16px;
+		color: var(--color-text-tertiary);
+		text-transform: lowercase;
 		white-space: nowrap;
 	}
 

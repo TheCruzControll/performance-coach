@@ -27,7 +27,7 @@
 		<h2 {id} class="visually-hidden">{title}</h2>
 	{:else}
 		<header class="head">
-			<h2 {id} class="title">{title}</h2>
+			<h2 {id} class="title eyebrow">{title}</h2>
 			{#if action}{@render action()}{/if}
 		</header>
 	{/if}
@@ -51,12 +51,5 @@
 		justify-content: space-between;
 		gap: var(--space-3);
 		margin-bottom: var(--space-1);
-	}
-
-	.title {
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-		letter-spacing: var(--tracking-normal);
-		color: var(--color-text-secondary);
 	}
 </style>

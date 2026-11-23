@@ -1,6 +1,6 @@
 <!--
   @component
-  Circular icon-only button. `label` is required: it becomes the accessible name. With `tooltip`,
+  Square icon-only button. `label` is required: it becomes the accessible name. With `tooltip`,
   a mouse or keyboard user on a desktop also sees the label, in a caption under the button
   aligned to its end (for a header's trailing buttons) while it is hovered or focused; a touch
   screen never shows it. Escape hides it until the button is left or hovered again. The caption
@@ -44,7 +44,7 @@
 
 	/** Escape hid the caption (WCAG 1.4.13); leaving or hovering the button again resets it. */
 	let dismissed = $state(false);
-	const iconSize = $derived(size === 'lg' ? 26 : size === 'sm' ? 18 : 22);
+	const iconSize = $derived(size === 'sm' ? 16 : 18);
 </script>
 
 <button
@@ -64,12 +64,10 @@
 	onpointerenter={tooltip ? () => (dismissed = false) : undefined}
 	{...rest}
 >
-	<Icon
-		name={icon}
-		size={iconSize}
-		strokeWidth={size === 'lg' ? 2 : 1.75}
-	/>{#if tooltip && !dismissed}<span class="tip" aria-hidden="true" data-testid="icon-tip"
-			>{label}</span
+	<Icon name={icon} size={iconSize} strokeWidth={1.75} />{#if tooltip && !dismissed}<span
+			class="tip"
+			aria-hidden="true"
+			data-testid="icon-tip">{label}</span
 		>{/if}
 </button>
 
@@ -82,7 +80,7 @@
 		flex: none;
 		width: var(--size);
 		height: var(--size);
-		border-radius: var(--radius-full);
+		border-radius: var(--radius-sm);
 		border: 1px solid transparent;
 		color: var(--color-text);
 		user-select: none;
@@ -104,17 +102,26 @@
 		--size: 2.25rem;
 	}
 	.icon-btn[data-size='lg'] {
-		--size: 3.5rem;
+		--size: 3rem;
 	}
 
+	/* ---- Variants: "filled" is the design's outlined button ---- */
+	.icon-btn[data-variant='ghost'] {
+		color: var(--color-text-secondary);
+	}
 	.icon-btn[data-variant='filled'] {
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		box-shadow: inset 0 1px 0 0 var(--color-highlight);
+		border-color: var(--color-border-strong);
 	}
 	.icon-btn[data-variant='accent'] {
 		background: var(--color-accent);
 		color: var(--color-on-accent);
+	}
+
+	/* Selected: the outline and the icon take the accent. Not on an accent fill, where the icon is
+	   the fill's own colour. */
+	.icon-btn[aria-pressed='true']:not([data-variant='accent']):not(:disabled) {
+		border-color: var(--color-accent);
+		color: var(--color-accent-text);
 	}
 
 	.icon-btn:active:not(:disabled) {
@@ -130,12 +137,9 @@
 	}
 
 	@media (hover: hover) and (pointer: fine) {
-		.icon-btn[data-variant='ghost']:hover:not(:disabled) {
-			background: var(--color-surface-2);
-		}
+		.icon-btn[data-variant='ghost']:hover:not(:disabled),
 		.icon-btn[data-variant='filled']:hover:not(:disabled) {
-			background: var(--color-surface-3);
-			border-color: var(--color-border-strong);
+			background: var(--color-surface-2);
 		}
 		.icon-btn[data-variant='accent']:hover:not(:disabled) {
 			background: var(--color-accent-hover);
@@ -158,19 +162,26 @@
 			padding: var(--space-1) var(--space-2);
 			border: 1px solid var(--color-border-strong);
 			border-radius: var(--radius-sm);
-			background: var(--color-surface-2);
-			box-shadow: var(--elevation-2);
+			background: var(--color-surface-1);
 			color: var(--color-text);
+			font-family: var(--font-mono);
 			font-size: var(--text-xs);
-			font-weight: var(--weight-medium);
+			font-weight: var(--weight-regular);
 			line-height: var(--leading-snug);
 			white-space: nowrap;
 			pointer-events: none;
 		}
 	}
 
+	/* Last, so a disabled ghost or accent button takes the disabled text, not its variant's. */
 	.icon-btn:disabled {
-		opacity: 0.35;
 		cursor: not-allowed;
+		color: var(--color-text-disabled);
+	}
+	.icon-btn[data-variant='filled']:disabled {
+		border-color: var(--color-hairline);
+	}
+	.icon-btn[data-variant='accent']:disabled {
+		background: var(--color-surface-2);
 	}
 </style>

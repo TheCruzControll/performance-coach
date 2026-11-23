@@ -55,7 +55,7 @@
 	.title {
 		font-family: var(--font-display);
 		font-size: var(--text-3xl);
-		font-weight: var(--weight-bold);
+		font-weight: var(--weight-medium);
 		letter-spacing: var(--tracking-display);
 		line-height: var(--leading-tight);
 	}
