@@ -277,7 +277,7 @@ const GOLDEN_SEASON: Record<ScenarioKey, readonly [monday: string, thursday: str
 	hybrid: ['099390e333863200', 'd3c8cae4c343abcb'],
 	injuredShoulder: ['a8f751370762b759', '1133ba47aeda08ec'],
 	dumbbellsOnly: ['4bb8ea19bb964a13', '6573125a5c871f5e'],
-	journey: ['6dfb9ed84d822de2', '20b093bc6e3734a0'],
+	journey: ['54e04d5b7941f4c8', '79a2adad7842028e'],
 	minimal: ['c3bdcaad1afbb3e1', 'f9b8b4af0749399a']
 };
 
