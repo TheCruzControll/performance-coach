@@ -2,8 +2,8 @@
  * docs/environment.md and the server's env schema describe the same variables. Every key of
  * `envSchema` (src/lib/server/env.ts, read with the TypeScript compiler API, so a key is found
  * however its validator is written) has a row in one of the doc's tables, and every row of the
- * app's table (the first table under "Variables") names a key. The "Test tooling" table holds
- * variables the app never reads and is checked only the first way.
+ * app's table (the first table under "Variables") names a key or an ADAPTER_VARIABLES entry. The
+ * "Test tooling" table holds variables the app never reads and is checked only the first way.
  *
  * Lenient until docs-m9: today's gaps are listed in scripts/docs-known-gaps.json (see
  * scripts/lib/docs-scan.ts, `reconcile`).
@@ -16,6 +16,13 @@ import { type DocsTree, fsTree, knownGaps, memoryTree } from './lib/docs-tree.ts
 const TEST = 'docs-env';
 const DOC = 'docs/environment.md';
 const SCHEMA = 'src/lib/server/env.ts';
+/**
+ * Variables the app's table documents that the build or the adapter reads, not `envSchema`. PORT
+ * is read at run time by adapter-node (`node build/index.js`). ORIGIN is read by vite.config.ts at
+ * build time and given to the adapter as `paths.origin`; nothing reads it at run time. Any other
+ * row must name an `envSchema` key.
+ */
+const ADAPTER_VARIABLES = ['PORT', 'ORIGIN'];
 
 /** The property names of the object literal passed to `z.object` in `export const envSchema`. */
 function envSchemaKeys(source: string): string[] {
@@ -63,7 +70,9 @@ function envGaps(tree: DocsTree): Gap[] {
 		...keys.filter((key) => !documented.has(key)).map((key) => gap(`${key}: no row`)),
 		...appRows
 			.map(rowName)
-			.filter((name) => name !== undefined && !keys.includes(name))
+			.filter(
+				(name) => name !== undefined && !keys.includes(name) && !ADAPTER_VARIABLES.includes(name)
+			)
 			.map((name) => gap(`${name}: not a key of envSchema`))
 	];
 }
@@ -100,6 +109,10 @@ describe('docs-env guard', () => {
 		expect(envGaps(fixture(['DATABASE_URL'], ['DATABASE_URL', 'REMOVED_VAR']))).toEqual([
 			{ test: TEST, doc: DOC, item: 'REMOVED_VAR: not a key of envSchema' }
 		]);
+	});
+
+	it('accepts an adapter or build variable documented outside envSchema', () => {
+		expect(envGaps(fixture(['DATABASE_URL'], ['DATABASE_URL', 'PORT', 'ORIGIN']))).toEqual([]);
 	});
 
 	it('accepts a key documented in the test-tooling table', () => {
