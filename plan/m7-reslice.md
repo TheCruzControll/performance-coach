@@ -227,6 +227,13 @@ added. M7's acceptance criterion 2, a journey with several disciplines at once, 
 - **m7r/07 restores an assertion.** `next-block/periodised.test.ts` lost its marathon-pace steady-segment assertion in m7r/11 (PR 537), because the feature is m7r/07's. m7r/07 adds it back.
 - **m7r/12 and m7r/14 test Train in later slices.** Their Train-wiring tests moved to m7r/13 and m7r/15.
 
+- m7r/22 took the Train stream of `loadTrainRoad` and `week.openGoals` from m7r/21, and fixed the any-day start on the timeline, the season track and Today's build preview.
+- m7r/23's `ops` on `propose_program_adjustment` take move ops only, to stay under the strict-schema cap (8 of 24 used). Trade-off hints came from `getPlacementWhy`; m7r/24 moved them to `getScheduleTradeoffs` and added decision ids.
+- m7r/26 took `replanSkeleton`, its helpers and the `replan.apply` rule; m7r/27 restored the taper and deload dispatch. They stayed two slices.
+- m7r/28 kept `programPlanSchema` for a stored re-plan and corrected the ADR. It ships `cutShortLineages` and `CopyChanges.weeks` ahead of m7r/29, which uses them.
+- m7r/30: compute `from` as the later of `replanStart(today, touched)` and the version's `startsOn`; a program whose start is still ahead otherwise throws `GeneratedPlanError`.
+- m7r/07 restores the periodised marathon-pace assertion.
+
 ## For the owner
 
 1. **The generator slices change new plans as soon as they merge.** These are m7r/02 to m7r/05,
