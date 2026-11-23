@@ -3,7 +3,7 @@
 What is built, what is in flight, and what is next. Acceptance criteria and evidence stay in
 [milestones.md](milestones.md). Update this file in the change that moves a line.
 
-Last updated: 2026-11-23, from `main` at the merge of #625.
+Last updated: 2026-11-23, from `main` at the merge of #629.
 
 ## Milestones
 
@@ -34,6 +34,9 @@ updates milestones.md.
 
 ## Recently merged
 
+- Running the schedule stage on its own plan changes nothing, for every scenario: a deload, taper or
+  other week that keeps its own days is repaired against the week before it as planned, not against
+  the week whose days the block shares. journeyHybrid is back in the run-twice check.
 - The owner can enter max, resting and threshold heart rate in Profile → Running & Muay Thai and in
   onboarding, and a run session shows each segment's zone in beats per minute ('Zone 2 · 134–148 bpm',
   or 'Zone 2' with none told). A plan built with a heart rate records the zones and the method
@@ -142,7 +145,8 @@ updates milestones.md.
   marathon pace. m7r/08 too: marathon and half blocks follow their race plan's long runs, cutbacks
   and race work, and a running goal that does not lead holds its dose. m7r/10 and m7r/09 too: heart
   rate on Profile and run sessions in bpm, and Muay Thai that follows the fight camp's sessions,
-  sparring cap, conditioning rounds and fight week. m7/58 and m7/59 build on them. The old M7 pull
+  sparring cap, conditioning rounds and fight week. m7r/03b too: the schedule stage is a fixed point,
+  so a second run changes no session. m7/58 and m7/59 build on them. The old M7 pull
   requests stay open until their rows merge.
 - **Instrument v2 tokens (`v2/01a`).** The colours, surfaces, borders, spacing, radii and the theme
   colour follow Instrument v2 in `src/lib/ui/styles/tokens.css`, in dark and

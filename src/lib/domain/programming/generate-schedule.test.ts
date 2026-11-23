@@ -508,20 +508,28 @@ describe('the clashes journeyHybrid, journey and offSeason keep', () => {
 });
 
 describe('the schedule stage run twice', () => {
-	// journeyHybrid is left out: its second run repairs a different week, the schedule stage is not
-	// a fixed point there, and the cause is recorded in docs/known-issues.md.
-	it.each(['multiGoal', 'journey', 'offSeason'] as const)(
-		'%s: the second run changes no session',
-		(key) => {
-			const { draft, context } = beforeSchedule(scenarioOf(key));
-			const once = schedule(draft, { ...context, log: new DecisionLog() });
-			const log = new DecisionLog();
-			const twice = schedule({ ...draft, blocks: once.blocks }, { ...context, log });
-			expect(twice.blocks).toEqual(once.blocks);
-			const changed = log.list().filter((d) => !explains(d));
-			expect(changed).toEqual([]);
-		}
-	);
+	// A second run may share another building week's days than the first did (its search starts
+	// from the first run's sessions), so only what an OWN_WEEKS week is repaired against keeps it a
+	// fixed point: the week before as repaired, never the shared week's loads.
+	it.each(ALL)('%s: the second run changes no session', { timeout: 60_000 }, (_, profile) => {
+		const { draft, context } = beforeSchedule(profile());
+		const once = schedule(draft, { ...context, log: new DecisionLog() });
+		const log = new DecisionLog();
+		const twice = schedule({ ...draft, blocks: once.blocks }, { ...context, log });
+		expect(twice.blocks).toEqual(once.blocks);
+		const changed = log.list().filter((d) => !explains(d));
+		expect(changed).toEqual([]);
+	});
+
+	it('repairs journeyHybrid’s deload against the week before it as planned, never the shared week’s loads', () => {
+		const { plan } = generated(M7_SCENARIOS.journeyHybrid());
+		const deload = plan.blocks[0]!.weeks.findIndex((w) => w.kind === 'deload');
+		expect(deload).toBe(4);
+		const kept = plan.decisions.filter((d) => d.ruleKey === 'schedule.kept');
+		expect(
+			kept.flatMap((d) => d.refs).filter((r) => r.startsWith(`blocks.0.weeks.${deload}.`))
+		).toEqual([]);
+	});
 });
 
 describe('the plan budget and M6', () => {
