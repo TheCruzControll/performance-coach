@@ -21,6 +21,7 @@
  */
 import { error } from '@sveltejs/kit';
 import { addDays, mondayOf, parseIsoDate, weekdayOf, type IsoDate } from '#lib/domain/calendar.ts';
+import { cardOf, STALE_REPLAN_REASONS, type ProposalCardRow } from '#lib/domain/coach/cards.ts';
 import type { ProgramOp } from '#lib/domain/coach/proposals.ts';
 import { cleanFloat } from '#lib/domain/units.ts';
 import { WEEKDAY_INFO } from '#lib/domain/weekdays.ts';
@@ -177,13 +178,30 @@ export interface NextWeekItemView {
 }
 
 /**
+ * A proposed deload's card beside its headline (the card's title): the signals that led to it and
+ * what it changes. All of it is stored.
+ */
+export interface DeloadView {
+	/** The signals that led to it, as stored (snapshot.deload.reasons), at most five. */
+	evidence: string[];
+	/** What changes: the proposal's rows as the inbox shows them. */
+	rows: ProposalCardRow[];
+	/** The line for the rows that were capped, 'N more changes not listed'; null when none were. */
+	more: string | null;
+	/** The proposal's summary lines, shown in place of rows when it has none. */
+	lines: string[];
+}
+
+/**
  * What next week's card shows, from the review's decision (its proposal chain's head):
  * - open: undecided; partly_past: decided late or superseded from M5's inbox, with what is left;
  *   all_past: every change's session has passed
  * - deload: a proposed deload (a replan head) undecided, taken whole with Accept or kept;
- *   late_deload: a deload whose week had passed when it was accepted
+ *   late_deload: its week has passed, and superseded_deload: it is out of date (the plan, the
+ *   profile or the program changed): both offer Propose again
  * - no_ops, no_program, boundary, late: nothing was proposed, and why
  * - applied (from here or M5's inbox), rejected, superseded (the plan changed), waiting
+ * A deload's card (a replan head) carries `deload`, and its title is the headline (deloadHeadline).
  */
 export interface NextWeekView {
 	state:
@@ -192,6 +210,7 @@ export interface NextWeekView {
 		| 'all_past'
 		| 'deload'
 		| 'late_deload'
+		| 'superseded_deload'
 		| 'no_ops'
 		| 'no_program'
 		| 'boundary'
@@ -207,6 +226,8 @@ export interface NextWeekView {
 	/** The changes the rules found but could not propose, each with why. */
 	notProposed: { id: string; label: string; words: string }[];
 	link: { href: string; label: string } | null;
+	/** A deload's evidence and changes; absent on every other card. */
+	deload?: DeloadView;
 }
 
 export type ReviewsData =
@@ -361,6 +382,7 @@ export const NEXT_WEEK_TITLES: Record<NextWeekView['state'], string> = {
 	all_past: 'Too late to change next week',
 	deload: 'A deload is proposed',
 	late_deload: 'Too late to deload that week',
+	superseded_deload: 'A deload is out of date',
 	no_ops: 'Next week stays as planned',
 	no_program: 'Build a program to get adjustments',
 	boundary: 'Next week starts a new block',
@@ -373,8 +395,48 @@ export const NEXT_WEEK_TITLES: Record<NextWeekView['state'], string> = {
 
 const NO_PROPOSAL_STATE = { no_changes: 'no_ops', boundary: 'boundary', late: 'late' } as const;
 
-/** A deload whose week passed before it was accepted: nothing is left of it to take. */
-const DELOAD_PASSED_WORDS = 'That deload’s week has passed.';
+/** A late deload: its week passed before it was accepted, so no session is left to take. */
+const DELOAD_PASSED_WORDS = 'No session is left in that week';
+/** A deload superseded by a change to the profile, the plan or the program, or a start that passed: Propose again asks for it. */
+const DELOAD_STALE_WORDS = 'This deload is out of date';
+/** The signals a deload card lists, at most. */
+const EVIDENCE_MAX = 5;
+/** A deload's own summary line, which its headline already says. */
+const DELOAD_LINE = / becomes a deload week$/;
+
+/** A deload's headline by its week alone: 'Week of 16 Nov becomes a deload week'. */
+function deloadTitleOf(week: IsoDate): string {
+	return `${titleOf(week)} becomes a deload week`;
+}
+
+/**
+ * A deload's headline, from its week and the owner's day at read time, so it never goes stale:
+ * 'This week becomes a deload week from today' when today falls inside that week (Monday to
+ * Sunday); 'Next week becomes a deload week' when it starts the Monday after today's week; else the
+ * week by date, 'Week of 16 Nov becomes a deload week'.
+ */
+export function deloadHeadline(week: IsoDate, today: IsoDate): string {
+	const thisWeek = mondayOf(today);
+	if (week === thisWeek) return 'This week becomes a deload week from today';
+	if (week === addDays(thisWeek, 7)) return 'Next week becomes a deload week';
+	return deloadTitleOf(week);
+}
+
+/** A deload's evidence and what it changes, from the review's stored snapshot and proposal. */
+export function deloadDetail(view: WeeklyReviewView): DeloadView {
+	const { snapshot, proposal } = view;
+	// The stored reasons carry the fatigue and the trend signals both (deloadReasons).
+	const reasons = snapshot?.deload?.reasons.length
+		? snapshot.deload.reasons
+		: (snapshot?.fatigue.reasons ?? []);
+	const card = proposal && cardOf(proposal);
+	return {
+		evidence: reasons.slice(0, EVIDENCE_MAX),
+		rows: card ? card.rows : [],
+		more: card?.moreRows ?? null,
+		lines: (proposal?.summaryLines ?? []).filter((line) => !DELOAD_LINE.test(line))
+	};
+}
 
 /** The card's own words with no program: the stored ones can name the cycle review instead. */
 const NO_PROGRAM_WORDS =
@@ -435,6 +497,16 @@ export function nextWeekView(
 		link: null,
 		...more
 	});
+	// A deload's card: its headline as the title (the week it makes a deload, from today), with its
+	// detail. A late deload's headline is by its date alone: its week has passed, so 'this week' or
+	// 'next week' would contradict the status line.
+	const deloaded = (state: NextWeekView['state'], words: string | null, byDate = false) => {
+		const week = view.snapshot?.deload?.week;
+		return card(state, words, {
+			deload: deloadDetail(view),
+			...(week && { title: byDate ? deloadTitleOf(week) : deloadHeadline(week, today) })
+		});
+	};
 	switch (decision.state) {
 		case 'none': {
 			if (!view.noProposal) return null;
@@ -449,12 +521,18 @@ export function nextWeekView(
 			return card('applied', null, {
 				title: n === null ? NEXT_WEEK_TITLES.applied : `Next week updated · version ${n}`,
 				link:
-					n === null ? null : { href: `/train/history/${n}`, label: `See version ${n} in History` }
+					n === null ? null : { href: `/train/history/${n}`, label: `See version ${n} in History` },
+				...(replan && { deload: deloadDetail(view) })
 			});
 		}
 		case 'rejected':
-			return card('rejected', proposal?.decisionNote ?? 'Next week stays as planned.');
+			return card('rejected', proposal?.decisionNote ?? 'Next week stays as planned.', {
+				...(replan && { deload: deloadDetail(view) })
+			});
 		case 'superseded':
+			// A deload the plan, the profile or the program moved past: Propose again asks for it again.
+			if (replan && (STALE_REPLAN_REASONS as readonly string[]).includes(decision.reason))
+				return deloaded('superseded_deload', DELOAD_STALE_WORDS);
 			return card(
 				'superseded',
 				'Its changes were for your plan as it was, so none were applied. Next week stays as it is now.'
@@ -464,12 +542,8 @@ export function nextWeekView(
 		default: {
 			// Undecided or late (its week passed before accept): the deload's own card, no list.
 			if (replan) {
-				if (decision.state === 'late') return card('late_deload', DELOAD_PASSED_WORDS);
-				const week = view.snapshot?.deload?.week ?? null;
-				const finding = view.snapshot?.brief.findings.find((f) => f.id === 'next:deload');
-				return card('deload', finding?.verdict.words ?? null, {
-					...(week && { title: `Deload · ${titleOf(week)}` })
-				});
+				if (decision.state === 'late') return deloaded('late_deload', DELOAD_PASSED_WORDS, true);
+				return deloaded('deload', null);
 			}
 			const rows = proposal?.rows ?? [];
 			const items = offers.map((o, i): NextWeekItemView => {

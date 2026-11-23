@@ -1,7 +1,9 @@
 /**
  * Next week's card as load.ts arranges it (nextWeekView), on hand-built views: every state a
  * review's decision can be in, with its words and links, each change with its half step and
- * whether its session has passed, and a half step's values in the units its row uses.
+ * whether its session has passed, and a half step's values in the units its row uses. A proposed
+ * deload is one card: its headline (computed from its week and today), the signals behind it, what
+ * changes, and Propose again once it is stale or late.
  */
 import { describe, expect, it } from 'vitest';
 import type { ProgramOp } from '#lib/domain/coach/proposals.ts';
@@ -169,18 +171,6 @@ describe("next week's card", () => {
 });
 
 describe("a proposed deload's card (a replan head)", () => {
-	const DELOAD_WORDS =
-		'Next week is proposed as a deload, so its sessions are eased as a whole rather than changed one by one.';
-	const DELOAD_FINDING = {
-		id: 'next:deload',
-		section: 'next',
-		label: 'A deload instead',
-		figures: [],
-		verdict: { level: 'neutral', words: DELOAD_WORDS },
-		window: null,
-		metricId: null,
-		sources: []
-	};
 	/** A row the deload leaves out: its own card would say it is not proposed, so it is not shown. */
 	const INSTEAD = {
 		...NOT_PROPOSED,
@@ -191,28 +181,147 @@ describe("a proposed deload's card (a replan head)", () => {
 			words: 'Next week is proposed as a deload instead, so this change is not proposed'
 		}
 	};
+	/** A replan head as the card reads it: cardOf reads every field of a proposal. */
+	const replan = (parts: Record<string, unknown> = {}) => ({
+		id: HEAD,
+		kind: 'replan',
+		status: 'proposed',
+		title: 'Deload the week of 30 Nov',
+		rationale: 'Fatigue is high',
+		rows: [],
+		impactLines: [],
+		warnings: [],
+		appliedVersion: null,
+		supersededReason: null,
+		decisionNote: null,
+		...parts
+	});
+	/** The snapshot a deload's card reads: its week and reasons, and the review's fatigue. */
+	const snapshot = (
+		week: string,
+		reasons: string[] = ['slept 5 hours'],
+		fatigue: string[] = []
+	) => ({
+		deload: { week, reasons },
+		fatigue: { level: 'high', reasons: fatigue },
+		brief: { findings: [] }
+	});
 	const deloadView = (parts: Record<string, unknown>) =>
 		view({
-			proposal: { id: HEAD, kind: 'replan', rows: [], decisionNote: null },
-			snapshot: {
-				deload: { week: '2026-11-30', reasons: ['slept 5 hours'] },
-				brief: { findings: [DELOAD_FINDING] }
-			},
+			proposal: replan(),
+			snapshot: snapshot('2026-11-30'),
 			notProposed: [INSTEAD],
 			...parts
 		});
+	/** A card with no rows or lines, and its evidence. */
+	const NO_CHANGES = { rows: [], more: null, lines: [] };
 
-	it('undecided: the week it targets and the finding’s words, with Accept and Keep, no changes to tick', () => {
+	it('undecided: one card, its headline, the signals and what changes, with Accept and Keep, no changes to tick', () => {
 		// A deload has no changes, so offers are not listed either, and the card is never 'all past'.
 		const card = nextWeekView(deloadView({}), [MOVE], TODAY)!;
 		expect(card).toEqual({
 			state: 'deload',
-			title: 'Deload · Week of 30 Nov',
-			words: DELOAD_WORDS,
+			title: 'Week of 30 Nov becomes a deload week',
+			words: null,
 			items: [],
 			notProposed: [],
-			link: null
+			link: null,
+			deload: { evidence: ['slept 5 hours'], ...NO_CHANGES }
 		});
+	});
+
+	it('the headline is this week from today, next week, or the week by date, read on the day it is shown', () => {
+		const titleOf = (week: string, today: string) =>
+			nextWeekView(deloadView({ snapshot: snapshot(week) }), [], today)!.title;
+		const THIS_WEEK = 'This week becomes a deload week from today';
+		// Thursday 19 Nov: this week is the week of 16 Nov, next week the week of 23 Nov.
+		expect(titleOf('2026-11-16', TODAY)).toBe(THIS_WEEK);
+		expect(titleOf('2026-11-23', TODAY)).toBe('Next week becomes a deload week');
+		expect(titleOf('2026-11-30', TODAY)).toBe('Week of 30 Nov becomes a deload week');
+		expect(titleOf('2026-11-09', TODAY)).toBe('Week of 9 Nov becomes a deload week');
+		// A review made on the Monday of the deload week reads 'This week'.
+		expect(titleOf('2026-11-16', '2026-11-16')).toBe(THIS_WEEK);
+		// Sunday is still the week of 16 Nov; the Monday after it starts next week.
+		expect(titleOf('2026-11-16', '2026-11-22')).toBe(THIS_WEEK);
+		expect(titleOf('2026-11-23', '2026-11-22')).toBe('Next week becomes a deload week');
+		// Tuesday 24 Nov: the week of 23 Nov is this week, and the week of 16 Nov is by date.
+		expect(titleOf('2026-11-23', '2026-11-24')).toBe(THIS_WEEK);
+		expect(titleOf('2026-11-16', '2026-11-24')).toBe('Week of 16 Nov becomes a deload week');
+	});
+
+	it('the evidence is the signals the deload stored, at most five; the fatigue reasons when none were stored', () => {
+		const many = ['one', 'two', 'three', 'four', 'five', 'six'];
+		expect(
+			nextWeekView(deloadView({ snapshot: snapshot('2026-11-30', many) }), [], TODAY)!.deload
+		).toMatchObject({ evidence: ['one', 'two', 'three', 'four', 'five'] });
+		const fatigue = snapshot('2026-11-30', [], ['Soreness high on 3 days']);
+		expect(nextWeekView(deloadView({ snapshot: fatigue }), [], TODAY)!.deload?.evidence).toEqual([
+			'Soreness high on 3 days'
+		]);
+	});
+
+	it('what changes: the proposal’s rows as the inbox shows them; its summary lines without the deload line', () => {
+		const row = {
+			label: 'Bench press, working',
+			before: '3 × 5 @ 85 kg',
+			after: '3 × 5 @ 70 kg',
+			date: '2026-11-30',
+			area: 'set',
+			link: null
+		};
+		const card = nextWeekView(
+			deloadView({
+				proposal: replan({
+					rows: [row],
+					summaryLines: [
+						'Bench press, working: 3 × 5 @ 85 kg → 3 × 5 @ 70 kg',
+						'Week of 30 Nov becomes a deload week'
+					]
+				})
+			}),
+			[],
+			TODAY
+		)!;
+		expect(card.deload).toMatchObject({
+			rows: [
+				{
+					label: 'Bench press, working',
+					before: '3 × 5 @ 85 kg',
+					after: '3 × 5 @ 70 kg',
+					date: '2026-11-30'
+				}
+			],
+			lines: ['Bench press, working: 3 × 5 @ 85 kg → 3 × 5 @ 70 kg']
+		});
+	});
+
+	it('superseded as the plan, the profile, the program or a start changed: out of date, with Propose again', () => {
+		for (const reason of [
+			'profile_changed',
+			'plan_changed',
+			'start_passed',
+			'sessions_passed',
+			'program_changed'
+		]) {
+			const decision = { state: 'superseded', proposalId: HEAD, reason };
+			expect(nextWeekView(deloadView({ decision }), [], TODAY)).toMatchObject({
+				state: 'superseded_deload',
+				title: 'Week of 30 Nov becomes a deload week',
+				words: 'This deload is out of date',
+				deload: { evidence: ['slept 5 hours'] }
+			});
+		}
+	});
+
+	it('superseded for another reason is the plan changed card, with no deload detail', () => {
+		// 'revised' is not a stale reason: the deload is replaced, not out of date.
+		const decision = { state: 'superseded', proposalId: HEAD, reason: 'revised' };
+		const card = nextWeekView(deloadView({ decision }), [], TODAY)!;
+		expect(card).toMatchObject({
+			state: 'superseded',
+			title: 'Your plan changed since this review'
+		});
+		expect(card.deload).toBeUndefined();
 	});
 
 	it('undecided without a stored week: the title says only that a deload is proposed', () => {
@@ -220,16 +329,40 @@ describe("a proposed deload's card (a replan head)", () => {
 		expect(card).toMatchObject({ state: 'deload', title: 'A deload is proposed', words: null });
 	});
 
-	it('late: too late to deload that week, with a short line and no action', () => {
+	it('late: no session is left in that week, with the headline and Propose again', () => {
 		const decision = { state: 'late', proposalId: HEAD };
 		expect(nextWeekView(deloadView({ decision }), [], TODAY)).toEqual({
 			state: 'late_deload',
-			title: 'Too late to deload that week',
-			words: 'That deload’s week has passed.',
+			title: 'Week of 30 Nov becomes a deload week',
+			words: 'No session is left in that week',
 			items: [],
 			notProposed: [],
-			link: null
+			link: null,
+			deload: { evidence: ['slept 5 hours'], ...NO_CHANGES }
 		});
+	});
+
+	it('late in this week or next: the headline is by date only, so it never contradicts the status line', () => {
+		// Thursday 19 Nov: the week of 16 Nov is this week, and the week of 23 Nov is next week.
+		const LATE = { state: 'late', proposalId: HEAD };
+		for (const [week, title] of [
+			['2026-11-16', 'Week of 16 Nov becomes a deload week'],
+			['2026-11-23', 'Week of 23 Nov becomes a deload week']
+		] as const) {
+			const card = nextWeekView(
+				deloadView({ decision: LATE, snapshot: snapshot(week) }),
+				[],
+				TODAY
+			)!;
+			expect(card).toMatchObject({
+				state: 'late_deload',
+				title,
+				words: 'No session is left in that week'
+			});
+		}
+		// The same week, undecided, reads from today as it always did.
+		const undecided = nextWeekView(deloadView({ snapshot: snapshot('2026-11-16') }), [], TODAY);
+		expect(undecided?.title).toBe('This week becomes a deload week from today');
 	});
 
 	it('accepted: its version and the link to History, as any applied week', () => {
@@ -244,12 +377,27 @@ describe("a proposed deload's card (a replan head)", () => {
 
 	it('kept: kept as planned, with the owner’s note', () => {
 		const decision = { state: 'rejected', proposalId: HEAD };
-		const proposal = { id: HEAD, kind: 'replan', rows: [], decisionNote: 'Feeling fine' };
+		const proposal = replan({ decisionNote: 'Feeling fine' });
 		expect(nextWeekView(deloadView({ decision, proposal }), [], TODAY)).toMatchObject({
 			state: 'rejected',
 			title: 'Kept as planned',
 			words: 'Feeling fine'
 		});
+	});
+
+	it('applied or kept, here or in the coach inbox: the same card, with no line about where it was decided', () => {
+		const applied = { state: 'applied', proposalId: HEAD, versionId: 'v', versionNumber: 2 };
+		const appliedCard = nextWeekView(deloadView({ decision: applied }), [], TODAY)!;
+		expect(appliedCard).toMatchObject({ state: 'applied', title: 'Next week updated · version 2' });
+		expect(appliedCard.deload).not.toHaveProperty('inbox');
+		const rejected = { state: 'rejected', proposalId: HEAD };
+		const keptCard = nextWeekView(
+			deloadView({ decision: rejected, proposal: replan({ decisionNote: null }) }),
+			[],
+			TODAY
+		)!;
+		expect(keptCard).toMatchObject({ state: 'rejected', title: 'Kept as planned' });
+		expect(keptCard.deload).not.toHaveProperty('inbox');
 	});
 });
 

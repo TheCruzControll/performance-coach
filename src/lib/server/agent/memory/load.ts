@@ -8,14 +8,17 @@
 import type { MemorySnapshot } from '../../../domain/coach/memory.ts';
 import { getCoachingMemory } from '../../services/coach/memory.ts';
 import type { CoachDeps } from '../../services/coach/shared.ts';
+import type { RoadView } from '../../services/periodisation/road-view.ts';
 
 export interface MemoryInput {
 	ownerId: string;
 	/** The owner's local day the snapshot is built on. */
 	today: string;
 	deps: CoachDeps;
+	/** The periodisation road the turn read (turn-facts.ts): the goals' modes; null when unread. */
+	road?: RoadView | null;
 }
 
-export function loadMemory({ ownerId, today, deps }: MemoryInput): Promise<MemorySnapshot> {
-	return getCoachingMemory(ownerId, { today }, deps);
+export function loadMemory({ ownerId, today, deps, road }: MemoryInput): Promise<MemorySnapshot> {
+	return getCoachingMemory(ownerId, { today, road }, deps);
 }

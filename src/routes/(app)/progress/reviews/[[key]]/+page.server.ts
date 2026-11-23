@@ -3,7 +3,7 @@ import { version } from '$app/env';
 import { resolve } from '$app/paths';
 import { testRoutesEnabled } from '#lib/server/env.ts';
 import { ownerId } from '#lib/server/forms/read.ts';
-import { decideCycle, decideReview } from '#lib/server/forms/reviews.ts';
+import { decideCycle, decideReview, proposeDeloadAgainAction } from '#lib/server/forms/reviews.ts';
 import type { Actions, PageServerLoad } from './$types';
 import {
 	createCycle,
@@ -81,6 +81,15 @@ export const actions = {
 	decide: (event) => decide(event, 'decide'),
 	/** Keep next week as planned, with an optional reason. */
 	keep: (event) => decide(event, 'keep'),
+	/** Propose again a deload that went stale or late: the review's own proposal, asked for again (forms/reviews.ts). */
+	proposeAgain: (event) => {
+		const key = parseReviewKey(event.params.key);
+		return proposeDeloadAgainAction({
+			locals: event.locals,
+			weekStartsOn: key?.kind === 'weekly' ? key.weekStartsOn : null,
+			origin: originOf(event)
+		});
+	},
 	/** Plan the next block from the start chosen, as its preview showed it (forms/reviews.ts). */
 	startCycle: async ({ locals, params, request }) => {
 		if (parseReviewKey(params.key)?.kind !== 'cycle')

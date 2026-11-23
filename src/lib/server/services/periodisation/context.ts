@@ -248,7 +248,7 @@ export const readContext: ContextReader = async (db, ownerId, at, deps) => {
 const ROLLBACK = Symbol('rollback');
 
 /** SET LOCAL takes no parameters: the whole milliseconds, as a literal. */
-const timeoutSql = (ms: number) =>
+export const timeoutSql = (ms: number) =>
 	sql.raw(`set local statement_timeout = ${Math.max(1, Math.trunc(ms))}`);
 
 /**
@@ -275,7 +275,7 @@ async function inSavepoint<T>(
 }
 
 /** `work` in one short read-only transaction on the pool. */
-const inReadOnly = <T>(
+export const inReadOnly = <T>(
 	pool: Executor,
 	timeout: SQL,
 	work: (db: Executor) => Promise<T>
@@ -289,7 +289,7 @@ const inReadOnly = <T>(
 	);
 
 /** The SQLSTATE of a driver error, which drizzle wraps as its cause. */
-function sqlState(error: unknown): string | undefined {
+export function sqlState(error: unknown): string | undefined {
 	for (let e = error; e && typeof e === 'object';) {
 		const { code, cause } = e as { code?: unknown; cause?: unknown };
 		if (typeof code === 'string') return code;

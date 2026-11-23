@@ -2,7 +2,8 @@
  * Form actions for a weekly review's next-week card (M6 review-adjustments-ui), and a cycle
  * review's next-block card (next-cycle-ui, decideCycle below): the owner check,
  * the owner's choices as the card posts them, then decideNextWeek's outcome or failure as what
- * the card shows. The service stays the authority and checks every choice again.
+ * the card shows. A stale or late deload's 'Propose again' is proposeDeloadAgainAction, below. The
+ * service stays the authority and checks every choice again.
  *
  * The form: `reviewId`; each ticked change as an `item` (its id); a change's choice as
  * `choice:<id>`, 'proposed' or 'half_step' (proposed when absent); Keep's optional `note`; and
@@ -16,28 +17,43 @@
  * - a newer revision of the review → `fail(409, { reason: 'refreshed' })`; a proposal already
  *   decided → `fail(409, { reason: 'decided' })`; any ConflictError →
  *   `fail(409, { reason: 'conflict', conflict })` with its own reason
+ * - `proposeAgain` (proposeDeloadAgainAction: a stale or late deload's 'Propose again', with the
+ *   owner's check first) → { status }, a ProposeAgainOutcome: 'proposed' with the fresh proposal's
+ *   `id`, which the card opens; refused (with `why`), unchanged, not_stale or not_reproposable;
+ *   a failure is recorded and answered as { status: 'failed' }. A signed-out or recovery session
+ *   is 401; a key that is not a weekly review, or another owner's review, is 404.
  * Anything else is rethrown, for handleError to record as the server's error.
  */
-import { fail } from '@sveltejs/kit';
+import { error, fail, isHttpError } from '@sveltejs/kit';
 import { addDays, daysBetween, type IsoDate } from '../../domain/calendar';
+import type { ProposeAgainOutcome } from '../../domain/coach/propose-again';
 import { CoachInputError, CoachNotFoundError } from '../services/coach/shared';
 import { NextCycleConflictError } from '../services/coach/apply/next-cycle';
 import { ProposalClosedError } from '../services/coach/proposals';
+import { recordServerError, type ServerErrorInput } from '../services/errors';
+import {
+	proposeAgain,
+	type ProposedAgain,
+	type ProposeDeps
+} from '../services/periodisation/propose';
 import { getCurrentProgram } from '../services/programs/index';
 import {
 	decideNextCycle,
 	decideNextWeek,
+	getWeeklyReviewView,
 	ReviewInputError,
 	ReviewNotFoundError,
 	ReviewSupersededError,
 	type DecideNextCycle,
 	type NextCycleOverrides,
 	type NextWeekItem,
-	type ReviewDeps
+	type ReviewDeps,
+	type WeeklyReviewView
 } from '../services/reviews/index';
 import type { NextBlockStart } from '../../domain/programming/next-block/dates';
 import type { DeloadPlacement } from '../../domain/programming/review/directives';
 import { ConflictError } from '../services/training/shared';
+import { ownerId } from './read';
 
 /** The toast once next week is generated: 'Next week updated · version 4 · 2 changes were…'. */
 export function appliedWords(versionNumber: number | null, passed: number): string {
@@ -181,5 +197,67 @@ export async function decideCycle(
 		if (err instanceof NextCycleConflictError && err.reason === 'profile')
 			return fail(409, { reason: 'profile' as const, message: PREVIEW_REFRESHED });
 		return refused(err);
+	}
+}
+
+// ---- A stale or late deload's 'Propose again' --------------------------------------------------
+
+/** Where a failure is recorded (app_errors): the request's id, method, path, route and app version. */
+export type ReviewOrigin = Pick<
+	ServerErrorInput,
+	'requestId' | 'method' | 'path' | 'routeId' | 'appVersion'
+>;
+
+/** What the service answered, as the card reads it (domain/coach/propose-again.ts). */
+function againOutcome(made: ProposedAgain): ProposeAgainOutcome {
+	switch (made.status) {
+		case 'proposed':
+			return { status: 'proposed', id: made.proposal.id };
+		case 'refused':
+			return { status: 'refused', why: made.why };
+		case 'unchanged':
+			return { status: 'unchanged' };
+		case 'not_stale':
+			return { status: 'not_stale' };
+		case 'not_reproposable':
+			return { status: 'not_reproposable' };
+	}
+}
+
+/**
+ * The review page's ?/proposeAgain for a deload that went stale or late: the owner's check first (a
+ * signed-out or recovery session is 401, before anything runs), then the review's own proposal asked
+ * for again through m7/50's proposeAgain. A key that is not a weekly review, or a review that is not
+ * the owner's or not there, is the 404 page. A review with no proposal has nothing to ask for, and a
+ * failure is recorded (part propose-again) and answered as failed, so the card offers Try again.
+ */
+export async function proposeDeloadAgainAction(
+	{
+		locals,
+		weekStartsOn,
+		origin
+	}: { locals: App.Locals; weekStartsOn: IsoDate | null; origin: ReviewOrigin },
+	deps: ProposeDeps = {}
+): Promise<ProposeAgainOutcome> {
+	const owner = ownerId(locals);
+	if (weekStartsOn === null) error(404, 'Not found');
+	let view: WeeklyReviewView;
+	try {
+		view = await getWeeklyReviewView(owner, weekStartsOn, { db: deps.db });
+	} catch (err) {
+		if (err instanceof ReviewNotFoundError) error(404, 'Not found');
+		throw err;
+	}
+	if (!view.proposal) return { status: 'not_stale' };
+	try {
+		return againOutcome(await proposeAgain(owner, view.proposal.id, deps));
+	} catch (err) {
+		if (isHttpError(err)) throw err;
+		if (err instanceof CoachNotFoundError) error(404, 'Not found');
+		await recordServerError(
+			{ error: err, kind: 'app', status: 500, ...origin, context: { part: 'propose-again' } },
+			{ db: deps.errorsDb ?? deps.db }
+		);
+		return { status: 'failed' };
 	}
 }

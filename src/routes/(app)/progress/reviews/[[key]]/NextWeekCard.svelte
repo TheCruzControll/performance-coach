@@ -10,10 +10,17 @@
     the toast 'Next week updated · version 4', or '· 2 changes were for sessions already past'.
   - 'Keep next week as planned' (?/keep, the same form) opens a sheet with an optional reason.
   - Pending: the form is aria-busy and a second tap posts nothing. Offline (the shell says so):
-    the actions are disabled and the choices kept. A failure says why, and Retry resends it.
-  - A proposed deload (state 'deload') has no changes to tick: 'Accept the deload' posts the same
-    ?/decide with `accept`, and 'Keep the plan' posts ?/keep. A late deload (state 'late_deload')
-    says its week has passed, with no action.
+    the actions are disabled, with the reason, and the choices kept. A failure says why, and
+    Try again resends it.
+  - A proposed deload (state 'deload') is one card: its headline (deloadHeadline in load.ts, from
+    its week and today), the signals that led to it as plain lines, and what changes, through the
+    inbox's DiffRows. It has no changes to tick: 'Accept the deload' posts the same ?/decide with
+    `accept`, and 'Keep the plan' posts ?/keep. A late deload (state 'late_deload') is headed by its
+    date alone and says 'No session is left in that week'; a superseded one (state
+    'superseded_deload') says 'This deload is out of date'. Both offer 'Propose again', which posts
+    ?/proposeAgain (next-week-actions.svelte.ts). Once its answer lands, focus moves to Try again
+    after a failure, or else to the note; the answer is also announced through the card's polite
+    status line, which is always in the card.
   - Otherwise the card says what was decided (with the version in History) or why there is
     nothing to decide, linking to the build or the cycle review where that is the next step.
 
@@ -22,8 +29,16 @@
   review the page awaits stays small. Should that fetch fail, the form posts as it would without.
 -->
 <script lang="ts">
+	import DiffRows from '#lib/ui/coach/DiffRows.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
+	import { tick } from 'svelte';
+	import {
+		COULDNT_PREPARE,
+		PROPOSE_AGAIN,
+		PROPOSE_AGAIN_FAILED,
+		PROPOSE_AGAIN_OFFLINE
+	} from '#lib/domain/coach/propose-again.ts';
 	import type { NextWeekView } from './load';
 	import type { NextWeekUi } from './next-week-actions.svelte.ts';
 
@@ -36,8 +51,43 @@
 	let { next, reviewId, online }: Props = $props();
 
 	const open = $derived(next.state === 'open' || next.state === 'partly_past');
-	const ui: NextWeekUi = $state({ pending: null, failure: null, failed: null });
+	/** A stale or late deload: Propose again asks for it again from today. */
+	const stale = $derived(next.state === 'late_deload' || next.state === 'superseded_deload');
+	const DECIDE_OFFLINE = 'You’re offline. Decide once you’re back online.';
+	const ui: NextWeekUi = $state({ pending: null, failure: null, failed: null, note: null });
 	let plain = false;
+	/** Focus goes where a Propose again answer leaves the owner: its Try again, or its note. */
+	let retryWrap = $state<HTMLElement>();
+	let noteEl = $state<HTMLElement>();
+	/** A Propose again post is on its way: its answer is what the next focus is about. */
+	let asking = false;
+
+	// The button that was pressed is busy and then gone, so focus would fall to the page's top: once
+	// a Propose again post ends, a failure focuses its Try again and an answer its note.
+	$effect(() => {
+		if (ui.pending) {
+			asking = ui.pending === 'proposeAgain';
+			return;
+		}
+		if (!asking) return;
+		asking = false;
+		void tick().then(() => {
+			if (ui.failed === 'proposeAgain') retryWrap?.querySelector('button')?.focus();
+			else noteEl?.focus();
+		});
+	});
+
+	/**
+	 * What the card's polite region says, which is always in the card so a change is announced: a
+	 * Propose again post's progress, its failure, or its note.
+	 */
+	const announce = $derived(
+		ui.pending === 'proposeAgain'
+			? 'Preparing it again…'
+			: ui.failed === 'proposeAgain'
+				? `${COULDNT_PREPARE}. ${PROPOSE_AGAIN_FAILED}`
+				: (ui.note ?? '')
+	);
 
 	/** Generate or Keep: in place once next-week-actions loads, posted as it is should it not. */
 	function act(event: SubmitEvent) {
@@ -47,6 +97,17 @@
 		import('./next-week-actions.svelte.ts').then(
 			(m) => m.act(form, ui, event.submitter),
 			() => ((plain = true), form.requestSubmit(event.submitter))
+		);
+	}
+
+	/** Propose again: in place once next-week-actions loads, posted as it is should it not. */
+	function again(event: SubmitEvent) {
+		if (plain) return;
+		event.preventDefault();
+		const form = event.currentTarget as HTMLFormElement;
+		import('./next-week-actions.svelte.ts').then(
+			(m) => m.proposeAgain(ui),
+			() => ((plain = true), form.requestSubmit())
 		);
 	}
 </script>
@@ -59,6 +120,32 @@
 >
 	<h3 id="next-title">{next.title}</h3>
 	{#if next.words}<p class="muted" data-testid="review-next-words">{next.words}</p>{/if}
+
+	{#if next.deload}
+		{#if next.deload.evidence.length}
+			<section class="part" aria-labelledby="next-why">
+				<h4 id="next-why" class="label">Why</h4>
+				<ul class="lines" data-testid="review-next-evidence">
+					{#each next.deload.evidence as line, i (i)}<li>{line}</li>{/each}
+				</ul>
+			</section>
+		{/if}
+		<section class="part" aria-labelledby="next-what">
+			<h4 id="next-what" class="label">What changes</h4>
+			{#if next.deload.rows.length}
+				<DiffRows rows={next.deload.rows} />
+			{:else if next.deload.lines.length}
+				<ul class="lines">
+					{#each next.deload.lines as line, i (i)}<li>{line}</li>{/each}
+				</ul>
+			{:else}
+				<p class="muted">Nothing in your plan moves.</p>
+			{/if}
+			{#if next.deload.more}<p class="muted" data-testid="review-next-more">
+					{next.deload.more}
+				</p>{/if}
+		</section>
+	{/if}
 
 	{#if next.items.length}
 		<form
@@ -119,6 +206,8 @@
 		</form>
 	{/if}
 
+	{#if !online && open}<p class="muted" data-testid="review-next-offline">{DECIDE_OFFLINE}</p>{/if}
+
 	{#if next.state === 'deload'}
 		<form
 			method="POST"
@@ -131,6 +220,7 @@
 			{#if ui.failed === 'decide'}
 				<Notice tone="danger" data-testid="review-next-failure">{ui.failure}</Notice>
 			{/if}
+			{#if !online}<p class="muted" data-testid="review-next-offline">{DECIDE_OFFLINE}</p>{/if}
 			<Button
 				type="submit"
 				loading={ui.pending === 'decide'}
@@ -147,6 +237,46 @@
 			>
 		</form>
 	{/if}
+
+	{#if stale}
+		<form
+			method="POST"
+			action="?/proposeAgain"
+			onsubmit={again}
+			aria-busy={ui.pending === 'proposeAgain' ? 'true' : undefined}
+			data-testid="review-next-again"
+		>
+			{#if ui.failed === 'proposeAgain'}
+				<Notice tone="danger" title={COULDNT_PREPARE} data-testid="review-next-propose-failure"
+					>{ui.failure}</Notice
+				>
+			{:else if ui.note}
+				<!-- Not a live region of its own: the card's polite region announces it. -->
+				<p
+					class="muted note"
+					tabindex="-1"
+					bind:this={noteEl}
+					data-testid="review-next-propose-note"
+				>
+					{ui.note}
+				</p>
+			{/if}
+			{#if !online}
+				<p class="muted" data-testid="review-next-propose-offline">{PROPOSE_AGAIN_OFFLINE}</p>
+			{/if}
+			<span bind:this={retryWrap}>
+				<Button
+					type="submit"
+					loading={ui.pending === 'proposeAgain'}
+					disabled={!online || !!ui.pending}
+					data-testid="review-next-propose-again"
+					>{ui.failed === 'proposeAgain' ? 'Try again' : PROPOSE_AGAIN}</Button
+				>
+			</span>
+		</form>
+	{/if}
+
+	<p class="visually-hidden" role="status" data-testid="review-next-status">{announce}</p>
 
 	{#if next.link}
 		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- app paths from load.ts -->
@@ -180,6 +310,30 @@
 	h3 {
 		font-size: var(--text-lg);
 		font-weight: var(--weight-semibold);
+	}
+
+	.part {
+		display: grid;
+		gap: var(--space-1-5);
+		min-width: 0;
+	}
+
+	.label {
+		color: var(--color-text-secondary);
+		font-size: var(--text-xs);
+		font-weight: var(--weight-semibold);
+		letter-spacing: var(--tracking-caps);
+		text-transform: uppercase;
+	}
+
+	.lines {
+		display: grid;
+		gap: var(--space-1);
+		margin: 0;
+		padding-left: var(--space-4);
+		font-size: var(--text-sm);
+		line-height: var(--leading-normal);
+		overflow-wrap: anywhere;
 	}
 
 	.items {
@@ -240,6 +394,11 @@
 		min-height: var(--touch-target);
 		font-weight: var(--weight-medium);
 		color: var(--color-accent-text);
+	}
+
+	/* Focus lands here after an answer: the words are the focus, so no ring is drawn around them. */
+	.note {
+		outline: none;
 	}
 
 	.link:focus-visible,

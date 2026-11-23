@@ -31,6 +31,9 @@ runs the criteria and updates milestones.md.
 
 ## Recently merged
 
+- The coach can propose a block, a deload or a taper, and knows this week's block in every turn.
+- Re-plan proposals say where they came from and what changes; a stale one, or a stale deload on
+  the weekly review, can be proposed again.
 - The cycle review plans the next block from the season, and the deload choice on the review still applies to it.
 - During a run, Swap moves the rest of it to a zone 2 bike; during a Muay Thai class, Swap offers a
   lighter format.
@@ -52,14 +55,14 @@ runs the criteria and updates milestones.md.
 
 ## In flight
 
-- **M7, re-sliced.** On 2026-11-22 the parked M7 pull requests were re-sliced into 36 `m7r/`
-  rows in `plan/m7-reslice.md`. By the end of that day 29 had merged, along with m7/49. That
-  covers the generator's stages and season, Train's week findings and the season timeline, the
-  coach's interference and trade-off reads, and the whole re-plan path: rules, regenerate,
-  taper and deload, store, preview, proposal kind, apply, propose, the goal-priority trigger and
-  its notice on Profile and Train. It also covers the reactive deload assessment. The weekly
-  review's deload (m7r/36) is in review. m7r/03 is parked for a redesign, and m7r/04 to m7r/10
-  wait on it. The old M7 pull requests stay open until their rows merge.
+- **M7, re-sliced.** On 2026-11-22 the parked M7 pull requests were re-sliced into 38 `m7r/`
+  rows in `plan/m7-reslice.md`. By the end of that day every row that does not wait on m7r/03
+  had merged, along with m7/47 to m7/51. That covers the generator's stages and season, Train's
+  week findings and the season timeline, the coach's interference and trade-off reads, the whole
+  re-plan path with its notice, proposal card and Propose again, the weekly review's deload, and
+  the coach's block, deload and taper proposals with this week's block in every turn. m7r/03 is
+  parked for a redesign; m7r/04 to m7r/10, m7/58 and m7/59 wait on it. The old M7 pull requests
+  stay open until their rows merge.
 - **Coach run trace and self-improving evals.** Planned, nothing built. The plan is eight PRs in
   `plan/trace-evals/plan.md`, written 738 commits ago, so its file pointers need re-checking
   against `main` before anyone builds from it. The owner must provide three secrets before the
