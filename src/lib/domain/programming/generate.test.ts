@@ -271,12 +271,14 @@ const GOLDEN: Record<ScenarioKey, readonly [monday: string, thursday: string]> =
  * (generator-schedule, GENERATOR_ID 'perfo-programming/3', and each block's week before across its
  * boundary, which changed hybrid's). generator-phasing ('perfo-programming/4') left them as they
  * were: no M3 scenario's first block carries mainLifts, and journey's dosed weeks already sit at or
- * under the dose's cap. A later GENERATOR_ID bump changes them, and its PR lists each.
+ * under the dose's cap. generator-volume ('perfo-programming/5') changed hybrid's: its secondary
+ * strength goal is held to the lower half of its band. A later GENERATOR_ID bump changes them, and
+ * its PR lists each.
  */
 const GOLDEN_SEASON: Record<ScenarioKey, readonly [monday: string, thursday: string]> = {
 	beginner: ['40ac8a97f8ac8304', 'afbafd92042977bf'],
 	powerlifter: ['53368325fc4eeb18', '7cce2ec2cd815ba0'],
-	hybrid: ['099390e333863200', 'd3c8cae4c343abcb'],
+	hybrid: ['e20eae45c5b2e4c2', '27d560ecd45688aa'],
 	injuredShoulder: ['a8f751370762b759', '1133ba47aeda08ec'],
 	dumbbellsOnly: ['4bb8ea19bb964a13', '6573125a5c871f5e'],
 	journey: ['54e04d5b7941f4c8', '79a2adad7842028e'],

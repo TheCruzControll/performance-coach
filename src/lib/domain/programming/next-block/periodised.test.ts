@@ -272,8 +272,9 @@ describe('the next block from the season', () => {
 		schedule.mockRestore();
 		// generator-phasing (perfo-programming/4) moved two of them: journeyHybrid's week 4 cap is held
 		// to the dose's RPE 8, and hypertrophyBlock's compounds take their reps and top RPE per phase.
-		// multiGoal's hash is unchanged.
-		expect(hashes).toEqual(['af1ce66232fc9f7f', 'd42123cacb5212c3', '16ccc273a364db40']);
+		// multiGoal's hash is unchanged. generator-volume (perfo-programming/5) moved hypertrophyBlock's
+		// again: its building weeks are balanced to their own setsPerGroup.
+		expect(hashes).toEqual(['af1ce66232fc9f7f', 'd42123cacb5212c3', '072bf5a530fdb539']);
 	});
 });
 
