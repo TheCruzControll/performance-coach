@@ -41,7 +41,7 @@ import { SCENARIO_START, SCENARIOS } from './scenarios';
 import type { ScenarioKey } from './scenarios';
 import type { Draft, GenerateOptions, Periodisation, StageContext } from './stage';
 import { prepare } from './stages/prepare';
-import { schedule } from './stages/schedule';
+import { OWN_WEEKS, schedule } from './stages/schedule';
 import { estimateMinutes } from './timefit';
 
 const OPTIONS = { startsOn: SCENARIO_START, firstPlannedDay: SCENARIO_START };
@@ -458,6 +458,37 @@ describe('a block pattern that ends hard on Sunday', () => {
 					d.evidence.from === 'Monday morning'
 			);
 		expect(moved).toBeDefined();
+	});
+});
+
+describe('a clash kept against the week before as planned', () => {
+	const FOUND = 'Found against the week before as planned, and kept';
+	const SHARED = `${FOUND} because the block shares its days: its days repeat each week, so this pairing with the week before stays.`;
+	const OWN = `${FOUND}: this week keeps its own days.`;
+
+	/** Each found clash says the block shares its days only when a week it cites is a building week. */
+	function saysOwnDays(plan: ProgramPlan) {
+		const found = plan.decisions.filter(
+			(d) => d.kind === 'schedule_kept' && String(d.evidence.reason).startsWith(FOUND)
+		);
+		const ownWeek = (d: (typeof found)[number]) =>
+			d.refs.some((ref) =>
+				OWN_WEEKS.includes((resolve(plan, ref.split('.sessions.')[0]!) as WeekPlan).kind)
+			);
+		expect(found.map((d) => d.evidence.reason)).toEqual(
+			found.map((d) => (ownWeek(d) ? OWN : SHARED))
+		);
+	}
+
+	it.each(ALL)(
+		'%s: says the block shares its days only in a week that shares them',
+		(_, profile) => {
+			saysOwnDays(generated(profile()).plan);
+		}
+	);
+
+	it.each(FROM_MONDAY)('%s: says the same', (_, profile, startsOn) => {
+		saysOwnDays(generated(profile(), { startsOn, firstPlannedDay: startsOn }).plan);
 	});
 });
 
