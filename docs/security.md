@@ -382,10 +382,15 @@ summaries, rejection reasons, proposal text) reaches the model only as `untruste
 as data (`src/lib/server/agent/prompt/context.ts`). The turn-context system message carries only
 facts the server computed: dates, counts, ids and statuses, never a decided proposal's note.
 Memory sits in a user-role preamble, never in a system message. No tool commits a program, goal or
-workout change: each is a proposal the owner accepts. The one direct write,
-`update_exercise_preferences`, needs an explicit statement about that exercise in this turn's
-stored owner message (`classifyExerciseStatement`); a dislike that reached the coach through a
-stored note becomes a proposal (`tests/integration/coach/tools-preferences.test.ts`).
+workout change: each is a proposal the owner accepts. The two direct writes that the owner's
+statement gates, `update_exercise_preferences` and `log_body_weight`, each need an explicit
+statement in this turn's stored owner message: a preference about that exercise
+(`classifyExerciseStatement`), or a body weight the owner states about themselves
+(`parseWeightStatement`), whose unit and day, when given, must match. A dislike that reached the
+coach through a stored note becomes a proposal
+(`tests/integration/coach/tools-preferences.test.ts`); a weight the model did not find in the
+owner's message is refused and writes nothing (`tests/integration/coach/weight-log.test.ts`).
+`log_body_weight` writes source `coach`, so Undo can take the entry back.
 
 **Tool authorisation.** `ToolContext` takes the owner from the session, and `toStrictJsonSchema`
 refuses any tool input property named `owner`, `ownerId` or `owner_id`, so no model input can

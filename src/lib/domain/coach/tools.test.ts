@@ -46,11 +46,12 @@ const BY_GROUP: Record<ToolGroup, readonly ToolName[]> = {
 		'get_weekly_training_summary',
 		'get_training_load',
 		'get_performance_trends',
-		'get_body_weight'
+		'get_body_weight',
+		'log_body_weight'
 	]
 };
 
-/** Proposals: a coach_proposals row and nothing else. Writes: the brief's two direct writes. */
+/** Proposals: a coach_proposals row and nothing else. Writes: the brief's three direct writes. */
 const PROPOSE: readonly ToolName[] = [
 	'create_next_training_cycle',
 	'create_training_program',
@@ -62,7 +63,11 @@ const PROPOSE: readonly ToolName[] = [
 	'update_training_goals',
 	'update_workout'
 ];
-const WRITE: readonly ToolName[] = ['save_workout_analysis', 'update_exercise_preferences'];
+const WRITE: readonly ToolName[] = [
+	'log_body_weight',
+	'save_workout_analysis',
+	'update_exercise_preferences'
+];
 const DRAFTS: readonly ToolName[] = [
 	'create_next_training_cycle',
 	'propose_program_adjustment',
@@ -72,9 +77,9 @@ const DRAFTS: readonly ToolName[] = [
 const namesWhere = (keep: (name: ToolName) => boolean) => TOOL_NAMES.filter(keep);
 
 describe('the coach tool catalogue', () => {
-	it('names 30 tools once each, in snake_case, sorted by code unit', () => {
-		expect(TOOL_NAMES).toHaveLength(30);
-		expect(new Set(TOOL_NAMES).size).toBe(30);
+	it('names 31 tools once each, in snake_case, sorted by code unit', () => {
+		expect(TOOL_NAMES).toHaveLength(31);
+		expect(new Set(TOOL_NAMES).size).toBe(31);
 		for (const name of TOOL_NAMES) expect(name).toMatch(/^[a-z]+(_[a-z]+)+$/);
 		const sorted = [...TOOL_NAMES].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 		expect(TOOL_NAMES).toEqual(sorted);
@@ -90,7 +95,7 @@ describe('the coach tool catalogue', () => {
 		}
 	});
 
-	it('reads with every tool except nine that propose and the two direct writes', () => {
+	it('reads with every tool except nine that propose and the three direct writes', () => {
 		const effectOf = (effect: ToolEffect) =>
 			namesWhere((name) => TOOL_CATALOGUE[name].effect === effect);
 		expect(TOOL_EFFECTS).toEqual(['read', 'propose', 'write']);

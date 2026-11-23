@@ -1,5 +1,5 @@
 /**
- * The coach's 30 tools, each named once (PRD §4, the M5 brief): its group, its effect and whether
+ * The coach's 31 tools, each named once (PRD §4, the M5 brief): its group, its effect and whether
  * it drafts. The registry (server/agent/tools) defines one tool per entry, the activity chips
  * word them (activity.ts), the per-tool deadlines read `drafts` (budgets.ts) and diagnostics
  * group by them, so a tool that is not here cannot run.
@@ -9,9 +9,12 @@
  * explain_schedule_tradeoffs, and M7's three re-plan proposals, plan_block, schedule_deload and
  * plan_taper. Every get_* tool only reads, and so do the two engine reads. Nine tools only
  * propose: they store a coach_proposals row that changes nothing until the owner accepts it. The
- * two that write are the brief's only direct writes: the coach's own workout analysis, and a
- * preference the owner stated explicitly in this turn. Three proposing tools draft their payload
- * with a structured-output call, so their deadline includes the draft's time.
+ * three that write are the only direct writes: the coach's own workout analysis and a preference
+ * the owner stated explicitly in this turn (both named by the brief), and a weigh-in the owner
+ * stated in this turn, which the weight decisions add (docs/decisions.md, 2026-11-23) and the
+ * brief does not name.
+ * Three proposing tools draft their payload with a structured-output call, so their deadline
+ * includes the draft's time.
  */
 
 /** The brief's five tool groups (PRD §4), in the order the catalogue lists them. */
@@ -25,7 +28,7 @@ export const TOOL_GROUP_LABEL = {
 export type ToolGroup = keyof typeof TOOL_GROUP_LABEL;
 export const TOOL_GROUPS = Object.keys(TOOL_GROUP_LABEL) as readonly ToolGroup[];
 
-/** read: no writes; propose: a coach_proposals row only; write: one of the two direct writes. */
+/** read: no writes; propose: a coach_proposals row only; write: one of the three direct writes. */
 export const TOOL_EFFECTS = ['read', 'propose', 'write'] as const;
 export type ToolEffect = (typeof TOOL_EFFECTS)[number];
 
@@ -88,7 +91,9 @@ const CATALOGUE = {
 	get_training_load: read('analytics'),
 	get_performance_trends: read('analytics'),
 	/** The owner's weight: trend, rate, goal status and milestones, computed by code. */
-	get_body_weight: read('analytics')
+	get_body_weight: read('analytics'),
+	/** Writes only a weigh-in the owner stated in this turn, at once, with source 'coach'. */
+	log_body_weight: write('analytics')
 } satisfies Record<string, ToolCatalogueEntry>;
 
 /** A tool's name: one of the catalogue's keys. */

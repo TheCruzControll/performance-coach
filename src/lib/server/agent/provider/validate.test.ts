@@ -4,6 +4,7 @@ import type {
 	BetaTool
 } from '@anthropic-ai/sdk/resources/beta/messages';
 import { describe, expect, it } from 'vitest';
+import { toolDefinitionsForRequest } from '../tools/registry.ts';
 import type { ModelRequest } from './types.ts';
 import {
 	MAX_BREAKPOINTS,
@@ -383,5 +384,22 @@ describe('validateRequest', () => {
 		const body = { model: 'claude-opus-5-5', max_tokens: 1024, messages, stream: true as const };
 		expect(rulesOf(body)).toEqual(['no_effort']);
 		expect(rulesOf({ ...body, output_config: { effort: 'low' } })).toEqual([]);
+	});
+});
+
+describe('the registry’s strict tools', () => {
+	it("the registry's strict tools fit STRICT_LIMITS", () => {
+		const tools = [...toolDefinitionsForRequest()];
+		const strict = tools.filter((tool) => tool.strict);
+		expect(strict.length).toBeGreaterThan(0);
+		expect(strict.length).toBeLessThanOrEqual(STRICT_LIMITS.tools);
+		expect(
+			validateRequest({
+				max_tokens: 1_000,
+				output_config: { effort: 'medium' },
+				messages: [{ role: 'user', content: 'Hi' }],
+				tools
+			})
+		).toEqual([]);
 	});
 });

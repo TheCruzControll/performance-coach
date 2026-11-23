@@ -195,7 +195,8 @@ const WORDING: Readonly<Record<ToolName, (f: Facts) => Triple>> = {
 		'Reading your weight trend…',
 		'Read your weight trend',
 		'Couldn’t read your weight trend'
-	]
+	],
+	log_body_weight: () => ['Logging your weight…', 'Logged your weight', 'Couldn’t log your weight']
 };
 
 /**

@@ -16,25 +16,34 @@
  *
  * Nothing stored here is free text (a weigh-in has no note and a goal has no name), so no value
  * travels as untrusted_text. Every read is scoped to the session's owner.
+ *
+ * log_body_weight (the weight plan's PR 8) is the coach's one weight write. It records a weigh-in
+ * only when the owner's own message in this turn states that weight, on the day they named, and
+ * saves it at once with source 'coach' and the turn's run, so Undo can take it back. The check is
+ * parseWeightStatement (domain/coach/weight-statement), never the model's word for it.
  */
 import * as z from 'zod/mini';
 import { MILESTONES_MAX, type MilestoneReading } from '../../../domain/analytics/weight-goal.ts';
-import type { IsoDate } from '../../../domain/calendar.ts';
+import { addDays, type IsoDate } from '../../../domain/calendar.ts';
 import type { SourceRef } from '../../../domain/coach/sources.ts';
+import { parseWeightStatement } from '../../../domain/coach/weight-statement.ts';
 import type { WeightUnit } from '../../../domain/units.ts';
-import type { ResolvedCoachDeps } from '../../services/coach/shared.ts';
+import { inTransaction, type ResolvedCoachDeps } from '../../services/coach/shared.ts';
+import { getAthleteProfile } from '../../services/profile/index.ts';
 import {
 	FACTS_LOG_ROWS,
 	FACTS_STATS_DAYS,
 	getWeightFacts,
+	logWeight,
 	type WeightFacts,
 	type WeightGoalView
 } from '../../services/weight/index.ts';
 import type { ToolContext } from './context.ts';
 import { defineTool, type CoachTool } from './define.ts';
-import { metric, metricSchema, sourceRefSchema } from './output.ts';
+import { metric, metricSchema, sourceRefSchema, toolError, untrusted } from './output.ts';
 
 type Ctx = ToolContext<ResolvedCoachDeps>;
+const deps = (ctx: Ctx) => ({ db: ctx.deps.db, now: ctx.deps.now });
 
 const day = z.iso.date();
 const direction = z.enum(['up', 'down', 'flat']);
@@ -254,5 +263,76 @@ const getBodyWeightTool = defineTool({
 		weightOutputOf(await getWeightFacts(ctx.ownerId, ctx.today as IsoDate, { db: ctx.deps.db }))
 });
 
+// ---- log_body_weight --------------------------------------------------------------------
+
+const loggedUnit = z.enum(['kg', 'lb']);
+const loggedOutput = z.object({
+	outcome: z.literal('recorded'),
+	/** The weigh-in as it now stands: its day, its value and unit, and the source that opens it. */
+	entry: z.object({ ref: sourceRefSchema, measuredOn: day, value: z.number(), unit: loggedUnit }),
+	/** The entry Undo puts back: what the day held before this run; null when it was empty. */
+	replaced: z.nullable(z.object({ value: z.number(), unit: loggedUnit, source: z.string() })),
+	/** The entry this run wrote: Undo takes it back, or restores `replaced`, when given this runId. */
+	undo: z.object({ entryId: z.int(), runId: z.string() })
+});
+
+const sameValue = (a: number, b: number) => Math.round(a * 100) === Math.round(b * 100);
+/** The day before `today`, the one a weigh-in "yesterday" names. */
+const dayBefore = (today: IsoDate) => addDays(today, -1);
+
+const logBodyWeightTool = defineTool({
+	name: 'log_body_weight',
+	description:
+		"Record a body weight the owner states in their own message this turn (\"I weighed 82.4 this morning\"). It is saved at once with source coach, not stored as a proposal, so say in the answer that you logged it, with its value, unit and day, and mention that the owner can Undo it. weight is the number as the owner wrote it, unit is kg or lb as they wrote it, and measuredOn is the day it was weighed (YYYY-MM-DD: the turn's date, or the day before when the owner said yesterday). Refused: NOT_STATED when that weight is not stated in the owner's message this turn; CONTRADICTS_OWNER when the owner gave another unit (their profile's unit when they gave none); BAD_DATE for a day after today or one other than the day the owner named. A day that already has a weigh-in is replaced, and the result's replaced shows the earlier one.",
+	input: z.object({ weight: z.number(), unit: loggedUnit, measuredOn: day }),
+	output: loggedOutput,
+	run: async ({ weight, unit, measuredOn }, ctx: Ctx) => {
+		const stated = parseWeightStatement(ctx.ownerText).filter((s) => sameValue(s.value, weight));
+		if (stated.length === 0)
+			throw toolError(
+				'NOT_STATED',
+				'The owner did not state that weight in this message: nothing was stored'
+			);
+		const profile = await getAthleteProfile(ctx.ownerId, deps(ctx));
+		const match = stated.find((s) => (s.unit ?? profile.weightUnit) === unit);
+		if (!match)
+			throw toolError(
+				'CONTRADICTS_OWNER',
+				'The owner gave that weight in another unit: nothing was stored',
+				{ ownerWords: untrusted(stated[0]!.quote) }
+			);
+		// The day the owner named: yesterday when they said so, otherwise today (a weight with no day
+		// named is today's). Any other day, a future one included, is refused.
+		const named = match.day === 'yesterday' ? dayBefore(ctx.today) : ctx.today;
+		if (measuredOn !== named)
+			throw toolError(
+				'BAD_DATE',
+				'That day is not the day the owner named (today, or yesterday when they said so): nothing was stored',
+				{ ownerWords: untrusted(match.quote) }
+			);
+		const { entry, remembered } = await inTransaction(ctx.deps, (tx) =>
+			logWeight(
+				ctx.ownerId,
+				{ value: weight, unit, measuredOn },
+				{ ...tx, source: 'coach', runId: ctx.runId }
+			)
+		);
+		return {
+			outcome: 'recorded' as const,
+			entry: {
+				ref: weighIn(entry.measuredOn),
+				measuredOn: entry.measuredOn,
+				value: entry.value,
+				unit: entry.unit
+			},
+			// The entry Undo puts back: on a second write in this run, the one the run first replaced.
+			replaced: remembered
+				? { value: remembered.value, unit: remembered.unit, source: remembered.source }
+				: null,
+			undo: { entryId: entry.id, runId: ctx.runId }
+		};
+	}
+});
+
 /** Sorted by name, as every request lists tools. */
-export const WEIGHT_TOOLS: readonly CoachTool[] = [getBodyWeightTool];
+export const WEIGHT_TOOLS: readonly CoachTool[] = [getBodyWeightTool, logBodyWeightTool];

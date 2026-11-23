@@ -25,7 +25,8 @@ until the owner accepts a proposal.
    grammar the server parses and checks before the phone sees it.
 4. **Proposals, not silent writes.** Every change to programming, goals or a workout is a
    `coach_proposals` row the owner accepts by id. The only direct writes are the coach's own
-   workout analysis and a preference the owner stated explicitly in this turn.
+   workout analysis, a preference the owner stated explicitly in this turn, and a body weight the
+   owner stated in this turn (`log_body_weight`, saved at once with source `coach`, and Undo).
 5. **Core logging never depends on the agent** (PRD §15). No `/workout` route can load a coach
    module (`pnpm budgets` checks), and a coach outage shows a notice, never a failed set.
 
@@ -249,8 +250,8 @@ blocks however it was chunked, and parses a small markdown subset into a rich-te
 
 ## Tools
 
-30 tools in five groups, named once in `src/lib/domain/coach/tools.ts` (`TOOL_CATALOGUE`): the
-brief's 21 plus `get_program_history`, `get_exercise_alternatives`, `get_coach_proposals`, and the two M7 engine reads, `evaluate_week_interference` and `explain_schedule_tradeoffs`, and the weight read `get_body_weight`.
+31 tools in five groups, named once in `src/lib/domain/coach/tools.ts` (`TOOL_CATALOGUE`): the
+brief's 21 plus `get_program_history`, `get_exercise_alternatives`, `get_coach_proposals`, and the two M7 engine reads, `evaluate_week_interference` and `explain_schedule_tradeoffs`, the weight read `get_body_weight` and the weight write `log_body_weight`.
 Each is `defineTool({name, description, input, output, run})` (`agent/tools/define.ts`), where
 `input` and `output` are zod/mini schemas:
 
@@ -270,7 +271,7 @@ Each is `defineTool({name, description, input, output, run})` (`agent/tools/defi
 
 `agent/tools/registry.ts` builds `COACH_TOOLS` from one file per group (programming in three files, analytics in two),
 sorted by name; a tool outside the catalogue or its group's file throws, and
-`registry-complete.test.ts` proves all 30 are registered. Three tools draft their payload with a
+`registry-complete.test.ts` proves all 31 are registered. Three tools draft their payload with a
 structured-output call (`agent/proposals/draft.ts`, effort high, `DRAFTER_PROMPT`), so their
 deadline adds the draft time.
 
@@ -303,6 +304,7 @@ output schema are in [coach-tools.md](coach-tools.md).
 | [`get_training_preferences`](coach-tools.md#get_training_preferences)       | Preferences | read    | no     |
 | [`get_training_schedule`](coach-tools.md#get_training_schedule)             | Programming | read    | no     |
 | [`get_weekly_training_summary`](coach-tools.md#get_weekly_training_summary) | Analytics   | read    | no     |
+| [`log_body_weight`](coach-tools.md#log_body_weight)                         | Analytics   | write   | no     |
 | [`plan_block`](coach-tools.md#plan_block)                                   | Programming | propose | no     |
 | [`plan_taper`](coach-tools.md#plan_taper)                                   | Programming | propose | no     |
 | [`propose_program_adjustment`](coach-tools.md#propose_program_adjustment)   | Programming | propose | yes    |
@@ -358,6 +360,13 @@ an explicit statement about that exercise (`classifyExerciseStatement`, with M3'
 injected): through `recordExercisePreference` with source 'coach', plus a `coach_decision` note
 quoting the owner. A situational statement makes it return `is_error`, pointing to
 `substitute_exercise`; with no explicit statement it proposes a `preference_update` instead.
+
+`log_body_weight` writes only a weight the owner's stored message this turn states about
+themselves (`parseWeightStatement`, `domain/coach/weight-statement.ts`), on the day they named. It
+calls `logWeight` (services/weight) with source `coach` and the turn's run, in one transaction, so
+the entry keeps its run for Undo and an earlier entry for the day is kept as `replaced`. A number
+the owner did not state is `NOT_STATED`, another unit is `CONTRADICTS_OWNER`, and a future day or
+one that is not the day named is `BAD_DATE`; each writes nothing.
 
 ## Memory
 
