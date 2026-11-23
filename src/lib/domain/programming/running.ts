@@ -102,7 +102,7 @@ export function naiveDates(
 // ---- Paces ----------------------------------------------------------------------------------
 
 /** The paces a plan's runs are set at, and why: from paces.ts currentPaces (null: effort). */
-export interface Paces {
+interface Paces {
 	paces: TrainingPaces | null;
 	source: string;
 	reason: string;

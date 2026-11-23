@@ -441,6 +441,9 @@ describe('planRuns', () => {
 			paceMinSecondsPerKm: fast,
 			paceMaxSecondsPerKm: slow
 		});
+		// The told pace (330 s a km, 5.5 min) still sets the minutes an easy run is estimated at (D3).
+		const metres = easy!.segments.reduce((sum, g) => sum + (g.distanceMetres ?? 0), 0);
+		expect(easy!.estMinutes).toBe(Math.max(5, Math.round((metres / 1000) * 5.5)));
 		const intervals = generated(weeks[1]!).find((r) => r.type === 'interval_run')!;
 		expect(intervals.segments[1]).toMatchObject({
 			paceMinSecondsPerKm: paceFor('interval', paces)[0]

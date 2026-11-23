@@ -16,9 +16,12 @@ import { DecisionLog } from './decisions';
 import { firstDraft, generateProgram, STAGES } from './generate';
 import { buildProgrammingInput } from './input';
 import { paceFor, trainingPaces, vdotFromEasyPace, vdotFromPerformance } from './paces';
+import { deloadSessions } from './periodisation/deload';
 import { enduranceWeeks } from './periodisation/endurance';
 import { M7_SCENARIOS } from './periodisation/scenarios';
+import { taperSessions, taperWeeks } from './periodisation/taper';
 import { ENDURANCE } from './rules/endurance';
+import { TARGETS } from './rules/deload';
 import { ROUGH_GUIDE } from './running';
 import { SCENARIO_START, SCENARIOS } from './scenarios';
 import type { Draft, GenerateOptions, StageContext } from './stage';
@@ -202,6 +205,44 @@ describe('paces from current fitness', () => {
 		});
 	});
 
+	it('does not throw on a 5K in 4:00:00: the told easy pace sets the paces', () => {
+		const profile = lifterWith((races) => [
+			{
+				...races[0]!,
+				distance: '5k' as const,
+				distanceMetres: 5000,
+				timeSeconds: 4 * 60 * 60,
+				racedOn: '2026-11-01'
+			}
+		]);
+		const plan = generateProgram(inputOf(profile), OPTIONS);
+		expect(decisionOf(plan, 'run_pace_source').ruleKey).toBe('running.paces_from_told');
+		const easy = plan.blocks[0]!.weeks.flatMap(runsIn).find((r) => r.type === 'easy_run')!;
+		expect(paceOf(easy.segments[0]!)).toEqual([
+			...paceFor('easy', trainingPaces(vdotFromEasyPace(330)))
+		]);
+	});
+
+	it('paces from an older good race when the only race in the 26 weeks is too slow to pace', () => {
+		const profile = lifterWith((races) => [
+			{
+				...races[0]!,
+				distance: '5k' as const,
+				distanceMetres: 5000,
+				timeSeconds: 4 * 60 * 60,
+				racedOn: '2026-11-01'
+			},
+			{ ...races[0]!, racedOn: '2026-03-01' }
+		]);
+		const plan = generateProgram(inputOf(profile), OPTIONS);
+		expect(decisionOf(plan, 'run_pace_source')).toMatchObject({
+			ruleKey: 'paces.vdot',
+			why: expect.stringContaining(`by Daniels’ formula${ROUGH_GUIDE.old}.`)
+		});
+		const easy = plan.blocks[0]!.weeks.flatMap(runsIn).find((r) => r.type === 'easy_run')!;
+		expect(paceOf(easy.segments[0]!)).toEqual([...paceFor('easy', TEN_K_PACES)]);
+	});
+
 	it('paces an added run from the same VDOT, on the day it is added', () => {
 		const week: WeekPlan = {
 			kind: 'build',
@@ -268,6 +309,28 @@ describe('marathon pace on steady segments', () => {
 		for (const run of runsIn(race)) {
 			expect(run.segments.map((s) => s.kind)).not.toContain('steady');
 		}
+	});
+
+	it('drops the marathon-pace words when a deload eases the steady segment or a taper cuts it', () => {
+		const peak = marathonBlock('marathon_peak').block.weeks[0]!;
+		const long = longRunOf(peak)!;
+		const eased = deloadSessions(peak, TARGETS, () => true).find(
+			(s): s is RunSessionPlan => s.kind === 'run' && s.date === long.date
+		)!;
+		expect(eased.segments.map((s) => s.kind)).toEqual(['long', 'easy']);
+		expect(eased.instructions).toBeNull();
+
+		const taper = marathonBlock('marathon_taper').block;
+		const raceOn = M7_SCENARIOS.runnerLifter().goals[0]!.eventDate!;
+		const first = longRunOf(taper.weeks[0]!)!;
+		const cut = taperSessions(
+			taper.weeks,
+			taperWeeks('marathon', 'primary', raceOn)
+		)[0]!.sessions.find((s): s is RunSessionPlan => s.kind === 'run' && s.date === first.date)!;
+		const steadyOf = (run: RunSessionPlan) =>
+			run.segments.find((s) => s.kind === 'steady')!.distanceMetres!;
+		expect(steadyOf(cut)).toBeLessThan(steadyOf(first));
+		expect(cut.instructions).toBeNull();
 	});
 
 	it('gives a first program no marathon-pace work', () => {

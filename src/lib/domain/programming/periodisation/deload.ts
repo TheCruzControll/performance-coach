@@ -381,7 +381,9 @@ function deloadOne(
 				session.title === SESSION_TYPE_LABEL[session.type]
 					? SESSION_TYPE_LABEL[type]
 					: session.title,
-			intensity: eased ? ('easy' as const) : session.intensity
+			intensity: eased ? ('easy' as const) : session.intensity,
+			// The marathon-pace words name a steady segment this deload has just eased.
+			instructions: eased && session.source === 'generator' ? null : session.instructions
 		};
 		return retimed(out, session.estMinutes * factor, rpe);
 	}

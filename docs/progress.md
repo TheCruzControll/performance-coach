@@ -32,9 +32,9 @@ runs the criteria and updates milestones.md.
 ## Recently merged
 
 - Runs are paced from current fitness: the best race of the last 26 weeks sets every pace by its
-  VDOT (Daniels' formula), an older or undated race as a rough guide, else the told easy pace's
-  VDOT. A run the coach adds is paced the same way. In a marathon build, peak or taper week of a
-  next block, the long run closes at marathon pace.
+  VDOT (Daniels' formula); a race 26 to 52 weeks old, or an undated one when no race has a date, is
+  a rough guide; else the told easy pace's VDOT. A run the coach adds is paced the same way. In a
+  marathon build, peak or taper week of a next block, the long run closes at marathon pace.
 - Progress and the reviews judge an M7 week by the targets its own plan set: a hypertrophy week by
   its own sets per muscle group, a maintenance or fight-camp week by its dose, a secondary strength
   goal by the lower half of its band, and the average RPE by the week's own cap. M3's programs read
