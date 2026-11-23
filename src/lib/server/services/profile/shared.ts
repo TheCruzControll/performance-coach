@@ -28,8 +28,8 @@ import {
 	type RaceRow
 } from '../../db';
 
-/** Who made a change (stored with goal history). `log` is the weight screens' source. */
-export type ChangeSource = 'onboarding' | 'profile' | 'coach' | 'log';
+/** Who made a change (stored with goal history; the coach uses `coach` from M5). */
+export type ChangeSource = 'onboarding' | 'profile' | 'coach';
 
 export interface ProfileDeps {
 	db?: Executor;

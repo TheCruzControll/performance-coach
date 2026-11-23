@@ -196,3 +196,43 @@ describe('weight entries', () => {
 		});
 	});
 });
+
+describe('body weight and target', () => {
+	const body = (overrides: Record<string, unknown> = {}) => ({
+		weightUnit: 'kg',
+		nutritionPhase: 'cut',
+		bodyWeight: 82.4,
+		targetWeight: 78,
+		...overrides
+	});
+
+	it('takes up to 2 decimals on the body weight and the target, in either unit', () => {
+		expect(validate(bodySchema, body({ bodyWeight: 82.25, targetWeight: 78.5 }))).toMatchObject({
+			ok: true
+		});
+		expect(validate(bodySchema, body({ weightUnit: 'lb', bodyWeight: 180.25 }))).toMatchObject({
+			ok: true
+		});
+	});
+
+	it('refuses a third decimal at the field that has it', () => {
+		expect(validate(bodySchema, body({ bodyWeight: 82.456 }))).toEqual({
+			ok: false,
+			errors: { bodyWeight: 'Use at most 2 decimals' }
+		});
+		expect(validate(bodySchema, body({ targetWeight: 78.005 }))).toEqual({
+			ok: false,
+			errors: { targetWeight: 'Use at most 2 decimals' }
+		});
+	});
+
+	it('reports the range before the decimals, one message per field', () => {
+		expect(validate(bodySchema, body({ bodyWeight: 20.123, targetWeight: 78.005 }))).toEqual({
+			ok: false,
+			errors: {
+				bodyWeight: 'Between 25 and 350 kg',
+				targetWeight: 'Use at most 2 decimals'
+			}
+		});
+	});
+});

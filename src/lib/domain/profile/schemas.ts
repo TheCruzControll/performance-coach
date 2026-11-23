@@ -534,6 +534,10 @@ export type ScheduleData = z.output<typeof scheduleSchema>;
 
 export { BODY_WEIGHT_RANGE };
 
+/** At most 2 decimals, the scale of the numeric(6,2) weight columns. */
+const atMostTwoDecimals = (value: number) =>
+	Math.abs(value * 100 - Math.round(value * 100)) <= 1e-6;
+
 const birthYearRange = () => {
 	const year = new Date().getFullYear();
 	return [year - 100, year - 10] as const;
@@ -565,10 +569,18 @@ export const bodySchema = z
 			const [min, max] = range;
 			for (const key of ['bodyWeight', 'targetWeight'] as const) {
 				const v: unknown = b[key];
-				if (typeof v === 'number' && (v < min || v > max)) {
+				if (typeof v !== 'number') continue;
+				if (v < min || v > max) {
 					ctx.addIssue({
 						code: 'custom',
 						message: `Between ${min} and ${max} ${b.weightUnit}`,
+						path: [key],
+						input: v
+					});
+				} else if (!atMostTwoDecimals(v)) {
+					ctx.addIssue({
+						code: 'custom',
+						message: 'Use at most 2 decimals',
 						path: [key],
 						input: v
 					});
@@ -607,7 +619,7 @@ export const weightEntrySchema = (today: string) =>
 							path: ['value'],
 							input: value
 						});
-					} else if (Math.abs(value * 100 - Math.round(value * 100)) > 1e-6) {
+					} else if (!atMostTwoDecimals(value)) {
 						ctx.addIssue({
 							code: 'custom',
 							message: 'Use at most 2 decimals',
