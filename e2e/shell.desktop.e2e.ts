@@ -361,10 +361,7 @@ test.describe('the content column and its chrome', () => {
 		// No service worker, so the routes below hold on every engine.
 		test.use({ serviceWorkers: 'block' });
 
-		test('Security’s offline sign-out toast is centred over the column', async ({
-			page,
-			context
-		}) => {
+		test('a toast starts at the column’s text edge, at its foot', async ({ page, context }) => {
 			await page.goto('/profile/security');
 			await page.waitForLoadState('networkidle');
 			// Never reach the server: this browser's session is shared with other specs.
@@ -374,7 +371,17 @@ test.describe('the content column and its chrome', () => {
 			const toast = toastWith(page, 'Can’t reach the server to sign out');
 			await expect(toast).toBeVisible();
 			await expectMainCentred(page, await tokenPx(page, '--content-readable'));
-			await expectCentredOver(page, toast, mainOf(page));
+			// Paper, 14 · State, toast: one 48 px line at the column's text edge, 40 px over the
+			// window's foot, as wide as its words.
+			await toast.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+			const [line, main] = [await boxOf(toast), await boxOf(mainOf(page))];
+			const gutter = await tokenPx(page, '--gutter');
+			expect(Math.abs(line.x - (main.x + gutter))).toBeLessThanOrEqual(1);
+			expect(
+				Math.abs(page.viewportSize()!.height - (line.y + line.height) - 40)
+			).toBeLessThanOrEqual(1);
+			expect(Math.abs(line.height - 48)).toBeLessThanOrEqual(1);
+			expect(line.width).toBeLessThan(main.width);
 			await context.setOffline(false);
 		});
 

@@ -143,6 +143,14 @@ test('archive leaves Recent with an Undo toast, and Undo brings the conversation
 	const toast = page.locator('.toast', { hasText: 'Conversation archived' });
 	await expect(toast).toBeVisible();
 	await captureScreen(page, testInfo, 'coach-archived-undo');
+	// The composer lifts it: one 52 px line, clear of the composer's top edge by 8 px or more.
+	await toast.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+	const [line, composer] = [
+		(await toast.boundingBox())!,
+		(await page.getByTestId('composer').boundingBox())!
+	];
+	expect(line.y + line.height).toBeLessThanOrEqual(composer.y - 8);
+	expect(Math.abs(line.height - 52)).toBeLessThanOrEqual(1);
 
 	await toast.getByRole('button', { name: 'Undo' }).click();
 	await expect(threadRows(page)).toHaveCount(1);

@@ -1,167 +1,110 @@
 <!--
   @component
-  Designed empty state: a quiet glyph medallion, a clear title, one or two sentences of
-  guidance and (optionally) a single next action. The title is left out where the heading just
-  above already says it (onboarding's goals step), so a screen never reads the same line twice.
-  Centred by default; `align="start"` lines it up with a left-aligned page title above it.
+  An empty or failed part of a screen (Paper, 10 · States): one sentence that says what is true,
+  a line on what to do about it, and at most one action. No glyph, no box: Instrument v2 has no
+  medallion. The title is left out where the heading just above already says it (onboarding's
+  goals step), so a screen never reads the same line twice. Lined up with the text above it by
+  default; `align="center"` for a state alone in a sheet or a window.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { IconName } from '../icons/icons';
-	import Icon from './Icon.svelte';
 
 	interface Props {
-		icon: IconName;
+		/**
+		 * @deprecated v2 states have no glyph: accepted and not drawn. Removed when the last
+		 * screen row drops it.
+		 */
+		icon?: IconName;
 		/** Omit only when the heading the state sits under already says it. */
 		title?: string;
 		description?: string;
+		/** @deprecated Only the glyph used it. Accepted and not drawn. */
 		tone?:
 			'accent' | 'neutral' | 'strength' | 'running' | 'combat' | 'hypertrophy' | 'conditioning';
+		/** Inside a list, a card or a sheet: a 17 px title in place of the 26 px one. */
 		compact?: boolean;
-		/** 'start' under a left-aligned page title (the error view in the app shell). */
 		align?: 'center' | 'start';
+		/** One action. A screen that needs two puts the second behind a row or a sheet. */
 		actions?: Snippet;
 		'data-testid'?: string;
 	}
 
 	let {
-		icon,
+		icon: _icon,
+		tone: _tone,
 		title,
 		description,
-		tone = 'accent',
 		compact = false,
-		align = 'center',
+		align = 'start',
 		actions,
 		'data-testid': testId
 	}: Props = $props();
 </script>
 
+<!-- `start` draws nothing (it is the default); src/routes/error-view.test.ts reads it until v2/24b. -->
 <div
 	class="empty"
 	class:compact
+	class:center={align === 'center'}
 	class:start={align === 'start'}
-	data-tone={tone}
 	data-testid={testId}
 >
-	<div class="medallion" aria-hidden="true">
-		<span class="ring"></span>
-		<Icon name={icon} size={compact ? 22 : 28} />
-	</div>
-	<div class="copy">
-		{#if title}<h2 class="title">{title}</h2>{/if}
-		{#if description}<p class="description">{description}</p>{/if}
-	</div>
+	{#if title}<h2 class="title">{title}</h2>{/if}
+	{#if description}<p class="description">{description}</p>{/if}
 	{#if actions}<div class="actions">{@render actions()}</div>{/if}
 </div>
 
 <style>
+	/* Paper's state block: the sentence, 8 px, the line on what to do, then the action. */
 	.empty {
-		--tone: var(--color-accent-text);
 		display: grid;
-		justify-items: center;
-		gap: var(--space-4);
-		padding: var(--space-8) var(--space-4);
-		text-align: center;
-	}
-
-	.compact {
-		gap: var(--space-3);
-		padding: var(--space-6) var(--space-2);
-	}
-
-	/* Lined up with the page title above it: its text starts where the title does. */
-	.start {
 		justify-items: start;
-		padding-inline: 0;
+		gap: var(--space-2);
+		padding: var(--space-6) 0;
 		text-align: start;
 	}
 
-	.start .actions {
-		justify-content: flex-start;
-	}
-
-	.empty[data-tone='neutral'] {
-		--tone: var(--color-text-secondary);
-	}
-	.empty[data-tone='strength'] {
-		--tone: var(--color-strength);
-	}
-	.empty[data-tone='running'] {
-		--tone: var(--color-running);
-	}
-	.empty[data-tone='combat'] {
-		--tone: var(--color-combat);
-	}
-	.empty[data-tone='hypertrophy'] {
-		--tone: var(--color-hypertrophy);
-	}
-	.empty[data-tone='conditioning'] {
-		--tone: var(--color-conditioning);
-	}
-
-	.medallion {
-		position: relative;
-		display: grid;
-		place-items: center;
-		width: 4.5rem;
-		height: 4.5rem;
-		border-radius: 50%;
-		color: var(--tone);
-		background: radial-gradient(
-			circle at 50% 35%,
-			color-mix(in srgb, var(--tone) 18%, transparent),
-			color-mix(in srgb, var(--tone) 4%, transparent) 70%
-		);
-	}
-
-	.compact .medallion {
-		width: 3.5rem;
-		height: 3.5rem;
-	}
-
-	.ring {
-		position: absolute;
-		inset: 0;
-		border-radius: 50%;
-		border: 1px solid color-mix(in srgb, var(--tone) 30%, transparent);
-	}
-
-	.ring::after {
-		content: '';
-		position: absolute;
-		inset: -9px;
-		border-radius: 50%;
-		border: 1px dashed color-mix(in srgb, var(--tone) 16%, transparent);
-	}
-
-	.copy {
-		display: grid;
-		gap: var(--space-2);
-		max-width: 30ch;
+	.center {
+		justify-items: center;
+		text-align: center;
 	}
 
 	.title {
-		font-size: var(--text-xl);
-		font-weight: var(--weight-bold);
+		font: var(--type-sheet-title);
 		letter-spacing: var(--tracking-tight);
-		line-height: var(--leading-snug);
-	}
-
-	.compact .title {
-		font-size: var(--text-lg);
+		color: var(--color-text);
 	}
 
 	.description {
-		font-size: var(--text-sm);
-		line-height: var(--leading-normal);
+		max-width: 34rem;
+		font: var(--type-body);
 		color: var(--color-text-secondary);
+	}
+
+	.compact {
+		gap: var(--space-1);
+		padding: var(--space-4) 0;
+	}
+
+	.compact .title {
+		font: var(--type-row);
+		font-weight: var(--weight-semibold);
+		letter-spacing: normal;
+	}
+
+	.compact .description {
+		font: var(--type-secondary);
 	}
 
 	.actions {
 		display: flex;
 		flex-wrap: wrap;
-		justify-content: center;
 		gap: var(--space-2);
-		margin-top: var(--space-1);
+		margin-top: var(--space-5);
+	}
+
+	.compact .actions {
+		margin-top: var(--space-3);
 	}
 </style>

@@ -18,14 +18,17 @@
 	let { open = $bindable(), count, onconfirm }: Props = $props();
 
 	const changes = $derived(count === 1 ? '1 workout change' : `${count} workout changes`);
-	const have = $derived(count === 1 ? 'hasn’t' : 'haven’t');
-	const them = $derived(count === 1 ? 'it' : 'them');
+	const words = $derived(
+		count === 1
+			? 'It hasn’t reached the server yet. Signing out removes it from this device.'
+			: 'They haven’t reached the server yet. Signing out removes them from this device.'
+	);
 </script>
 
 <BottomSheet
 	bind:open
-	title="Sign out and delete unsynced changes?"
-	description="{changes} on this device {have} reached the server. Signing out deletes {them}."
+	title="Sign out and delete {changes}?"
+	description={words}
 	data-testid="signout-pending-sheet"
 >
 	<div class="choices">

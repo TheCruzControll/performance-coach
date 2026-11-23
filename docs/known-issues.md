@@ -52,6 +52,11 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
 - **`ListRow` still takes `icon` and `tone`, and draws neither.** v2 rows have no icon tiles, so
   both props are deprecated and accepted for the screens that still pass them.
   Closes when the last screen row drops them and `src/lib/ui/components/ListRow.svelte` removes them.
+- **`EmptyState` and `Notice` still take `icon` (and `tone`), and draw neither.** Closes when the
+  last screen row drops them.
+- **Some screens still offer two actions in one `EmptyState`.** `SpecificsEditor.svelte:265`,
+  `ReviewPrompt.svelte:58`, `KnowsSheet.svelte:68`, `StartFlow.svelte:128`,
+  `EmptyWorkout.svelte:18`. Each closes with its screen row (v2/22, v2/14, v2/20, v2/10).
 - **Cards, stat tiles, chips and segmented controls remain on screens until their v2 screen rows.**
   `v2/02d` flattened them and the tabs and badges too: no fill, pill, tint or amber, with their
   padding, borders and line boxes held, so no screen moves. v2 draws none of them, so each screen row
@@ -61,10 +66,9 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
 - **On Train, the Rest timer row gains a hairline on its first hover.** Prefetch mounts the sheet's
   dialog as a sibling of the row, so the row's `:last-child` rule breaks. It stays until the Train
   screen row.
-- **Toasts are at the top; v2 puts them above the tab bar (`v2/24`).** `v2/02c` restyled them and
-  kept them at the top: above the tab bar they would cover the resume line, the composer and the
-  logger. From 1024 px they sit over the column (`v2/03c`), not yet at its foot as Paper draws
-  them. Closes when `v2/24` moves them.
+- **A toast clears a profile section's Save bar through a selector in `Toaster.svelte`.**
+  `[data-testid='save-bar']` stands in until the section screen sets `--toast-lift` itself.
+  Closes in `v2/22` (`src/routes/(app)/profile/[section]/SectionScreen.svelte`).
 - **The resume line still shows a workout in progress on every screen and 'Continue here' on
   Today; `v2/06` moves both into Today's hero.** Paper draws the line for waiting changes only
   (3 · Today), so its active and remote states are derived from it until then. Closes when Today

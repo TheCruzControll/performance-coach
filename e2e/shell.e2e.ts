@@ -778,6 +778,8 @@ test.describe('tabs answer before the server does', () => {
 		// A copy, inert and hidden from assistive technology, that nothing can find by id.
 		await expect(held.locator(':scope > [inert][aria-hidden="true"]')).toHaveCount(1);
 		await expect(held.locator('[id], [data-testid]')).toHaveCount(0);
+		// Dimmed while the new one loads (Paper, 10 · States, "While a tab waits").
+		await expect(held.locator(':scope > .last')).toHaveCSS('opacity', '0.4');
 		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toHaveCount(0);
 		await expect(nav.getByRole('link', { name: 'Today' })).toHaveAttribute('aria-current', 'page');
 

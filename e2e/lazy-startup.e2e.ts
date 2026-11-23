@@ -62,7 +62,8 @@ test('toasts need no network: one shown offline appears whole, and reconnecting 
 	await context.setOffline(true);
 	await show.click();
 	const offline = toastWith(page, 'Set logged');
-	await expect(offline.getByRole('button', { name: 'Dismiss notification' })).toBeVisible();
+	// A timed toast leaves by itself: it has no ×.
+	await expect(offline.getByRole('button')).toHaveCount(0);
 	await expect(offline).toHaveCSS('animation-name', /toast-in/);
 
 	await context.setOffline(false);
@@ -70,7 +71,6 @@ test('toasts need no network: one shown offline appears whole, and reconnecting 
 	await expect(offline).toHaveCount(1);
 	await page.getByRole('button', { name: 'Error toast', exact: true }).click();
 	const next = toastWith(page, 'Sync failed');
-	await expect(next.getByRole('button', { name: 'Dismiss notification' })).toBeVisible();
 	await expect(next.getByRole('button', { name: 'Try again' })).toBeVisible();
 	await expect(offline).toHaveCount(0, { timeout: 10_000 });
 

@@ -127,6 +127,12 @@
 		width: min(calc(100% - var(--nav-inset-left) - 2 * var(--gutter)), var(--content-column));
 	}
 
+	/* A toast rises over the composer at rest (Toaster.svelte): its one line, 44 px with 6 px
+	   above and below and its 1 px edge, and the 12 px under it. */
+	:global(:root:has(.composer.chrome)) {
+		--toast-lift: calc(var(--touch-target) + 2 * var(--space-1-5) + 2px + var(--space-3));
+	}
+
 	/* From 1024 px over <main>, wherever the column rule puts it (tokens.css --column-start). */
 	@media (width >= 64rem) {
 		.chrome {

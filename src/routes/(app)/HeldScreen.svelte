@@ -41,7 +41,7 @@
 	<p class="visually-hidden" role="status">Loading {label}</p>
 	{#if last}
 		<div
-			class="column"
+			class="column last"
 			inert
 			aria-hidden="true"
 			{@attach (node) => node.replaceChildren(...(last ?? []))}
@@ -49,10 +49,14 @@
 	{:else}
 		<div class="column" inert aria-hidden="true">
 			<PageHeader title={label} eyebrow={EYEBROW_LINE} />
-			<div class="cards">
-				<Skeleton height="11rem" radius="var(--radius-lg)" />
-				<Skeleton height="6.5rem" radius="var(--radius-lg)" />
-				<Skeleton height="6.5rem" radius="var(--radius-lg)" />
+			<!-- Paper, 10 · States, "Loading": the known words stay, short bars stand in for the rest. -->
+			<div class="bars">
+				<Skeleton width="13rem" height="0.75rem" radius="var(--radius-full)" />
+				<Skeleton width="8.25rem" height="0.75rem" radius="var(--radius-full)" />
+			</div>
+			<div class="bars tight">
+				<Skeleton width="min(18.5rem, 100%)" height="0.75rem" radius="var(--radius-full)" />
+				<Skeleton width="11.5rem" height="0.75rem" radius="var(--radius-full)" />
 			</div>
 		</div>
 	{/if}
@@ -94,9 +98,20 @@
 		padding: 0 max(var(--gutter), var(--safe-right)) 0 max(var(--gutter), var(--safe-left));
 	}
 
-	.cards {
+	/* The last view, dimmed while the new one loads (Paper, "While a tab waits": 40 %). */
+	.last {
+		opacity: 0.4;
+	}
+
+	.bars {
 		display: grid;
-		gap: var(--space-4);
+		gap: var(--space-5);
+		padding-top: var(--space-7);
+	}
+
+	.bars.tight {
+		gap: var(--space-3-5);
+		padding-top: var(--space-11);
 	}
 
 	/* Placed as <main> is: its own --main-max, not the root's, which follows the screen being

@@ -332,11 +332,8 @@ test.describe('/design → Coach', () => {
 		await expect(page.getByTestId('notice-chunk_failed')).toHaveAttribute('role', 'alert');
 		await expect(page.getByTestId('notice-rate_limited')).toHaveAttribute('role', 'status');
 		await expect(page.getByTestId('notice-not_launched')).toHaveAttribute('role', 'status');
-		// Each notice has its own mark beside its words.
-		await expect(page.getByTestId('notice-offline').locator('.glyph use')).toHaveAttribute(
-			'href',
-			/#wifi-off$/
-		);
+		// Each notice says what happened in its words, with no mark.
+		await expect(page.getByTestId('notice-offline').locator('svg')).toHaveCount(0);
 		await expect(page.getByTestId('notice-empty').getByRole('heading')).toHaveText(
 			'No conversations yet'
 		);
