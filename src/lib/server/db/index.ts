@@ -18,3 +18,5 @@ export * from './schema';
 export type { Database, Executor, Schema } from './types';
 export { createProfileRepository } from './repositories/profile';
 export type * from './repositories/profile';
+export { createWeightRepository } from './repositories/weight';
+export type * from './repositories/weight';

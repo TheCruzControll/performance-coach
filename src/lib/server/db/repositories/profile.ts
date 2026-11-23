@@ -113,26 +113,7 @@ export function createProfileRepository(db: Executor) {
 			return row ?? null;
 		},
 
-		// ---- body weight ---------------------------------------------------------------------
-		async insertBodyWeight(values: typeof bodyWeightEntries.$inferInsert) {
-			const [row] = await db.insert(bodyWeightEntries).values(values).returning();
-			return row!;
-		},
-
-		/** Replace the entry for a day (one weigh-in per day from forms). */
-		async upsertBodyWeightForDay(values: typeof bodyWeightEntries.$inferInsert) {
-			await db
-				.delete(bodyWeightEntries)
-				.where(
-					and(
-						eq(bodyWeightEntries.ownerId, values.ownerId),
-						eq(bodyWeightEntries.measuredOn, values.measuredOn),
-						eq(bodyWeightEntries.source, values.source)
-					)
-				);
-			return this.insertBodyWeight(values);
-		},
-
+		// ---- body weight (writes live in repositories/weight.ts) -----------------------------
 		async listBodyWeight(ownerId: string, limit = 30): Promise<BodyWeightRow[]> {
 			return db
 				.select()
