@@ -790,7 +790,7 @@ hybrid, injured shoulder, dumbbells only, the journey, the minimal onboarding pr
   the same input and for reordered profile rows, with no clock or randomness; a Thursday start plans
   Thursday to Sunday only; no avoid finding a generated week keeps, judged by `evaluateWeek` with
   the real week before, without a clash-keeping decision citing it (one whose rule is in
-  `CLASH_KEPT_RULES`, from `src/lib/domain/training/vocabulary.ts`); every decision's kind is in
+  `CLASH_KEPT_RULES`, from `src/lib/domain/programming/decisions.ts`); every decision's kind is in
   `DECISION_KINDS` and has a rationale; the `program_purpose` words. The same holds for the
   scenarios planned from other Mondays (`generate-schedule.test.ts`).
 - **Composition** (`generate.test.ts`, `index.test.ts`): the stages run once each in the documented

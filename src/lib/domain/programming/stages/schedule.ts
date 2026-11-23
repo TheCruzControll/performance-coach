@@ -51,8 +51,9 @@ import type {
 	SessionPlan,
 	WeekPlan
 } from '../../training/types.ts';
-import { CLASH_KEPT_RULES, type WeekKind } from '../../training/vocabulary.ts';
+import type { WeekKind } from '../../training/vocabulary.ts';
 import { sessionPath } from '../commitments.ts';
+import { CLASH_KEPT_RULES } from '../decisions.ts';
 import type { FactsFor } from '../decisions.ts';
 import { clip } from '../demand.ts';
 import { goalOf } from '../evaluate/concurrent.ts';

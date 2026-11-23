@@ -17,8 +17,8 @@
 import type { IsoDate } from '../../../domain/calendar';
 import { weekdayOf } from '../../../domain/calendar';
 import { WEEKDAY_INFO } from '../../../domain/profile/catalog';
+import { CLASH_KEPT_RULES } from '../../../domain/programming/decisions';
 import {
-	CLASH_KEPT_RULES,
 	DECIDER_LABEL,
 	DECISION_KIND_LABEL,
 	type Decider,
@@ -42,8 +42,7 @@ export const WHY_KINDS = [
 ] as const satisfies readonly DecisionKind[];
 
 /**
- * The clash-keeping decisions among `rows` (CLASH_KEPT_RULES, in the domain's vocabulary), each
- * with its sentence and sessions.
+ * The clash-keeping decisions among `rows` (CLASH_KEPT_RULES), each with its sentence and sessions.
  */
 function clashTradeoffs(
 	rows: readonly {
