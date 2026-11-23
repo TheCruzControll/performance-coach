@@ -169,7 +169,7 @@ describe('the next block from the season', () => {
 			expect(long?.kind === 'run' && long.instructions).toContain('at marathon pace');
 		}
 		expect(evidenceOf(r, 'quality_session')).toEqual([
-			expect.objectContaining({ ruleKey: 'endurance.marathon_pace' })
+			expect.objectContaining({ ruleKey: 'endurance.race_work' })
 		]);
 
 		const stronger = idOf(r.profile, 'Get stronger');
@@ -282,8 +282,10 @@ describe('the next block from the season', () => {
 		// multiGoal's hash is unchanged. generator-volume (perfo-programming/5) moved hypertrophyBlock's
 		// again: its building weeks are balanced to their own setsPerGroup. generator-running
 		// (perfo-programming/6) moved journeyHybrid's and multiGoal's: their paces come from a VDOT,
-		// journeyHybrid's told easy pace's and multiGoal's 10K's.
-		expect(hashes).toEqual(['5b7d9036458c6ba8', '845b61773662e988', '072bf5a530fdb539']);
+		// journeyHybrid's told easy pace's and multiGoal's 10K's. generator-running's race plans
+		// (perfo-programming/7) moved multiGoal's again: its marathon trains alongside the fight camp,
+		// so its running holds its dose.
+		expect(hashes).toEqual(['5b7d9036458c6ba8', 'a4e882e5a3d893c1', '072bf5a530fdb539']);
 	});
 });
 

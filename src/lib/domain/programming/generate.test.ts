@@ -274,7 +274,9 @@ const GOLDEN: Record<ScenarioKey, readonly [monday: string, thursday: string]> =
  * were: no M3 scenario's first block carries mainLifts, and journey's dosed weeks already sit at or
  * under the dose's cap. generator-volume ('perfo-programming/5') changed hybrid's: its secondary
  * strength goal is held to the lower half of its band, and runs paced from current fitness
- * (generator-running, 'perfo-programming/6': hybrid's paces from its VDOT). A later GENERATOR_ID
+ * (generator-running, 'perfo-programming/6': hybrid's paces from its VDOT). generator-running's race
+ * plans ('perfo-programming/7') left them as they were: journey's secondary marathon is time-based,
+ * so it keeps M3's week. A later GENERATOR_ID
  * bump changes them, and its PR lists each.
  */
 const GOLDEN_SEASON: Record<ScenarioKey, readonly [monday: string, thursday: string]> = {
