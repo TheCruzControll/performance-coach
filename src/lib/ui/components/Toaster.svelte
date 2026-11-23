@@ -2,7 +2,8 @@
   @component
   Renders the toast queue in a polite live region at the top of the viewport (clear of the
   thumb zone and the bottom navigation), centred over the content column beside the rail. Mount
-  once in the root layout.
+  once in the root layout. Instrument v2: a surface-2 line; only a danger toast has a leading
+  icon; an undo is a strong text link at the end.
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
@@ -36,15 +37,15 @@
 			inert={item.leaving}
 			onanimationend={() => item.leaving && remove(item.id)}
 		>
-			<Icon
-				name={item.tone === 'danger' ? 'alert' : item.tone === 'positive' ? 'check' : 'info'}
-				size={20}
-			/>
+			{#if item.tone === 'danger'}
+				<span class="alert"><Icon name="alert" size={20} /></span>
+			{/if}
 			<p class="message">{item.message}</p>
 			{#if item.action}
 				<button
 					type="button"
-					class="action"
+					class="action text-link"
+					data-strong
 					onclick={() => {
 						item.action?.onclick();
 						toast.dismiss(item.id);
@@ -77,17 +78,18 @@
 		pointer-events: none;
 	}
 
+	/* A surface-2 line of 52 px: the 44 px dismiss is the tallest thing in it. */
 	.toast {
 		pointer-events: auto;
 		display: flex;
 		align-items: center;
 		gap: var(--space-3);
-		padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+		padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4-5);
 		min-height: 3.25rem;
-		border-radius: var(--radius-lg);
-		background: var(--color-surface-inverse);
-		color: var(--color-text-inverse);
-		box-shadow: var(--elevation-3);
+		border-radius: var(--radius-md);
+		background: var(--color-surface-2);
+		color: var(--color-text);
+		box-shadow: none;
 		/* Ease-out-cubic in; the same curve reversed (ease-in-cubic) out. */
 		animation: toast-in 260ms cubic-bezier(0.33, 1, 0.68, 1);
 	}
@@ -107,39 +109,32 @@
 		}
 	}
 
-	.toast[data-tone='positive'] :global(.icon) {
-		color: var(--color-positive);
-	}
-	.toast[data-tone='danger'] :global(.icon:first-child) {
+	.alert {
+		display: grid;
+		flex: none;
 		color: var(--color-danger);
 	}
 
 	.message {
 		flex: 1;
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		line-height: var(--leading-snug);
+		font: var(--type-secondary);
 	}
 
+	/* A strong text link (base.css .text-link[data-strong]): 600, underlined in its own colour. */
 	.action {
 		min-height: var(--touch-target);
 		padding: 0 var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-bold);
-		color: inherit;
-		text-decoration: underline;
-		text-underline-offset: 3px;
+		font: var(--type-secondary);
+		font-weight: var(--weight-semibold);
 	}
 
 	.dismiss {
 		display: grid;
+		flex: none;
 		place-items: center;
 		width: var(--touch-target);
 		height: var(--touch-target);
 		border-radius: var(--radius-full);
-		opacity: 0.6;
-	}
-	.dismiss:active {
-		opacity: 1;
+		color: var(--color-text-tertiary);
 	}
 </style>

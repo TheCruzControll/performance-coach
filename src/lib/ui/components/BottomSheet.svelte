@@ -201,7 +201,7 @@
 					<h2 id={`${id}-title`} class="title">{title}</h2>
 					{#if description}<p id={`${id}-desc`} class="description">{description}</p>{/if}
 				</div>
-				<IconButton icon="close" label="Close" variant="filled" size="sm" onclick={requestClose} />
+				<IconButton icon="close" label="Close" variant="ghost" size="sm" onclick={requestClose} />
 			</header>
 		</div>
 		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -289,16 +289,16 @@
 	.grab-zone {
 		flex: none;
 		touch-action: none;
-		padding: var(--space-2) var(--gutter) var(--space-2);
+		padding: var(--space-3) var(--gutter) 0;
 	}
 
 	.handle {
 		display: block;
 		width: 36px;
-		height: 5px;
-		margin: 0 auto var(--space-3);
-		border-radius: var(--radius-full);
-		background: var(--color-border-strong);
+		height: 4px;
+		margin: 0 auto var(--space-7);
+		border-radius: var(--radius-xs);
+		background: var(--color-handle);
 	}
 
 	.header {
@@ -315,13 +315,12 @@
 	}
 
 	.title {
-		font-size: var(--text-xl);
-		font-weight: var(--weight-bold);
+		font: var(--type-sheet-title);
 		letter-spacing: var(--tracking-tight);
 	}
 
 	.description {
-		font-size: var(--text-sm);
+		font: var(--type-secondary);
 		color: var(--color-text-secondary);
 	}
 
@@ -329,7 +328,7 @@
 		flex: 1;
 		overflow-y: auto;
 		overscroll-behavior: contain;
-		padding: var(--space-2) var(--gutter) var(--space-6);
+		padding: var(--space-4) var(--gutter) var(--space-6);
 	}
 
 	/* Inside the body: the sheet's edges would clip a ring drawn outside it. */
@@ -337,14 +336,16 @@
 		outline-offset: -2px;
 	}
 
+	/* The bottom is the home indicator's inset plus 10 px, at least 16 px (footer) or 24 px (body):
+	   an iPhone with an inset (34 px) gets 44 px. */
 	.footer {
 		flex: none;
-		padding: var(--space-3) var(--gutter) calc(var(--space-4) + var(--safe-bottom));
-		border-top: 1px solid var(--color-hairline);
+		padding: var(--space-3) var(--gutter)
+			max(var(--space-4), calc(var(--safe-bottom) + var(--space-2-5)));
 	}
 
 	.body:last-child {
-		padding-bottom: calc(var(--space-6) + var(--safe-bottom));
+		padding-bottom: max(var(--space-6), calc(var(--safe-bottom) + var(--space-2-5)));
 	}
 
 	/* A desktop window: a dialog centred in the window that fades in as it rises 8 px, with no
@@ -379,8 +380,23 @@
 			display: none;
 		}
 
+		/* The dialog keeps its spacing and its footer's hairline: the phone's v2 rhythm is for a
+		   sheet rising from the bottom edge, and the desktop panel is v2/03's. */
 		.grab-zone {
-			padding-top: var(--space-5);
+			padding: var(--space-5) var(--gutter) var(--space-2);
+		}
+
+		.body {
+			padding: var(--space-2) var(--gutter) var(--space-6);
+		}
+
+		.footer {
+			padding: var(--space-3) var(--gutter) calc(var(--space-4) + var(--safe-bottom));
+			border-top: 1px solid var(--color-hairline);
+		}
+
+		.body:last-child {
+			padding-bottom: calc(var(--space-6) + var(--safe-bottom));
 		}
 	}
 </style>

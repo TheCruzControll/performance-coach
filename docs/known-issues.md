@@ -42,11 +42,20 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   redesigns the set screen and removes both pins and that test's 56 px expectation. The steppers'
   text is pinned there too, at its pre-v2 size: the label at 13 px and the value at 56 px. Below a
   22 rem row (a 390 px phone), the v2 value would stack 12 px taller and the logger would grow.
-- **Thirteen files still style their own underlined links; screen rows move them to `.text-link`.**
-  The links in running text are styled by each file: ProposalCard, RichText, Notice, Toaster,
+- **Twelve files still style their own underlined links; screen rows move them to `.text-link`.**
+  The links in running text are styled by each file: ProposalCard, RichText, Notice,
   ReplanNotice, ProgramHeader, ArchivedSheet, KnowsSheet, ThreadList, the proposal detail, and the
-  three Train pages.
+  three Train pages. (Toaster adopted `.text-link` in `v2/02c`.)
   Closes when each screen row adopts `.text-link` (or `Button variant="link"` for a standalone action).
+- **`ListRow` still takes `icon` and `tone`, and draws neither.** v2 rows have no icon tiles, so
+  both props are deprecated and accepted for the screens that still pass them.
+  Closes when the last screen row drops them and `src/lib/ui/components/ListRow.svelte` removes them.
+- **On Train, the Rest timer row gains a hairline on its first hover.** Prefetch mounts the sheet's
+  dialog as a sibling of the row, so the row's `:last-child` rule breaks. It stays until the Train
+  screen row.
+- **Toasts are at the top; v2 puts them above the tab bar (`v2/03`).** `v2/02c` restyled them and
+  kept them at the top: above the tab bar they would cover the resume bar, the composer and the
+  logger. Closes when `v2/03` moves them with the shell.
 - **A taper splice's deload is judged by the tail's first range.** A taper spliced into a block
   (`splice` in `src/lib/domain/programming/periodisation/replan.ts`) gives the tail a new lineage,
   so the Strength view, the weekly review and the cycle review read the tail's own bands: its

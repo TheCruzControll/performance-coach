@@ -118,11 +118,11 @@ test.describe("Train's rest timer on a desktop", () => {
 		expect(box.x).toBeGreaterThanOrEqual(column.x - 1);
 		expect(box.x + box.width).toBeLessThanOrEqual(column.x + column.width + 1);
 
-		// Hover (its border) and focus-visible on the row.
+		// Hover (its tint) and focus-visible on the row.
 		await page.mouse.move(0, 0);
-		const rest = await style(row, 'border-color');
+		const rest = await style(row, 'background-color');
 		await row.hover();
-		await expect.poll(() => style(row, 'border-color')).not.toBe(rest);
+		await expect.poll(() => style(row, 'background-color')).not.toBe(rest);
 		await page.mouse.move(0, 0);
 		await page.getByTestId('open-plates').focus();
 		await page.keyboard.press('Tab');

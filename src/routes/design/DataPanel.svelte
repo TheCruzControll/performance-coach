@@ -48,16 +48,24 @@
 		</ul>
 	</Section>
 	<Section title="List row">
-		<ListRow
-			icon="plate"
-			tone="strength"
-			title="Plate calculator"
-			subtitle="Exact loading in kg or lb"
-			onclick={() => {}}
-		/>
-		<ListRow icon="timer" title="Rest timer" subtitle="Arrives with workout logging" disabled>
-			{#snippet trailing()}<Badge>Soon</Badge>{/snippet}
-		</ListRow>
+		<h3 class="group">Training</h3>
+		<ul class="list">
+			<li><ListRow title="Exercise library" onclick={() => {}} /></li>
+			<li>
+				<ListRow title="Plate calculator" subtitle="Exact loading in kg or lb" onclick={() => {}} />
+			</li>
+			<li><ListRow title="Units" value="kg, km" onclick={() => {}} /></li>
+			<li>
+				<ListRow title="Rest timer" subtitle="Arrives with workout logging" disabled>
+					{#snippet trailing()}<Badge>Soon</Badge>{/snippet}
+				</ListRow>
+			</li>
+		</ul>
+		<h3 class="group">Account</h3>
+		<ul class="list">
+			<li><ListRow title="Passkeys" aria-current="page" onclick={() => {}} /></li>
+			<li><ListRow title="Sign out" danger onclick={() => {}} /></li>
+		</ul>
 	</Section>
 </div>
 
@@ -81,6 +89,19 @@
 	}
 
 	.chips {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	/* A group heading: secondary type in tertiary text, as the v2 lists draw it. */
+	.group {
+		font: var(--type-secondary);
+		color: var(--color-text-tertiary);
+		letter-spacing: var(--tracking-normal);
+	}
+
+	.list {
 		margin: 0;
 		padding: 0;
 		list-style: none;

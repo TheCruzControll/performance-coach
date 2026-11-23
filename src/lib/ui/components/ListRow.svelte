@@ -1,9 +1,11 @@
 <!--
   @component
-  A tappable row for tools and destinations: tinted icon tile, title, one line of supporting
-  text and a trailing chevron (or a `trailing` snippet such as a "Soon" badge). Renders a link
-  with `href`, a button with `onclick`, or a static row when `disabled` (not yet available).
-  Full-width, ≥ 68 px tall: an easy thumb target.
+  A tappable row for tools and destinations (Instrument v2): a title, one line of supporting
+  text, an optional trailing value and a chevron (or a `trailing` snippet such as a "Soon"
+  badge). A hairline sits under each row but a list's last. Renders a link with `href`, a button
+  with `onclick`, or a static row when `disabled` (not yet available). `danger` draws the title in
+  the danger colour with no chevron ("Sign out"). Full-width, at least 60 px tall: an easy thumb
+  target.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -15,8 +17,17 @@
 	interface Props {
 		title: string;
 		subtitle?: string;
-		icon: IconName;
+		/**
+		 * @deprecated v2 rows have no icon tiles: the icon is accepted and not drawn. Removed when
+		 * the last screen row drops it.
+		 */
+		icon?: IconName;
+		/** @deprecated Only the icon tile used it, and v2 rows have none. Accepted and not drawn. */
 		tone?: Tone;
+		/** The trailing value text ("kg, km", "3"), before the chevron. */
+		value?: string;
+		/** The title in the danger colour, with no chevron ("Sign out"). */
+		danger?: boolean;
 		href?: string;
 		onclick?: (event: MouseEvent) => void;
 		/** Shown but not actionable yet; pair with a "Soon" badge in `trailing`. */
@@ -32,95 +43,101 @@
 	let {
 		title,
 		subtitle,
-		icon,
-		tone = 'accent',
+		icon: _icon,
+		tone: _tone,
+		value,
+		danger = false,
 		href,
 		onclick,
 		disabled = false,
 		trailing,
 		...rest
 	}: Props = $props();
-
-	const toneColor = $derived(
-		disabled
-			? 'var(--color-text-tertiary)'
-			: tone === 'accent'
-				? 'var(--color-accent-text)'
-				: `var(--color-${tone})`
-	);
 </script>
 
 {#snippet body()}
-	<span class="tile" style:--tone={toneColor} aria-hidden="true"
-		><Icon name={icon} size={22} /></span
-	>
 	<span class="text">
 		<span class="title">{title}</span>
 		{#if subtitle}<span class="subtitle">{subtitle}</span>{/if}
 	</span>
-	{#if trailing}{@render trailing()}{:else if !disabled}<span class="chevron"
-			><Icon name="chevron-right" size={20} /></span
+	{#if value}<span class="value">{value}</span>{/if}
+	{#if trailing}{@render trailing()}{:else if !disabled && !danger}<span class="chevron"
+			><Icon name="chevron-right" size={14} /></span
 		>{/if}
 {/snippet}
 
 {#if disabled}
-	<div class="row" aria-disabled="true" {...rest}>{@render body()}</div>
+	<div class="row" aria-disabled="true" data-danger={danger ? '' : undefined} {...rest}>
+		{@render body()}
+	</div>
 {:else if href}
-	<a class="row interactive" {href} {...rest}>{@render body()}</a>
+	<a class="row interactive" {href} data-danger={danger ? '' : undefined} {...rest}>
+		{@render body()}
+	</a>
 {:else}
-	<button type="button" class="row interactive" {onclick} {...rest}>{@render body()}</button>
+	<button
+		type="button"
+		class="row interactive"
+		{onclick}
+		data-danger={danger ? '' : undefined}
+		{...rest}
+	>
+		{@render body()}
+	</button>
 {/if}
 
 <style>
 	.row {
 		display: flex;
 		align-items: center;
-		gap: var(--space-3);
+		gap: var(--space-3-5);
 		width: 100%;
-		min-height: 4.25rem;
-		padding: var(--space-3) var(--space-4);
-		border-radius: var(--radius-lg);
-		border: 1px solid var(--color-border);
-		background: var(--color-surface-1);
-		box-shadow: var(--elevation-1);
+		min-height: 3.75rem;
+		padding: var(--space-2) 0;
+		border: 0;
+		border-radius: var(--radius-sm);
+		border-bottom: 1px solid var(--color-hairline);
+		background: transparent;
+		box-shadow: none;
 		color: var(--color-text);
 		text-align: left;
 	}
 
-	.interactive {
-		cursor: pointer;
-		transition:
-			transform var(--duration-fast) var(--ease-out),
-			border-color var(--duration-fast) var(--ease-standard);
+	/* The last row of a list has no hairline. A row is last when nothing follows it in its
+	   parent; in a list item (li) it is last when its item is the list's last item. */
+	.row:last-child {
+		border-bottom-color: transparent;
 	}
 
+	:global(li) > .row:last-child {
+		border-bottom-color: var(--color-hairline);
+	}
+
+	:global(li:last-child) > .row {
+		border-bottom-color: transparent;
+	}
+
+	.interactive {
+		cursor: pointer;
+	}
+
+	/* The tint reaches 8 px past the text (the box-shadow spread), so it never moves the layout. */
 	.interactive:active {
-		transform: scale(0.985);
-		border-color: var(--color-border-strong);
-		transition-duration: var(--duration-instant);
+		background: var(--color-surface-2);
+		box-shadow: 0 0 0 var(--space-2) var(--color-surface-2);
 	}
 
 	@media (hover: hover) and (pointer: fine) {
 		.interactive:hover {
-			border-color: var(--color-border-strong);
+			background: var(--color-surface-2);
+			box-shadow: 0 0 0 var(--space-2) var(--color-surface-2);
 		}
 	}
 
-	/* The open destination: an accent edge and a lifted surface, and aria-current says it too. */
+	/* The open destination: a tint, and aria-current says it too. */
 	.row[aria-current='page'] {
-		border-color: var(--color-accent-text);
 		background: var(--color-surface-2);
-	}
-
-	.tile {
-		display: grid;
-		flex: none;
-		place-items: center;
-		width: 2.5rem;
-		height: 2.5rem;
-		border-radius: var(--radius-md);
-		background: color-mix(in srgb, var(--tone) 14%, transparent);
-		color: var(--tone);
+		box-shadow: 0 0 0 var(--space-2) var(--color-surface-2);
 	}
 
 	.text {
@@ -130,12 +147,23 @@
 	}
 
 	.title {
+		font: var(--type-row);
+	}
+
+	.row[aria-current='page'] .title {
 		font-weight: var(--weight-semibold);
 	}
 
 	.subtitle {
-		font-size: var(--text-sm);
+		font: var(--type-secondary);
 		color: var(--color-text-secondary);
+	}
+
+	.value {
+		flex: none;
+		font: var(--type-secondary);
+		color: var(--color-text-secondary);
+		font-variant-numeric: tabular-nums;
 	}
 
 	.chevron {
@@ -143,11 +171,13 @@
 		color: var(--color-text-tertiary);
 	}
 
+	.row[data-danger] .title {
+		color: var(--color-danger);
+	}
+
 	/* Not available yet: quieter, without lowering text contrast below 4.5:1. */
 	.row[aria-disabled='true'] {
-		background: transparent;
-		box-shadow: none;
-		border-style: dashed;
+		border-style: solid;
 	}
 
 	.row[aria-disabled='true'] .title {

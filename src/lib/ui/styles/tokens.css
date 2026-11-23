@@ -179,7 +179,7 @@
 	--space-8: 2rem;
 	--space-9: 2.25rem; /* 36: between groups */
 	--space-10: 2.5rem;
-	--space-11: 2.75rem; /* 44: a sheet's bottom padding */
+	--space-11: 2.75rem; /* 44: no sheet's bottom now; sheets use the home inset plus 10 px */
 	--space-12: 3rem;
 	--space-14: 3.5rem; /* 56: the desktop column's inner padding */
 	--space-16: 4rem;

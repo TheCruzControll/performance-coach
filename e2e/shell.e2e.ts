@@ -463,6 +463,36 @@ test.describe('app shell on an iPhone viewport', () => {
 		).toBe('16px');
 	});
 
+	test('a phone sheet has the v2 handle and a 26 px Hubot title, in both themes', async ({
+		page
+	}) => {
+		test.skip(
+			isDesktopPage(page),
+			'the handle is hidden from 1024 px: the desktop dialog has none'
+		);
+		const sheetIn = async (theme: 'Light' | 'Dark') => {
+			await gotoHydrated(page, '/profile');
+			await page.getByTestId('theme-control').getByRole('radio', { name: theme }).click();
+			await gotoHydrated(page, '/train');
+			await page.getByTestId('open-plates').click();
+			const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
+			await expect(sheet).toBeVisible();
+			return sheet;
+		};
+
+		const dark = await sheetIn('Dark');
+		const handle = await dark.locator('.handle').boundingBox();
+		expect(handle!.width).toBeCloseTo(36, 0);
+		expect(handle!.height).toBeCloseTo(4, 0);
+		await expect(dark.locator('.handle')).toHaveCSS('background-color', 'rgb(58, 58, 63)');
+		const title = dark.locator('.title');
+		await expect(title).toHaveCSS('font-size', '26px');
+		expect(await title.evaluate((el) => getComputedStyle(el).fontFamily)).toMatch(/^"Hubot Sans"/);
+
+		const light = await sheetIn('Light');
+		await expect(light.locator('.handle')).toHaveCSS('background-color', 'rgb(201, 201, 195)');
+	});
+
 	test('no screen scrolls sideways', async ({ page }) => {
 		for (const path of [...TABS.map((t) => t.path), '/profile/security', '/design', '/offline']) {
 			await page.goto(path);

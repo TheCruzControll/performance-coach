@@ -1,4 +1,4 @@
-<!-- /design: feedback primitives — toasts, sheet, skeleton, empty state (loaded on demand). -->
+<!-- /design: feedback primitives — toasts, sheets, skeleton, empty state (loaded on demand). -->
 <script lang="ts">
 	import BottomSheet from '#lib/ui/components/BottomSheet.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
@@ -10,6 +10,7 @@
 	import { toast } from '#lib/ui/toast.svelte.ts';
 
 	let sheet = $state(false);
+	let confirm = $state(false);
 </script>
 
 <div class="grid">
@@ -17,6 +18,16 @@
 		<Button
 			variant="secondary"
 			onclick={() => toast.show('Set logged · 140 kg × 5 @ 8', { tone: 'positive' })}>Toast</Button
+		>
+		<Button variant="secondary" onclick={() => toast.show('Long run shortened to 45 min')}>
+			Neutral toast
+		</Button>
+		<Button
+			variant="secondary"
+			onclick={() =>
+				toast.show('Upper body moved to Saturday', {
+					action: { label: 'Undo', onclick: () => {} }
+				})}>Undo toast</Button
 		>
 		<Button
 			variant="secondary"
@@ -28,6 +39,9 @@
 		>
 		<Button variant="secondary" onclick={() => (sheet = true)} data-testid="open-sheet"
 			>Bottom sheet</Button
+		>
+		<Button variant="secondary" onclick={() => (confirm = true)} data-testid="open-confirm"
+			>Confirm sheet</Button
 		>
 	</div>
 	<Card eyebrow="Loading" title="Skeleton">
@@ -65,6 +79,22 @@
 	{/snippet}
 </BottomSheet>
 
+<BottomSheet
+	bind:open={confirm}
+	title="Discard this workout and the six sets you logged?"
+	data-testid="confirm-sheet"
+>
+	<p class="note">There's no undo.</p>
+	{#snippet footer()}
+		<div class="grid">
+			<Button variant="danger" size="lg" block onclick={() => (confirm = false)}
+				>Discard workout</Button
+			>
+			<Button variant="ghost" block onclick={() => (confirm = false)}>Keep it</Button>
+		</div>
+	{/snippet}
+</BottomSheet>
+
 <style>
 	.grid {
 		display: grid;
@@ -91,5 +121,9 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-3);
+	}
+
+	.note {
+		color: var(--color-text-secondary);
 	}
 </style>
