@@ -30,7 +30,8 @@ import {
 	TIMES_OF_DAY,
 	WEEKDAYS,
 	WEIGHT_UNITS,
-	type HeartRateKind
+	type HeartRateKind,
+	BODY_WEIGHT_RANGE
 } from './catalog';
 
 // ---- building blocks -------------------------------------------------------------------------
@@ -531,10 +532,7 @@ export type ScheduleData = z.output<typeof scheduleSchema>;
 
 // ---- body & nutrition ------------------------------------------------------------------------
 
-const BODY_WEIGHT_RANGE: Record<string, readonly [number, number]> = {
-	kg: [25, 350],
-	lb: [55, 770]
-};
+export { BODY_WEIGHT_RANGE };
 
 const birthYearRange = () => {
 	const year = new Date().getFullYear();
