@@ -116,7 +116,11 @@ When no train is in flight (step 1 found none) and at least one row is ready:
    `git diff --name-only HEAD^1 HEAD` must list only files in `gh pr diff <number> --name-only`.
    If a merge conflicts, or the diff lists more, undo it (`git merge --abort` or
    `git reset --hard HEAD^1`) and leave the row out: it goes back to the local stage to be brought
-   up to date and reviewed again. Never resolve a conflict on a train.
+   up to date and reviewed again. Never resolve a conflict on a train. Two rows that both change
+   what a generated doc is built from (`src/lib/domain/programming/rules/` for
+   `docs/programming-rules.md`, the coach tools for `docs/coach-tools.md`) go in separate trains:
+   each row regenerated the doc on its own, so together they can merge cleanly and still leave it
+   stale.
 2. **Open it.** Push the branch and open a pull request titled `train: #<a>, #<b>, #<c>`, whose
    description lists each row with its pull request, boarding SHA and reviewer verdict.
    Record the train in the state file. A train of one row is that row's own pull request instead:
