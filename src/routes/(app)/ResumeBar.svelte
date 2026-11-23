@@ -201,6 +201,7 @@
 	}
 
 	.resume-bar {
+		container: resume-bar / inline-size;
 		position: fixed;
 		z-index: var(--z-sticky);
 		bottom: calc(var(--nav-inset-bottom) - var(--resume-inset));
@@ -276,9 +277,10 @@
 	}
 
 	/*
-	 * The pill is as wide as its words now, not as its longest words (SyncPill reserves those for
-	 * the workout header, where nothing beside it gives way): here they would leave the line's own
-	 * words no room. When even its words do not fit, it shrinks and clips, and the words keep theirs.
+	 * Here the pill is its icon alone: its words stay in the accessibility tree (it is a status),
+	 * and the workout header and History show them in full. Beside the time and the chevron, even
+	 * the shortest words would leave the line's own words too little room on a phone, and on a
+	 * 320 px phone (a content box under 17rem) the pill gives way altogether.
 	 */
 	.resume-bar :global(.sync) {
 		flex: 0 1 auto;
@@ -298,9 +300,14 @@
 	}
 
 	.resume-bar :global(.pill .words) {
-		min-width: 0;
-		overflow: hidden;
-		white-space: nowrap;
+		gap: 0;
+		font-size: 0;
+	}
+
+	@container resume-bar (width < 17rem) {
+		.resume-bar :global(.sync) {
+			display: none;
+		}
 	}
 
 	@media (hover: hover) and (pointer: fine) {
