@@ -57,6 +57,10 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
 - **Toasts are at the top; v2 puts them above the tab bar (`v2/03`).** `v2/02c` restyled them and
   kept them at the top: above the tab bar they would cover the resume bar, the composer and the
   logger. Closes when `v2/03` moves them with the shell.
+- **The resume line still shows a workout in progress on every screen and 'Continue here' on
+  Today; `v2/06` moves both into Today's hero.** Paper draws the line for waiting changes only
+  (3 · Today), so its active and remote states are derived from it until then. Closes when Today
+  claims them (`src/routes/(app)/resume-state.svelte.ts`).
 - **On a phone, Profile cannot be reached while Today shows its offline or error state.** Profile
   is not a tab; below 1024 px its only way in is the avatar in Today's header, and those states
   replace the header, so there is no avatar. Closes in `v2/06`

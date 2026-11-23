@@ -1,15 +1,15 @@
 /**
- * The resume bar ((app)/ResumeBar.svelte, resume.ts): a workout in progress on this device is one
- * tap away from Today and every tab, after a reload and in a new page too, and never shows on the
- * workout pages; it returns to the same exercise, and a run to /workout/run. Today offers
- * 'Continue here' for a workout started on another device, and the two devices then share their
- * sets. A workout finished offline reads 'N changes waiting to sync' until the bar's own engine
- * has synced it. A fresh device creates no 'pc-offline' on any tab, except Today and Train with
- * sessions planned today or in the next two days (they save their kits, coming-kits.ts), so a
- * session looked at the night before starts offline. The app started offline (the service
- * worker's offline screen for /today) shows the bar, and it restores the workout exactly. The bar
- * never shifts the layout, is axe-clean in both themes, and in a desktop window sits in the
- * content column beside the rail, above the last element of every tab.
+ * The resume line ((app)/ResumeBar.svelte, resume.ts), one plain row on the tab bar's hairline: a
+ * workout in progress on this device is one tap away from Today and every tab, after a reload and
+ * in a new page too, and never shows on the workout pages; it returns to the same exercise, and a
+ * run to /workout/run. Today offers 'Continue here' for a workout started on another device, and
+ * the two devices then share their sets. A workout finished offline reads 'N changes waiting to
+ * sync' until the bar's own engine has synced it. A fresh device creates no 'pc-offline' on any
+ * tab, except Today and Train with sessions planned today or in the next two days (they save their
+ * kits, coming-kits.ts), so a session looked at the night before starts offline. The app started
+ * offline (the service worker's offline screen for /today) shows the bar, and it restores the
+ * workout exactly. The bar never shifts the layout, is axe-clean in both themes, and in a desktop
+ * window sits in the content column beside the rail, above the last element of every tab.
  *
  * Serial: the tests start workouts of the one owner and store a program (resetTrainingProfile
  * empties the workouts first). A test that holds or fails a request with page.route blocks the
@@ -206,7 +206,7 @@ async function otherDevice(browser: Browser, page: Page) {
 }
 
 test.describe('a workout in progress on this device', () => {
-	test('Minimise: Today shows Resume workout, and so do Train, Progress, Coach and Profile, never the workout pages', async ({
+	test('Minimise: Today shows the resume line, and so do Train, Progress, Coach and Profile, never the workout pages', async ({
 		page,
 		request
 	}, testInfo) => {
@@ -220,8 +220,22 @@ test.describe('a workout in progress on this device', () => {
 		await page.getByRole('link', { name: 'Minimise' }).click();
 		await expect(page).toHaveURL(/\/today$/);
 		await expect(bar(page)).toBeVisible({ timeout: 10_000 });
-		await expect(bar(page)).toContainText('Resume workout');
+		await expect(bar(page)).toContainText(`Resume ${kit.title}`);
 		await expect(page.getByTestId('resume-title')).toHaveText(kit.title);
+		// One plain line on the canvas, no card, sitting on the tab bar's hairline.
+		await expect(bar(page)).toHaveCSS('border-top-width', '0px');
+		await expect(bar(page)).toHaveCSS('border-radius', '0px');
+		const canvas = await page.evaluate(
+			() => getComputedStyle(document.documentElement).backgroundColor
+		);
+		await expect(bar(page)).toHaveCSS('background-color', canvas);
+		const nav = page.getByRole('navigation', { name: 'Primary' });
+		await expect
+			.poll(async () => {
+				const [line, tabs] = [await boxOf(bar(page)), await boxOf(nav)];
+				return Math.abs(line.y + line.height - tabs.y);
+			}, 'the line’s bottom on the tab bar’s top')
+			.toBeLessThanOrEqual(1);
 		await expect(bar(page).getByTestId('stopwatch')).toHaveText(/\d+:\d\d/);
 		await expect(bar(page).getByTestId('sync-pill')).toHaveText('Saved');
 		await captureScreen(page, testInfo, 'today-resume');
@@ -333,7 +347,7 @@ test.describe('another device', () => {
 		const other = await otherDevice(browser, page);
 		try {
 			await openTab(other.page, '/today');
-			await expect(bar(other.page)).toContainText('In progress on another device');
+			await expect(bar(other.page)).toContainText(/in progress on another device/i);
 			await expect(other.page.getByTestId('resume-title')).toHaveText(kit.title);
 			await captureScreen(other.page, testInfo, 'today-continue-here');
 			await audit(other.page, 'Today offering Continue here');
@@ -487,7 +501,7 @@ test.describe('the app started offline', () => {
 	// Playwright emulates offline for service-worker traffic only in Chromium.
 	test.skip(({ browserName }) => browserName !== 'chromium', 'offline emulation is Chromium-only');
 
-	test('the offline screen for /today shows Resume workout, which restores the workout exactly', async ({
+	test('the offline screen for /today shows the resume line, which restores the workout exactly', async ({
 		page,
 		context
 	}, testInfo) => {
@@ -504,7 +518,7 @@ test.describe('the app started offline', () => {
 		await page.goto('/today');
 		await expect(page.getByTestId('offline-state')).toBeVisible();
 		await looked(page, '/today');
-		await expect(resumeLink(page)).toContainText('Resume workout');
+		await expect(resumeLink(page)).toContainText(`Resume ${strength.title}`);
 		// The stopwatch's text starts with the space after its icon.
 		await expect(bar(page).getByTestId('stopwatch')).toHaveText(/^\s*2[3-9]:\d\d$/);
 		await expect(bar(page).getByTestId('sync-pill')).toHaveText('Offline · 2 pending');
@@ -525,8 +539,9 @@ test.describe('the app started offline', () => {
 test.describe('in a desktop window', () => {
 	test.use({ ...DESKTOP, serviceWorkers: 'block' });
 
-	const background = (locator: Locator) =>
-		locator.evaluate((el) => getComputedStyle(el).backgroundColor);
+	/** The colour of the line's words. */
+	const wordsColour = (link: Locator) =>
+		link.locator('.text').evaluate((el) => getComputedStyle(el).color);
 
 	test('the bar sits in the content column beside the rail, clear of every tab’s last element, with hover and focus states', async ({
 		page
@@ -551,11 +566,11 @@ test.describe('in a desktop window', () => {
 		await captureScreen(page, testInfo, 'desktop-today-resume');
 		const link = resumeLink(page);
 		await page.mouse.move(0, 0);
-		const rest = await background(link);
+		const rest = await wordsColour(link);
 		await link.hover();
-		await expect.poll(() => background(link), 'the link on hover').not.toBe(rest);
+		await expect.poll(() => wordsColour(link), 'the words on hover').not.toBe(rest);
 		await page.mouse.move(0, 0);
-		await expect.poll(() => background(link)).toBe(rest);
+		await expect.poll(() => wordsColour(link)).toBe(rest);
 		await link.focus();
 		await expect(link).toHaveCSS('outline-style', 'solid');
 	});

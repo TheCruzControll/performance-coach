@@ -17,10 +17,14 @@ import { createStore } from '#lib/client/workout/store.ts';
 import {
 	ACTIVE_WORKOUTS_URL,
 	continueHere,
+	continueHereFlow,
 	findResume,
 	hasPending,
+	lineFor,
 	NOTHING,
 	REMOTE_TIMEOUT_MS,
+	shownFor,
+	type Resume,
 	type ResumeOptions
 } from './resume';
 
@@ -272,5 +276,80 @@ describe('continueHere', () => {
 			}
 		});
 		expect(await continueHere(R, { fetch, online: () => true })).toBe('failed');
+	});
+});
+
+describe('the line', () => {
+	const workout: ActiveSummary = {
+		workoutId: W,
+		kind: 'strength',
+		title: 'Full body',
+		startedAt: '',
+		plannedLineage: null,
+		pending: 0,
+		stopwatch: { startedAt: null, accumulatedMs: 0, runningSince: null }
+	};
+	const active: Resume = { type: 'active', workout };
+	const elsewhere: Resume = { type: 'remote', workout: { ...remote, title: 'Full body' } };
+	const waiting: Resume = { type: 'waiting', pending: 3 };
+
+	it('says how many changes wait, resumes the workout by name, and names the other device’s', () => {
+		expect(lineFor({ type: 'waiting', pending: 1 }).text).toBe('1 change waiting to sync');
+		expect(lineFor(waiting)).toEqual({
+			text: '3 changes waiting to sync',
+			danger: false,
+			title: null
+		});
+		expect(lineFor(active)).toEqual({
+			text: 'Resume Full body',
+			danger: false,
+			title: 'Full body'
+		});
+		expect(lineFor(elsewhere)).toEqual({
+			text: 'Full body is in progress on another device',
+			danger: false,
+			title: 'Full body'
+		});
+		expect(lineFor(elsewhere, true)).toEqual({
+			text: 'Couldn’t continue it here',
+			danger: true,
+			title: null
+		});
+	});
+
+	it('leaves the workout in progress to the screen that claims it, and keeps changes waiting there', () => {
+		for (const resume of [active, elsewhere]) {
+			expect(shownFor(resume, '/today', '/today')).toEqual(NOTHING);
+			expect(shownFor(resume, '/today', '/train')).toBe(resume);
+			expect(shownFor(resume, null, '/today')).toBe(resume);
+		}
+		expect(shownFor(waiting, '/today', '/today')).toBe(waiting);
+	});
+});
+
+describe('continueHereFlow', () => {
+	it('opens the page once the workout is here, and says so when it failed, one press at a time', async () => {
+		const flags = { continuing: false, failed: false };
+		const goto = vi.fn(async () => {});
+		let answer: (outcome: 'opened' | 'gone' | 'failed') => void = () => {};
+		const adopt = vi.fn(
+			() => new Promise<'opened' | 'gone' | 'failed'>((resolve) => (answer = resolve))
+		);
+
+		const pressed = continueHereFlow(R, '/workout', { goto, flags, adopt });
+		expect(flags).toEqual({ continuing: true, failed: false });
+		expect(await continueHereFlow(R, '/workout', { goto, flags, adopt })).toBeNull();
+		answer('failed');
+		expect(await pressed).toBe('failed');
+		expect(flags).toEqual({ continuing: false, failed: true });
+		expect(goto).not.toHaveBeenCalled();
+
+		const again = continueHereFlow(R, '/workout', { goto, flags, adopt });
+		expect(flags).toEqual({ continuing: true, failed: false });
+		answer('opened');
+		expect(await again).toBe('opened');
+		expect(goto).toHaveBeenCalledWith('/workout');
+		expect(adopt).toHaveBeenCalledTimes(2);
+		expect(flags).toEqual({ continuing: false, failed: false });
 	});
 });

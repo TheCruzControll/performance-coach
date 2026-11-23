@@ -426,8 +426,9 @@ that specs verify the rest with.
     1024 px; `0px` outside the shell (set under `:root:has(.app-nav)`).
   - `--nav-inset-left`: what it clears at the left: `0px`, and in the shell the rail and the left
     safe area from 1024 px.
-  - `--resume-inset`: the resume bar's room while it shows, `0px` otherwise; in the shell
-    `--nav-inset-bottom` includes it, so the content and all bottom chrome clear the bar.
+  - `--resume-inset`: the resume line's room while it shows (44 px and the 12 px below it), `0px`
+    otherwise; in the shell `--nav-inset-bottom` includes it, so the content and all bottom chrome
+    clear the line.
 
 ### Content width
 
@@ -498,10 +499,12 @@ itself read it.
   transform, so it takes the column's width and never covers another column. No ancestor up to the
   column sets `overflow`. Below 1024 px the column is the whole content, so it may stay screen
   chrome.
-- **The resume bar** (`(app)/ResumeBar.svelte`) is the app's own screen chrome: fixed and
-  centred over the column like a composer, above the tab bar below 1024 px and at the bottom of
-  the content column beside the rail from there. It sits under `--resume-inset`, so the shell's
-  bottom padding and every other bottom chrome rise with it and it covers nothing.
+- **The resume line** (`(app)/ResumeBar.svelte`) is one plain row on the canvas, 44 px plus 12
+  below, above the tab bar (at the foot of the column beside the rail from 1024 px): changes
+  waiting to sync on every screen, a workout in progress until a screen claims it
+  (`resume-state.svelte.ts`; Today's hero in `v2/06`). It is screen chrome, fixed on the tab bar's
+  hairline and as wide as the column. Its height is `--resume-inset`, so the shell's bottom padding
+  and every other bottom chrome rise with it and it covers nothing.
 - **The held screen** (`(app)/HeldScreen.svelte`) covers the column, not the window: fixed
   under the nav from `--safe-top` and `--nav-inset-left`, the content column's width inside, so the
   screen being left keeps its layout and scroll underneath.
@@ -789,8 +792,8 @@ workout pages and is audited on `/design` → Workout, one state at a time.
 - **The docked timer.** The rest timer docks at the top of the main column under the header, never
   over content; the logger is a card under the set rows, not stuck to the window.
 - **History.** The list beside the picked workout's detail, 'Pick a workout' when none is picked.
-- **The resume bar.** On the rail layout it docks at the bottom of the content column, inset by the
-  rail, and the content's bottom padding grows with it (`--resume-inset`), so it covers nothing.
+- **The resume line.** On the rail layout it docks at the bottom of the content column, inset by
+  the rail, and the content's bottom padding grows with it (`--resume-inset`), so it covers nothing.
 - Every control has a hover state for fine pointers and a `:focus-visible` ring; the side list and
   the steppers answer the arrow keys. No shortcut overrides a browser one (Alt+Arrow is Back).
 
@@ -830,7 +833,7 @@ workout pages and is audited on `/design` → Workout, one state at a time.
 | `OtherView`, `SessionFields`     | `src/routes/workout/session`. What the plan asked for, then type, duration, RPE chips, each metric's control (`MetricField`) and notes, and Options (the session's quick actions); a draft on the device until Save.              |
 | `WorkoutList`                    | `src/routes/(app)/progress/workouts`. History, newest first: waiting to sync (not links), then each workout's dot, title, date, duration and key number; one 44 px link, `aria-current`.                                          |
 | `WorkoutDetail`                  | One workout in words: its numbers, PRs, sets with RPE and states, a run's segments (`RunDetail`) or a session's metrics (`OtherDetail`); a name opens its history sheet.                                                          |
-| `ResumeBar`                      | `src/routes/(app)`. Resume workout · title with the time and the sync pill, or N changes waiting to sync; screen chrome over the column that raises `--resume-inset`, so it covers nothing.                                       |
+| `ResumeBar`                      | `src/routes/(app)`. One plain line on the tab bar: Resume {title} with the time, the sync pill and a chevron, N changes waiting to sync, or Continue here on Today; it raises `--resume-inset`, so it covers nothing.             |
 | `HeldScreen`                     | `src/routes/(app)`. While another screen loads: its last copy in this page, else the tab's skeleton (aria-busy, 'Loading Train'); inert, fixed over the column under the nav.                                                     |
 
 ## The coach (M5)
