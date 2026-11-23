@@ -3,10 +3,10 @@
   Primary navigation, one element at every width (docs/design-system.md, Responsive layout →
   Shell). Below 1024 px a canvas tab bar fixed to the bottom, with a hairline above it and clear
   of the home indicator: the four tabs, 24 px icons and 12 px labels, the current one in text
-  colour and 600 with no pill. From 1024 px a rail at the left, with Profile's avatar link at its
-  foot (the avatar is hidden below 1024 px: Today opens Profile there). Each item is a real link
-  (works without JS) with aria-current on the active screen, so the destinations, their order and
-  the current one are the same in both. A pressed link is marked current on pointerdown.
+  colour and 600 with no pill. From 1024 px a rail on the canvas at the left, with no brand mark,
+  and Profile's avatar link at its foot (the avatar is hidden below 1024 px: Today opens Profile
+  there). Each item is a real link (works without JS) with aria-current on the active screen, so
+  the destinations, their order and the current one are the same in both. A pressed link is marked current on pointerdown.
 -->
 <script lang="ts" module>
 	import type { IconName } from '../icons/icons';
@@ -164,17 +164,17 @@
 	}
 
 	/*
-	 * The rail (from 1024 px): solid, full height, the tabs stacked and the avatar at its foot.
-	 * The brand mark above the tabs is layout.css's, until v2/03c.
+	 * The rail (from 1024 px): the canvas with a hairline at its right, full height, no brand mark;
+	 * the tabs stacked 28 px apart from 40 px down, each as on the tab bar, and the avatar at its
+	 * foot (Paper, 11 · Desktop).
 	 */
 	@media (width >= 64rem) {
 		.app-nav {
 			top: 0;
 			right: auto;
 			width: calc(var(--rail-width) + var(--safe-left));
-			padding: calc(var(--safe-top) + var(--rail-mark) + 2 * var(--space-6)) 0
-				calc(var(--safe-bottom) + var(--space-8)) var(--safe-left);
-			background: var(--color-surface-1);
+			padding: calc(var(--safe-top) + var(--space-10)) 0 calc(var(--safe-bottom) + var(--space-8))
+				var(--safe-left);
 			border-top: 0;
 			border-right: 1px solid var(--color-hairline);
 		}
@@ -187,12 +187,6 @@
 			align-items: center;
 			gap: var(--space-7);
 			max-width: none;
-		}
-
-		.item {
-			height: auto;
-			min-height: 3.5rem;
-			gap: var(--space-1);
 		}
 
 		.profile {

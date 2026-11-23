@@ -347,18 +347,18 @@ proven by `desktop-helpers.desktop.e2e.ts` on `page.setContent` fixtures with no
 
 The desktop specs (most also run axe and take screenshots in both themes):
 
-- `shell.desktop.e2e.ts`: from 1024 px the Primary navigation is a solid full-height rail
-  (`--rail-width`, no blur, nothing fixed to the bottom edge) with the four tabs and Profile's avatar
+- `shell.desktop.e2e.ts`: from 1024 px the Primary navigation is a full-height rail on the canvas
+  with a hairline at its right and no brand mark (`--rail-width`, no blur, nothing fixed to the
+  bottom edge, the avatar at its foot and current on Profile) with the four tabs and Profile's avatar
   in order, one `aria-current`, tabs at least 44 × 44 px, a hover that lifts the text, and the
   32 px avatar with a hit area 5 px past its edge. The document order is skip link
   → rail → content; Tab follows it with a ring of at least 2 px on every stop, and the skip link
-  lands in `<main>`. The brand mark matches `--color-surface-1`, `--color-accent` and
-  `--color-text` at 18% in both themes and adds only its two precached SVGs. `<main>` is the
-  readable column centred beside the rail, and `data-layout` wide or split widens it to
-  `--content-wide`. Coach's composer and Security's offline sign-out toast are centred over it,
+  lands in `<main>`. The rail requests nothing a phone does not. `<main>` is the readable column
+  beside the rail (at 1440 px 616 px wide, 172 px from the rail, its title at 288 px), and
+  `data-layout` wide or split widens it to `--content-wide`. Coach's composer and Security's offline sign-out toast are centred over it,
   and /design's toast in the window. No tab scrolls sideways at 1024–1920 px, the bar is
   back at 1023 px, every tab gets the readable column at 800 px, and Coach reloads offline from
-  the precache with the mark and a working rail.
+  the precache with a working rail.
 - `screens.desktop.e2e.ts`: the sweep that misses no main screen. Each loads without moving,
   scrolls nothing sideways, sits beside the rail (or centred outside the shell) and logs no
   console error.
@@ -370,7 +370,9 @@ The desktop specs (most also run axe and take screenshots in both themes):
   SQL, so no code is burned. `auth.setup.ts` checks setup and its recovery codes at that size by
   resizing the same page, then asserts the iPhone viewport is back.
 - `primitives.desktop.e2e.ts`: `BottomSheet` as a centred dialog from 1024 px (Escape, backdrop,
-  focus return, no mouse drag, 1024 × 700); Tab order and a ring of at least 2 px in dark, light
+  focus return, no mouse drag, 1024 × 700); a `desktop="panel"` sheet as a 496 px full-height
+  right panel over a clear backdrop, closed by Escape or a click beside it, focus returned; Tab
+  order and a ring of at least 2 px in dark, light
   and forced colours; hover on every primitive; no hover and 44 px targets on a 1180 × 820 touch
   screen; a phone swipe; and Security's stacked step-up over Remove passkey.
 - `main-screens.desktop.e2e.ts`: Progress wide, its view nav and period picker in one row over

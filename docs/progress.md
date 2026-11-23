@@ -206,6 +206,14 @@ milestones.md.
   a chevron: changes waiting to sync, Resume {title}, or a workout in progress on another device
   with Continue here on Today. `resume-state.svelte.ts` lets a screen claim the in-progress state;
   nothing claims it until Today's hero in `v2/06`. Phone layouts and the e2e run are CI's to prove.
+- **Instrument v2 at a desk (`v2/03c`), which completes the Instrument v2 shell (`v2/03`).** The
+  rail is the canvas with a hairline, the four tabs 28 px apart and the avatar at its foot, with
+  no brand mark. A readable screen is 616 px (560 of text) centred right of the rail but at most
+  200 px from it to the text, so at 1440 px its text starts at 288 px; fixed chrome starts with
+  it (`--column-start`). `BottomSheet` opens from 1024 px as a 480 px dialog, or with
+  `desktop="panel"` as a full-height 496 px panel at the right (no caller yet; `/design` →
+  Feedback shows one). The workout keeps its 640 px column until `v2/10`. The e2e run is CI's to
+  prove.
 - **Instrument v2 legacy components (`v2/02d`), which completes `v2/02`.** Cards, chips, badges,
   segmented controls, stat tiles, tabs and section headings lose their pills, fills, tint and amber
   and keep their padding and sizes, so no screen moves. A card keeps a hairline outline until its

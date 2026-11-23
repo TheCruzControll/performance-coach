@@ -273,7 +273,6 @@
 	/* The rail, from 1024 px, is labelled under each icon (not a sidebar): the four labels are
 	   short, and it leaves the most width at 1024 px. A sidebar is a CSS-only change. */
 	--rail-width: 5.5rem;
-	--rail-mark: 2.25rem; /* the brand mark atop the rail (layout.css) */
 	/* The column that screen chrome (Coach's composer, the Save bar) is centred over: the
 	   shell's readable column, which widens from the phone's to --content-readable at 640 px. */
 	--content-column: var(--content-max);
@@ -292,6 +291,16 @@
 	}
 }
 
+@media (width >= 64rem) {
+	:root {
+		/* 616: 560 px of text inside the 28 px gutters (v2: "as narrow as a page of text"). Was
+		   40rem, which the tablet column keeps. --content-column follows it. */
+		--content-readable: 38.5rem;
+		/* The most <main> sits right of the rail: Paper's text starts 200 px from it. */
+		--column-offset-max: calc(12.5rem - var(--gutter));
+	}
+}
+
 /* In the shell: the whole bottom bar below 1024 px (its tabs, its foot, which holds the home
    indicator, and its 1 px hairline); from there the rail and the left safe area at the left, and
    the home indicator alone at the bottom. */
@@ -303,6 +312,22 @@
 	:root:has(.app-nav) {
 		--nav-inset-bottom: calc(var(--safe-bottom) + var(--resume-inset));
 		--nav-inset-left: calc(var(--rail-width) + var(--safe-left));
+		/*
+		 * Where <main> lies, for fixed chrome, which has no shell box to measure: its left edge and
+		 * its width, by AppShell's rule (centred right of the rail, at most --column-offset-max from
+		 * it). --main-max is a wide or split screen's (layout.css). 100% is left unresolved here: it
+		 * is the width of the box the chrome is fixed to, the window less a classic scrollbar, as
+		 * the shell's own content box is.
+		 */
+		--column-start: calc(
+			var(--nav-inset-left) +
+				clamp(
+					0px,
+					(100% - var(--nav-inset-left) - var(--main-max, var(--content-column))) / 2,
+					var(--column-offset-max)
+				)
+		);
+		--column-width: min(100% - var(--nav-inset-left), var(--main-max, var(--content-column)));
 	}
 }
 

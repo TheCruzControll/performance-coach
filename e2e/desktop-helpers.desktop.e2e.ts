@@ -177,29 +177,54 @@ test.describe('layout shift', () => {
 });
 
 test.describe('the column', () => {
-	/** An 88 px rail fixed at the left and a 40rem column, centred beside it or in the window. */
-	const shell = (besideRail: boolean) => `${FIXTURE_STYLE}
-		<style>:root { --rail: 88px; --column: 40rem; }</style>
+	/**
+	 * An 88 px rail fixed at the left and a column `width` wide beside it (or, with `besideRail`
+	 * false, centred in the whole window), placed by `margin-left`: `auto` centres it, the shell's
+	 * clamp centres it but at most 172 px (200 less the 28 px gutter) from the rail.
+	 */
+	const shell = (width: string, margin: string, besideRail = true) => `${FIXTURE_STYLE}
+		<style>:root { --rail: 88px; --gutter: 28px; --column: ${width}; }</style>
 		<nav aria-label="Primary" style="position: fixed; inset: 0 auto 0 0; width: var(--rail);
 			background: #222"></nav>
 		<div style="padding-left: ${besideRail ? 'var(--rail)' : '0'}">
-			<main id="main" style="max-width: var(--column); height: 100px; margin: 0 auto"></main>
+			<main id="main" style="width: 100%; max-width: var(--column); height: 100px;
+				margin: 0 auto 0 ${margin}"></main>
 		</div>`;
+	const CAPPED = 'clamp(0px, (100% - var(--column)) / 2, 172px)';
 
-	test('tokenPx reads a token in px; expectMainCentred passes a column centred beside the rail, and fails one centred in the window or of another width', async ({
+	test('tokenPx reads a token in px; expectMainCentred passes a column centred beside the rail under the cap, and one held at the cap', async ({
 		page: p
 	}) => {
-		await p.setContent(shell(true));
-		const column = await tokenPx(p, '--column');
-		expect(column).toBe(640);
+		// Wide: 1152 px in the 1352 px right of the rail, centred 100 px from it, under the cap.
+		await p.setContent(shell('72rem', 'auto'));
+		const wide = await tokenPx(p, '--column');
+		expect(wide).toBe(1152);
 		expect(await layoutWidth(p)).toBe(1440);
-		await expectMainCentred(p, column);
-		// The phone's 34rem column is not this one.
-		await expect(expectMainCentred(p, 34 * 16)).rejects.toThrow(/main is 640px wide/);
+		await expectMainCentred(p, wide);
+		await p.setContent(shell('72rem', CAPPED));
+		await expectMainCentred(p, wide);
 
-		// Centred in the whole window, as before the rail: 88 px more room on its right.
-		await p.setContent(shell(false));
-		await expect(expectMainCentred(p, column)).rejects.toThrow(/gaps beside main: 312 and 400/);
+		// Readable: 616 px, centred it would start 368 px from the rail; it starts at the cap, 172.
+		await p.setContent(shell('38.5rem', CAPPED));
+		await expectMainCentred(p, 616);
+		// The phone's 34rem column is not this one.
+		await expect(expectMainCentred(p, 34 * 16)).rejects.toThrow(/main is 616px wide/);
+	});
+
+	test('expectMainCentred fails a readable column centred beside the rail, or in the window', async ({
+		page: p
+	}) => {
+		// Centred right of the rail, as before the cap: 368 px from it.
+		await p.setContent(shell('38.5rem', 'auto'));
+		await expect(expectMainCentred(p, 616)).rejects.toThrow(
+			/main starts 368px right of the rail, not 172px/
+		);
+
+		// Centred in the whole window, as before the rail: 324 px from it.
+		await p.setContent(shell('38.5rem', 'auto', false));
+		await expect(expectMainCentred(p, 616)).rejects.toThrow(
+			/main starts 324px right of the rail, not 172px/
+		);
 	});
 });
 

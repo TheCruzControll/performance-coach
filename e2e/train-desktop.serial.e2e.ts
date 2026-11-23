@@ -100,7 +100,10 @@ async function expectBeside(main: Locator, side: Locator) {
 	expect(Math.abs(left.y - right.y), `${main} and ${side} start level`).toBeLessThanOrEqual(1);
 }
 
-/** The screen is wide (centred beside the rail at --content-wide) and nothing scrolls sideways. */
+/**
+ * The screen is wide (--content-wide, centred beside the rail but at most 200 px from it to the
+ * text, as expectMainCentred places every screen) and nothing scrolls sideways.
+ */
 async function expectWideFrame(page: Page) {
 	await expectMainCentred(page, await tokenPx(page, '--content-wide'));
 	await expectNoSideScroll(page);

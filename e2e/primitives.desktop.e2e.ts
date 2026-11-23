@@ -1,9 +1,10 @@
 /**
  * The shared primitives in a desktop window (docs/design-system.md, Responsive layout → Dialogs &
  * toasts, Pointer & hover, Keyboard & focus). From 1024 px a BottomSheet opens as a centred
- * dialog: it keeps the native <dialog>'s focus trap, Escape and focus return, a mouse cannot drag
- * it, and stacked dialogs close one Escape at a time. Every control shows a focus ring and, for a
- * mouse, a hover state. A touch screen as wide gets neither hover styles nor smaller targets, and
+ * 480 px dialog, or with desktop="panel" as a full-height panel at the right: either keeps the
+ * native <dialog>'s focus trap, Escape and focus return, a mouse cannot drag it, and stacked
+ * dialogs close one Escape at a time. Every control shows a focus ring and, for a mouse, a hover
+ * state. A touch screen as wide gets neither hover styles nor smaller targets, and
  * a touch swipe still closes a sheet, on it and on a phone. Tab order and hover are asserted on
  * Chromium, as in the shell's spec; touch swipes and the stacked dialogs need its DevTools
  * protocol and virtual authenticator.
@@ -19,8 +20,11 @@ test.use(DESKTOP);
 const THEMES = ['dark', 'light'] as const;
 type Theme = (typeof THEMES)[number];
 
-/** The width a centred dialog takes in a wide window: 32rem. */
-const DIALOG_WIDTH = 32 * 16;
+/** The width a centred dialog takes in a wide window: 30rem (Paper's 480 px). */
+const DIALOG_WIDTH = 30 * 16;
+
+/** The width of a right-hand panel (desktop="panel"): 31rem (Paper's 496 px). */
+const PANEL_WIDTH = 31 * 16;
 
 /** The smallest desktop window a dialog must fit. */
 const SMALL_DESKTOP = { width: 1024, height: 700 };
@@ -187,10 +191,7 @@ test.describe('a sheet from 1024 px', () => {
 			expect(panel.y, 'the dialog starts inside the window').toBeGreaterThan(0);
 			expect(panel.y + panel.height, 'and ends inside it').toBeLessThan(900);
 			const { radii, borders } = await frameOf(dialog);
-			expect(
-				radii.every((r) => r >= 20),
-				`corner radii ${radii}`
-			).toBe(true);
+			expect(radii, 'every corner rounded 28 px').toEqual([28, 28, 28, 28]);
 			expect(
 				borders.every((b) => b >= 1),
 				`borders ${borders}`
@@ -231,6 +232,51 @@ test.describe('a sheet from 1024 px', () => {
 			expect(errors).toEqual([]);
 		});
 	}
+
+	test('a desktop="panel" sheet opens as a full-height panel at the right, still a modal dialog', async ({
+		page
+	}, testInfo) => {
+		const errors = trackConsoleErrors(page);
+		await gotoHydrated(page, '/design');
+		await page.getByRole('tab', { name: 'Feedback' }).click();
+		const opener = page.getByTestId('open-panel');
+		await opener.click();
+		const dialog = page.getByTestId('panel-sheet');
+		await settled(dialog);
+		const [panel, window] = [await boxOf(panelOf(dialog)), await boxOf(dialog)];
+		expect(Math.abs(panel.width - PANEL_WIDTH), `${panel.width}px wide`).toBeLessThanOrEqual(1);
+		expect(
+			Math.abs(panel.x + panel.width - (window.x + window.width)),
+			'its right edge is the window’s'
+		).toBeLessThanOrEqual(1);
+		expect(Math.abs(panel.y - window.y), 'it starts at the top of the window').toBeLessThanOrEqual(
+			1
+		);
+		expect(Math.abs(panel.height - window.height), 'and is as tall').toBeLessThanOrEqual(1);
+		const { radii, borders } = await frameOf(dialog);
+		expect(radii, 'square corners').toEqual([0, 0, 0, 0]);
+		expect(borders, 'a hairline at its left only').toEqual([0, 0, 0, 1]);
+		// The screen stays in view: the backdrop is clear.
+		expect(
+			await dialog.locator('.scrim').evaluate((el) => getComputedStyle(el).backgroundColor)
+		).toBe('rgba(0, 0, 0, 0)');
+		await expect(panelOf(dialog)).toBeFocused();
+		await captureScreen(page, testInfo, 'design-panel-desktop');
+		await audit(page, 'the panel, open');
+
+		// Modal all the same: Escape closes it, and so does a click on the page beside it, each
+		// returning focus to what opened it.
+		await page.keyboard.press('Escape');
+		await expect(dialog).toBeHidden();
+		await expect(opener).toBeFocused();
+		await opener.click();
+		await settled(dialog);
+		await page.mouse.click(window.x + 24, window.y + window.height / 2);
+		await expect(dialog).toBeHidden();
+		await expect(opener).toBeFocused();
+		expect(await scrollLock(page)).toBe('');
+		expect(errors).toEqual([]);
+	});
 });
 
 test.describe('a small desktop window', () => {

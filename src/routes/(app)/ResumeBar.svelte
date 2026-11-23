@@ -220,6 +220,14 @@
 		animation: var(--duration-base) var(--ease-out) both rise;
 	}
 
+	/* From 1024 px over <main>, which is no longer centred in the room right of the rail once a
+	   readable screen is capped 200 px from it (tokens.css --column-start). */
+	@media (width >= 64rem) {
+		.resume-bar {
+			left: calc(var(--column-start) + var(--column-width) / 2);
+		}
+	}
+
 	/* It rises 4 px into place: below 1024 px from under the tab bar, which is drawn over it. */
 	@keyframes rise {
 		from {

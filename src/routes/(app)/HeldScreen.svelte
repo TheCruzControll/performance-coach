@@ -99,8 +99,17 @@
 		gap: var(--space-4);
 	}
 
+	/* Placed as <main> is: its own --main-max, not the root's, which follows the screen being
+	   left (layout.css). */
 	@media (width >= 64rem) {
+		.column {
+			--main-max: var(--content-column);
+			margin-left: clamp(0px, (100% - var(--main-max)) / 2, var(--column-offset-max));
+			margin-right: auto;
+		}
+
 		.column:has(:global([data-layout='wide'], [data-layout='split'])) {
+			--main-max: var(--content-wide);
 			max-width: var(--content-wide);
 		}
 	}

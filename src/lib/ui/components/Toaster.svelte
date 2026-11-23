@@ -78,6 +78,14 @@
 		pointer-events: none;
 	}
 
+	/* In the shell from 1024 px, over <main>, wherever the column rule puts it (tokens.css
+	   --column-start); outside it, still centred in the window. */
+	@media (width >= 64rem) {
+		:global(:root:has(.app-nav)) .toaster {
+			left: calc(var(--column-start) + var(--column-width) / 2);
+		}
+	}
+
 	/* A surface-2 line of 52 px: the 44 px dismiss is the tallest thing in it. */
 	.toast {
 		pointer-events: auto;

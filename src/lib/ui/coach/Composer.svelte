@@ -127,6 +127,13 @@
 		width: min(calc(100% - var(--nav-inset-left) - 2 * var(--gutter)), var(--content-column));
 	}
 
+	/* From 1024 px over <main>, wherever the column rule puts it (tokens.css --column-start). */
+	@media (width >= 64rem) {
+		.chrome {
+			left: calc(var(--column-start) + var(--column-width) / 2);
+		}
+	}
+
 	/* The ring is on the whole composer: the textarea is only its writing surface. */
 	.composer:has(.input:focus-visible) {
 		border-color: var(--color-accent);

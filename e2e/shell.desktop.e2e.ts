@@ -8,7 +8,6 @@ import {
 	expectMainCentred,
 	expectNoSideScroll,
 	layoutWidth,
-	pixelAt,
 	tokenPx
 } from './desktop';
 import {
@@ -23,15 +22,14 @@ import {
 
 /**
  * The app shell in a desktop window (docs/design-system.md, Responsive layout → Shell): from
- * 1024 px the primary navigation is a solid rail at the left, under the brand mark, and the
- * content is centred beside it. Layout is checked only on screens that stay readable by contract
+ * 1024 px the primary navigation is a rail on the canvas at the left, with no brand mark, and the
+ * content is centred beside it, its text at most 200 px from the rail. Layout is checked only on screens that stay readable by contract
  * (Coach, Security) and on app-level chrome (a toast), so the slices that later make other
  * screens wide or split never need to edit this spec.
  */
 test.use(DESKTOP);
 
 const THEMES = ['dark', 'light'] as const;
-const BRAND_MARKS = ['/brand/mark-arc.svg', '/brand/mark-track.svg'];
 /** Anything Tab stops at, unless disabled or taken out of the order. */
 const TABBABLE =
 	'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
@@ -78,27 +76,11 @@ const fixedToBottom = (page: Page) =>
 			.map(({ el }) => el.outerHTML.slice(0, 80))
 	);
 
-/** The nearest rgb() of a colour expression, as this page resolves it on the rail. */
-const colourOf = (page: Page, expression: string) =>
-	page.evaluate((value) => {
-		const probe = document.createElement('div');
-		probe.style.color = value;
-		document.querySelector('.app-nav')!.append(probe);
-		const rgb = getComputedStyle(probe)
-			.color.match(/[\d.]+/g)!
-			.map(Number);
-		probe.remove();
-		return rgb.slice(0, 3) as [number, number, number];
-	}, expression);
-
-const near = (actual: number[], expected: number[]) =>
-	actual.every((channel, i) => Math.abs(channel - expected[i]!) <= 8);
-
 test.describe('the rail from 1024 px', () => {
-	test('is a solid, full-height rail at the left, and nothing is fixed to the bottom edge', async ({
+	test('is a full-height rail on the canvas at the left, a hairline at its right and no brand mark, and nothing is fixed to the bottom edge', async ({
 		page
 	}) => {
-		await page.goto('/today');
+		await gotoHydrated(page, '/today');
 		const rail = railOf(page);
 		const box = await boxOf(rail);
 		expect(box.x).toBe(0);
@@ -111,6 +93,41 @@ test.describe('the rail from 1024 px', () => {
 		});
 		expect(glass).toEqual(['none', 'none']);
 		expect(await fixedToBottom(page)).toEqual([]);
+
+		// No mark drawn above the tabs, and no markup but the list of destinations.
+		const marks = await rail.evaluate((el) =>
+			['::before', '::after'].map((pseudo) => getComputedStyle(el, pseudo).content)
+		);
+		expect(marks, 'no brand mark').toEqual(['none', 'none']);
+		expect(await rail.evaluate((el) => [...el.children].map((child) => child.tagName))).toEqual([
+			'UL'
+		]);
+
+		// The canvas, not a surface, with the hairline at its right, in either theme.
+		for (const theme of THEMES) {
+			await openInTheme(page, '/today', theme);
+			const light = theme === 'light';
+			await expect(rail, theme).toHaveCSS(
+				'background-color',
+				light ? 'rgb(244, 244, 240)' : 'rgb(10, 10, 11)'
+			);
+			await expect(rail, theme).toHaveCSS(
+				'border-right-color',
+				light ? 'rgba(17, 17, 19, 0.08)' : 'rgba(255, 255, 255, 0.07)'
+			);
+		}
+
+		// The avatar at the foot: its bottom within 40 px of the window's.
+		const avatar = await boxOf(rail.getByTestId('rail-avatar'));
+		const foot = page.viewportSize()!.height - (avatar.y + avatar.height);
+		expect(foot, `the avatar ends ${foot}px above the window's foot`).toBeLessThanOrEqual(40);
+		expect(foot).toBeGreaterThanOrEqual(0);
+
+		// On Profile the avatar is current, and no tab is.
+		await rail.getByTestId('rail-avatar').click();
+		await expect(page.getByRole('heading', { level: 1, name: PROFILE.heading })).toBeVisible();
+		await expect(rail.getByTestId('rail-avatar')).toHaveAttribute('aria-current', 'page');
+		await expect(rail.locator('[aria-current="page"]')).toHaveCount(1);
 	});
 
 	test('keeps the four tabs and Profile in order, one current, and moves between the tabs', async ({
@@ -241,64 +258,7 @@ test.describe('keyboard', () => {
 	});
 });
 
-for (const theme of THEMES) {
-	test(`the brand mark tops the rail and follows the ${theme} theme`, async ({ page }) => {
-		await openInTheme(page, '/coach', theme);
-		const rail = railOf(page);
-		const mark = await rail.evaluate((el) => {
-			const box = (pseudo: string) => {
-				const style = getComputedStyle(el, pseudo);
-				return {
-					x: parseFloat(style.left),
-					y: parseFloat(style.top),
-					size: parseFloat(style.width),
-					height: parseFloat(style.height),
-					mask: style.maskImage || style.getPropertyValue('-webkit-mask-image'),
-					events: style.pointerEvents
-				};
-			};
-			return { track: box('::before'), arc: box('::after') };
-		});
-		expect(mark.track.mask).toContain('/brand/mark-track.svg');
-		expect(mark.arc.mask).toContain('/brand/mark-arc.svg');
-		expect({ ...mark.arc, mask: '' }).toEqual({ ...mark.track, mask: '' });
-		expect(mark.track.height).toBe(mark.track.size);
-		expect(mark.track.events).toBe('none');
-		// Decorative: no markup of its own, only the list of destinations.
-		expect(await rail.evaluate((el) => [...el.children].map((child) => child.tagName))).toEqual([
-			'UL'
-		]);
-
-		// The favicon's geometry (a 64-unit viewBox): the ring's centre is at 32, its radius 22.
-		const { x, y, size } = mark.track;
-		const shot = await page.screenshot({
-			clip: { x: 0, y: 0, width: Math.ceil(x * 2 + size), height: Math.ceil(y + size) + 8 },
-			animations: 'disabled'
-		});
-		const pixel = (u: number, v: number) =>
-			pixelAt(page, shot, Math.floor(x + (u * size) / 64), Math.floor(y + (v * size) / 64));
-		const surface = await colourOf(page, 'var(--color-surface-1)');
-		const text = await colourOf(page, 'var(--color-text)');
-		const samples: [string, number[], number[]][] = [
-			['the centre shows the rail', await pixel(32, 32), surface],
-			[
-				'the top of the ring is the arc',
-				await pixel(32, 10),
-				await colourOf(page, 'var(--color-accent)')
-			],
-			[
-				'the ring past the arc is the track',
-				await pixel(54, 32),
-				surface.map((channel, i) => channel * 0.82 + text[i]! * 0.18)
-			]
-		];
-		for (const [what, actual, expected] of samples) {
-			expect(near(actual, expected), `${what}: ${actual} ≈ ${expected.map(Math.round)}`).toBe(true);
-		}
-	});
-}
-
-test('the brand mark adds no request beyond its two precached files', async ({
+test('the rail requests nothing a phone does not, and no brand mark', async ({
 	page,
 	context,
 	browser
@@ -318,7 +278,7 @@ test('the brand mark adds no request beyond its two precached files', async ({
 	await page.goto('/coach');
 	await page.waitForLoadState('networkidle');
 
-	// The same screen in a phone-width window, nothing else changed: no rail, no mark.
+	// The same screen in a phone-width window, nothing else changed: no rail.
 	const phoneContext = await browser.newContext({
 		...DESKTOP,
 		viewport: { width: 393, height: 900 },
@@ -330,20 +290,9 @@ test('the brand mark adds no request beyond its two precached files', async ({
 	await phone.waitForLoadState('networkidle');
 	await phoneContext.close();
 
-	expect([...desktop].filter((path) => !narrow.has(path)).sort()).toEqual(BRAND_MARKS);
+	expect([...desktop].filter((path) => path.startsWith('/brand/mark-'))).toEqual([]);
+	expect([...desktop].filter((path) => !narrow.has(path))).toEqual([]);
 	expect([...narrow].filter((path) => !desktop.has(path))).toEqual([]);
-
-	// Precached with the other static files, so the mark renders offline too.
-	await workerActivated(page);
-	await expect
-		.poll(() =>
-			page.evaluate(async (paths) => {
-				const found: string[] = [];
-				for (const path of paths) if ((await caches.match(path))?.ok) found.push(path);
-				return found;
-			}, BRAND_MARKS)
-		)
-		.toEqual(BRAND_MARKS);
 });
 
 test.describe('the content column and its chrome', () => {
@@ -354,6 +303,23 @@ test.describe('the content column and its chrome', () => {
 		await page.goto('/profile/security');
 		await expect(page.getByRole('heading', { level: 1, name: 'Security' })).toBeVisible();
 		await expectMainCentred(page, readable);
+	});
+
+	test('at 1440 px a readable screen is 560 px of text starting 200 px right of the rail', async ({
+		page
+	}) => {
+		// Coach is readable by contract (Today is wide once it has a program).
+		await page.goto('/coach');
+		await page.evaluate(() => document.fonts.ready);
+		const [rail, main] = [await boxOf(railOf(page)), await boxOf(mainOf(page))];
+		const railRight = rail.x + rail.width;
+		expect(Math.abs(main.width - 616), `main is ${main.width}px wide`).toBeLessThanOrEqual(1);
+		expect(
+			Math.abs(main.x - railRight - 172),
+			`main starts ${main.x - railRight}px out`
+		).toBeLessThanOrEqual(1);
+		const title = await boxOf(mainOf(page).getByRole('heading', { level: 1 }));
+		expect(Math.abs(title.x - 288), `the title starts at ${title.x}px`).toBeLessThanOrEqual(1);
 	});
 
 	test('a screen that declares wide or split gets the wider column', async ({ page }) => {
@@ -485,21 +451,6 @@ test.describe('every width and state', () => {
 		expect(box.x).toBeGreaterThanOrEqual(main.x - 1);
 		expect(box.x + box.width).toBeLessThanOrEqual(main.x + main.width + 1);
 		await expectMainCentred(page, await tokenPx(page, '--content-readable'));
-
-		// The mark's masks come from the precache: the ring's top is still the accent.
-		const rail = await boxOf(railOf(page));
-		const shot = await page.screenshot({ clip: { x: 0, y: 0, width: rail.width, height: 120 } });
-		const top = await railOf(page).evaluate((el) => {
-			const style = getComputedStyle(el, '::after');
-			const size = parseFloat(style.width);
-			return [
-				Math.floor(parseFloat(style.left) + size / 2),
-				Math.floor(parseFloat(style.top) + (10 * size) / 64)
-			] as [number, number];
-		});
-		expect(
-			near(await pixelAt(page, shot, ...top), await colourOf(page, 'var(--color-accent)'))
-		).toBe(true);
 
 		await railOf(page).getByRole('link', { name: 'Train' }).click();
 		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();

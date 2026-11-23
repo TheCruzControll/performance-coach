@@ -3,8 +3,10 @@
   Modal bottom sheet built on the native <dialog> (showModal): focus is trapped and the page
   behind is inert by the platform itself; Escape and backdrop tap close; focus returns to the
   opener. Drag the handle/header down with a finger or a pen to dismiss (distance or velocity
-  threshold). From 1024 px it opens as a dialog centred in the window, with no handle; `wide` makes
-  that dialog wide enough for a table.
+  threshold). From 1024 px it opens as a 480 px dialog centred in the window, with no handle;
+  `wide` makes that dialog wide enough for a table. With `desktop="panel"` it opens instead as a
+  full-height 496 px panel at the window's right, over a clear backdrop, so the screen stays in
+  view: still a modal dialog (focus trap, Escape, a click beside it closes it, focus returns).
 -->
 <script lang="ts">
 	import { onDestroy, type Snippet } from 'svelte';
@@ -19,6 +21,11 @@
 		description?: string;
 		/** From 1024 px, a wider dialog: room for a table. */
 		wide?: boolean;
+		/**
+		 * From 1024 px, a centred `dialog` (the default: a decision, a pick-one) or a right-hand
+		 * `panel` for a sheet used beside the screen (Change, More). The phone's sheet either way.
+		 */
+		desktop?: 'dialog' | 'panel';
 		onclose?: () => void;
 		footer?: Snippet;
 		'data-testid'?: string;
@@ -30,6 +37,7 @@
 		title,
 		description,
 		wide = false,
+		desktop = 'dialog',
 		onclose,
 		footer,
 		'data-testid': testId,
@@ -171,6 +179,7 @@
 	class="sheet-dialog"
 	class:visible
 	class:wide
+	class:panel={desktop === 'panel'}
 	aria-labelledby={`${id}-title`}
 	aria-describedby={description ? `${id}-desc` : undefined}
 	data-testid={testId}
@@ -348,18 +357,19 @@
 		padding-bottom: max(var(--space-6), calc(var(--safe-bottom) + var(--space-2-5)));
 	}
 
-	/* A desktop window: a dialog centred in the window that fades in as it rises 8 px, with no
-	   handle; its content scrolls inside. A finger still swipes it down: a wide screen can be a
-	   touch screen. */
+	/* A desktop window: a 480 px dialog centred in the window that fades in as it rises 8 px, with
+	   no handle; its content scrolls inside. A finger still swipes it down: a wide screen can be a
+	   touch screen. Paper, "Security, removing a passkey": surface-1, 28 px corners, 40 px at the sides. */
 	@media (width >= 64rem) {
 		.sheet {
 			inset: 0;
-			width: min(100% - 2 * var(--gutter), 32rem);
+			width: min(100% - 2 * var(--gutter), 30rem);
 			height: fit-content;
 			max-height: min(85dvh, 48rem);
 			margin: auto;
 			border-bottom: 1px solid var(--color-border);
 			border-radius: var(--radius-xl);
+			box-shadow: none;
 			opacity: 0;
 			transform: translateY(8px);
 			transition:
@@ -380,23 +390,63 @@
 			display: none;
 		}
 
-		/* The dialog keeps its spacing and its footer's hairline: the phone's v2 rhythm is for a
-		   sheet rising from the bottom edge, and the desktop panel is v2/03's. */
+		/* Paper's room, less 8 px on top so the plate calculator fits a 1024 x 700 window whole: 24 px
+		   above the header, 40 at the sides, 16 between the header and the body, 24 under the body.
+		   A footer adds 12 above its buttons and keeps 40 under them. */
 		.grab-zone {
-			padding: var(--space-5) var(--gutter) var(--space-2);
+			padding: var(--space-6) var(--space-10) 0;
 		}
 
 		.body {
-			padding: var(--space-2) var(--gutter) var(--space-6);
+			padding: var(--space-4) var(--space-10) var(--space-6);
 		}
 
 		.footer {
-			padding: var(--space-3) var(--gutter) calc(var(--space-4) + var(--safe-bottom));
-			border-top: 1px solid var(--color-hairline);
+			padding: var(--space-3) var(--space-10) var(--space-10);
 		}
 
 		.body:last-child {
-			padding-bottom: calc(var(--space-6) + var(--safe-bottom));
+			padding-bottom: var(--space-6);
+		}
+
+		/*
+		 * The right-hand panel (Paper, "Train change a day"): full height at the window's right, on
+		 * the canvas with a hairline at its left, over a clear backdrop, so the screen stays in view
+		 * beside it. It slides 24 px in from the right as it fades; a finger still swipes it down.
+		 */
+		.panel .scrim {
+			background: transparent;
+		}
+
+		.panel .sheet {
+			inset: 0 0 0 auto;
+			width: min(31rem, 100% - var(--nav-inset-left));
+			height: 100%;
+			max-height: none;
+			margin: 0;
+			border: 0;
+			border-left: 1px solid var(--color-hairline);
+			border-radius: 0;
+			background: var(--color-canvas);
+			transform: translateX(var(--space-6));
+		}
+
+		.panel.visible .sheet {
+			transform: translateY(var(--drag, 0px));
+		}
+
+		.panel .grab-zone {
+			padding: calc(var(--safe-top) + var(--space-12)) var(--space-14) 0;
+		}
+
+		.panel .body,
+		.panel .footer {
+			padding-inline: var(--space-14);
+		}
+
+		.panel .title {
+			font: var(--type-statement);
+			letter-spacing: var(--tracking-statement);
 		}
 	}
 </style>
