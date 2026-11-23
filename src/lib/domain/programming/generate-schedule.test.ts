@@ -110,6 +110,7 @@ function judgeWeeks(
 					week: { kind: week.kind, phase: block.phase, targets: week.targets },
 					events,
 					...(level && { level }),
+					today: addDays(week.startsOn, -7),
 					load: {
 						from: addDays(week.startsOn, -7),
 						planned: before.filter((s) => s.date !== eve),

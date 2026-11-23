@@ -257,6 +257,9 @@ export const schedule: Stage = (draft, { input, options, log }) => {
 			week: { kind: week.kind, phase: block.phase, targets: week.targets },
 			events,
 			...(level && { level }),
+			// The week before is the load's past, not missed: today is its first day, so a week whose
+			// eve has no session keeps its planned load.
+			today: addDays(week.startsOn, -7),
 			load: {
 				from: addDays(week.startsOn, -7),
 				planned: before.filter((s) => s.date !== eve),
