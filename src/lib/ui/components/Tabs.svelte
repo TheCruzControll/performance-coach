@@ -116,8 +116,10 @@
 		justify-content: center;
 		min-height: var(--touch-target);
 		padding: 0 var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
+		font-family: var(--font-mono);
+		font-size: var(--text-meta);
+		font-weight: var(--weight-regular);
+		text-transform: lowercase;
 		color: var(--color-text-tertiary);
 		transition:
 			color var(--duration-base) var(--ease-standard),
@@ -137,7 +139,7 @@
 		left: calc(100% / var(--count) / 2 - 16px);
 		width: 32px;
 		height: 2px;
-		border-radius: var(--radius-full);
+		border-radius: 0;
 		background: var(--color-accent);
 		transform: translateX(calc(var(--index) * 100cqi / var(--count)));
 		transition: transform var(--duration-slow) var(--ease-spring);
@@ -147,14 +149,14 @@
 
 	.panel:focus-visible {
 		outline-offset: 4px;
-		border-radius: var(--radius-md);
+		border-radius: var(--radius-sm);
 	}
 
 	@media (hover: hover) and (pointer: fine) {
 		.tab[aria-selected='false']:hover {
-			border-radius: var(--radius-md);
+			border-radius: var(--radius-sm);
 			background: var(--color-surface-2);
-			color: var(--color-text-secondary);
+			color: var(--color-text);
 		}
 	}
 </style>

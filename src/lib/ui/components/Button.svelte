@@ -1,6 +1,6 @@
 <!--
   @component
-  Primary action control. Pill-shaped, ≥44px touch target at every size, visible pressed state
+  Primary action control. Flat, 4px radius, ≥44px touch target at every size, visible pressed state
   (scale + tone), loading state that keeps its width. Renders an <a> when `href` is set.
 -->
 <script lang="ts">
@@ -54,7 +54,7 @@
 		...aria
 	}: Props = $props();
 
-	const iconSize = $derived(size === 'lg' ? 22 : size === 'sm' ? 16 : 20);
+	const iconSize = $derived(size === 'sm' ? 16 : 18);
 </script>
 
 {#snippet content()}
@@ -110,12 +110,12 @@
 		gap: var(--space-2);
 		min-height: var(--btn-height);
 		padding: 0 var(--btn-pad);
-		border-radius: var(--radius-full);
+		border-radius: var(--radius-sm);
 		border: 1px solid transparent;
 		font-family: var(--font-sans);
 		font-size: var(--text-base);
-		font-weight: var(--weight-semibold);
-		letter-spacing: var(--tracking-tight);
+		font-weight: var(--weight-regular);
+		letter-spacing: var(--tracking-normal);
 		line-height: 1;
 		white-space: nowrap;
 		user-select: none;
@@ -124,9 +124,7 @@
 			transform var(--duration-fast) var(--ease-out),
 			background-color var(--duration-fast) var(--ease-standard),
 			border-color var(--duration-fast) var(--ease-standard),
-			color var(--duration-fast) var(--ease-standard),
-			box-shadow var(--duration-base) var(--ease-standard),
-			opacity var(--duration-fast) var(--ease-standard);
+			color var(--duration-fast) var(--ease-standard);
 	}
 
 	/* Every size keeps a ≥44px hit area, even when the visual is smaller. It is laid out in the
@@ -138,14 +136,14 @@
 	}
 
 	.btn[data-size='sm'] {
-		--btn-height: 2.25rem;
+		--btn-height: var(--touch-target);
 		--btn-pad: var(--space-4);
-		font-size: var(--text-sm);
+		font-size: var(--text-ui);
 	}
 
 	.btn[data-size='lg'] {
 		--btn-height: 3.5rem;
-		--btn-pad: var(--space-6);
+		--btn-pad: var(--space-5);
 		font-size: var(--text-lg);
 	}
 
@@ -159,13 +157,16 @@
 		transition-duration: var(--duration-instant);
 	}
 
+	/* Disabled has no opacity: its text and outlines take the disabled tokens. A loading button keeps
+	   its look (aria-busy), so it is excluded here. */
 	.btn:disabled {
 		cursor: not-allowed;
-		opacity: 0.42;
+	}
+	.btn:disabled:not([aria-busy='true']) {
+		color: var(--color-text-disabled);
 	}
 
 	.btn[aria-busy='true'] {
-		opacity: 1;
 		cursor: progress;
 	}
 
@@ -173,50 +174,59 @@
 	.btn[data-variant='primary'] {
 		background: var(--color-accent);
 		color: var(--color-on-accent);
-		box-shadow: var(--glow-accent);
+		font-weight: var(--weight-semibold);
 	}
 	.btn[data-variant='primary']:active:not(:disabled) {
 		background: var(--color-accent-pressed);
-		box-shadow: none;
+	}
+	.btn[data-variant='primary']:disabled:not([aria-busy='true']) {
+		background: var(--color-surface-2);
 	}
 
 	.btn[data-variant='secondary'] {
-		background: var(--color-surface-2);
+		background: transparent;
 		color: var(--color-text);
-		border-color: var(--color-border);
-		box-shadow: inset 0 1px 0 0 var(--color-highlight);
+		border-color: var(--color-border-strong);
 	}
 	.btn[data-variant='secondary']:active:not(:disabled) {
 		background: var(--color-surface-3);
 	}
+	.btn[data-variant='secondary']:disabled:not([aria-busy='true']) {
+		border-color: var(--color-hairline);
+	}
 
 	.btn[data-variant='ghost'] {
 		background: transparent;
-		color: var(--color-text);
+		color: var(--color-text-secondary);
 	}
 	.btn[data-variant='ghost']:active:not(:disabled) {
-		background: var(--color-surface-2);
+		background: var(--color-surface-3);
 	}
 
 	.btn[data-variant='danger'] {
-		background: var(--color-danger-subtle);
+		background: transparent;
 		color: var(--color-danger);
-		border-color: color-mix(in srgb, var(--color-danger) 28%, transparent);
+		border-color: var(--color-border-strong);
 	}
 	.btn[data-variant='danger']:active:not(:disabled) {
-		background: color-mix(in srgb, var(--color-danger) 22%, transparent);
+		background: var(--color-surface-3);
+	}
+	.btn[data-variant='danger']:disabled:not([aria-busy='true']) {
+		border-color: var(--color-hairline);
 	}
 
 	@media (hover: hover) and (pointer: fine) {
 		.btn[data-variant='primary']:hover:not(:disabled) {
 			background: var(--color-accent-hover);
 		}
-		.btn[data-variant='secondary']:hover:not(:disabled),
+		.btn[data-variant='secondary']:hover:not(:disabled) {
+			background: var(--color-surface-2);
+		}
 		.btn[data-variant='ghost']:hover:not(:disabled) {
-			background: var(--color-surface-3);
+			color: var(--color-text);
 		}
 		.btn[data-variant='danger']:hover:not(:disabled) {
-			background: color-mix(in srgb, var(--color-danger) 16%, transparent);
+			background: var(--color-danger-subtle);
 		}
 	}
 

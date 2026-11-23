@@ -353,7 +353,7 @@ test.describe('/design → Coach', () => {
 			.getByRole('button', { name: 'Try again' });
 		await expect(busy).toHaveAttribute('aria-busy', 'true');
 		await expect(busy).toBeDisabled();
-		// Retry is a compact button: its 44 px is the hit area, not the 36 px border box.
+		// Retry is a compact button: Button sm is 44 px, the touch target, so the hit area is the box.
 		await expectHitAreas(page.getByRole('button', { name: 'Try again' }));
 
 		await expect(page.getByTestId('mock-badge')).toContainText('Practice coach');

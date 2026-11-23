@@ -45,10 +45,11 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   manifest now follow the new canvas `#0c0b09`. The in-app brand mark (`static/brand/mark-arc.svg`,
   `--color-accent`) is amber, so it no longer matches them either. Closes when an icons row
   regenerates them with `pnpm icons` and the mark is decided.
-- **Components still set uppercase.** Badge, Stat, TextField and 19 other files still set
-  `text-transform: uppercase`, so their labels render in capitals, not the lowercase
-  label style of the Instrument design (docs/design-system.md, Labels). Closes when ui/02 rebuilds
-  them on the label style.
+- **Some components still set uppercase.** 20 files, among them Stat, TextField and NumberStepper,
+  still set `text-transform: uppercase`, so their labels render in capitals, not the lowercase
+  label style of the Instrument design (docs/design-system.md, Labels). Badge and ProgramHeader's
+  copy of its tone no longer do (ui/02a). Closes when ui/02 PR 2 and PR 3 move the shared
+  components to the label style and the screen rows move the feature components.
 
 ## Verification gaps
 
