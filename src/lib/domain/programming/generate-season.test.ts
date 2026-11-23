@@ -267,15 +267,21 @@ describe('every scenario', () => {
 		expect(superseded.map((d) => d.ruleKey)).toEqual([]);
 	});
 
-	it.each(ALL)('%s: gives the same plan however the profile’s rows are ordered', (_, profile) => {
-		const p = profile();
-		const shuffled: TrainingProfile = {
-			...p,
-			goals: [...p.goals].reverse(),
-			experience: [...p.experience].reverse(),
-			baselines: [...p.baselines].reverse(),
-			schedule: { ...p.schedule, commitments: [...p.schedule.commitments].reverse() }
-		};
-		expect(JSON.stringify(generate(shuffled))).toBe(JSON.stringify(generate(p)));
-	});
+	// Each case generates the whole season twice (as given and shuffled); with the week-boundary schedule
+	// repair that runs close to the 5 s default under a loaded runner, so it gets its own budget.
+	it.each(ALL)(
+		'%s: gives the same plan however the profile’s rows are ordered',
+		(_, profile) => {
+			const p = profile();
+			const shuffled: TrainingProfile = {
+				...p,
+				goals: [...p.goals].reverse(),
+				experience: [...p.experience].reverse(),
+				baselines: [...p.baselines].reverse(),
+				schedule: { ...p.schedule, commitments: [...p.schedule.commitments].reverse() }
+			};
+			expect(JSON.stringify(generate(shuffled))).toBe(JSON.stringify(generate(p)));
+		},
+		30_000
+	);
 });
