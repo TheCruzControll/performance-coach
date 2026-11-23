@@ -136,8 +136,8 @@ export async function decideReview(
 
 // ---- The next block (a cycle review) -----------------------------------------------------------
 
-/** Where the owner lands once the next block is planned: Train with the plan overview open. */
-export const PLAN_OVERVIEW_HREF = '/train?tool=plan';
+/** Where the owner lands once the next block is planned: the whole plan (/train/plan). */
+export const PLAN_OVERVIEW_HREF = '/train/plan';
 
 /** The toast once the next block is planned: 'Next block planned · version 3'. */
 export const plannedWords = (versionNumber: number | null) =>
@@ -174,7 +174,7 @@ export function cycleChoicesOf(form: FormData): { reviewId: string; input: Decid
 /**
  * Plan the next block from the cycle review's card (cycleChoicesOf), as its preview showed it:
  * - applied (now, or before: a second tap) → { outcome: 'applied', words, href }: the toast and
- *   the plan overview
+ *   the whole plan
  * - rejected or superseded meanwhile → { outcome }: the card, reloaded, shows it
  * - a preview gone stale → `fail(409, { reason: 'profile', message })`, and the reload shows the
  *   fresh one; the other failures as decideReview's

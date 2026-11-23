@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick, type ComponentProps } from 'svelte';
-	import { afterNavigate, goto, invalidateAll, replaceState } from '$app/navigation';
+	import { afterNavigate, invalidateAll, replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { navigating, page } from '$app/state';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
@@ -9,7 +9,6 @@
 	import Notice from '#lib/ui/components/Notice.svelte';
 	import type { IconName } from '#lib/ui/icons/icons.ts';
 	import type AddSessionSheetType from '#lib/ui/program/AddSessionSheet.svelte';
-	import type PlanSheetType from '#lib/ui/program/PlanOverviewSheet.svelte';
 	import WeekLines from '#lib/ui/program/WeekLines.svelte';
 	import { LazySheet } from './lazy-sheet.svelte.ts';
 	import type MoreSheetType from './MoreSheet.svelte';
@@ -124,13 +123,6 @@
 				: import('./RestTimerSheet.svelte'),
 		'rest'
 	);
-	const plan = new LazySheet<ComponentProps<typeof PlanSheetType>>(
-		() =>
-			import.meta.env.SSR
-				? Promise.reject(new Error('client only'))
-				: import('#lib/ui/program/PlanOverviewSheet.svelte'),
-		'plan'
-	);
 	/** Add a session to the week shown (AddSessionSheet): loaded on its row's first tap. */
 	const addSession = new LazySheet<ComponentProps<typeof AddSessionSheetType>>(
 		() =>
@@ -139,14 +131,6 @@
 				: import('#lib/ui/program/AddSessionSheet.svelte'),
 		'add'
 	);
-
-	/** A week tapped in the plan: shown as an arrow shows it (keeping scroll and focus), with More
-	 * closed, which it was opened from. */
-	const openWeek = (week: number) => {
-		more.open = false;
-		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() + a query
-		return goto(weekHref(week), { replace: true, reset: false });
-	};
 
 	/** A session added: More, which Add session opened over, closes with it, so the new line is in
 	 * view and the focus goes back to More's own opener. */
@@ -189,12 +173,11 @@
 				? plates
 				: tool === 'rest'
 					? restTimer
-					: tool === 'plan' && view
-						? plan
-						: tool === 'add' && view?.addable.length
-							? addSession
-							: null;
-		// Each of More's tools arrives over More, opened first (`asked`, above).
+					: tool === 'add' && view?.addable.length
+						? addSession
+						: null;
+		// Each of More's tools arrives over More, opened first (`asked`, above). The plan is a page
+		// now (/train/plan): an old `?tool=plan` opens nothing.
 		if (tool === 'more' || inMore) more.show();
 		if (inMore) {
 			inMore.prefetch();
@@ -210,7 +193,7 @@
 			// no storage, no rest
 		}
 		return () => {
-			for (const sheet of [more, note, plates, restTimer, plan, addSession]) sheet.leave();
+			for (const sheet of [more, note, plates, restTimer, addSession]) sheet.leave();
 		};
 	});
 
@@ -390,7 +373,7 @@
 <more.component
 	bind:open={more.open}
 	onclose={closeSheet}
-	plan={view ? plan : null}
+	program={!!view}
 	{plates}
 	rest={restTimer}
 	add={view?.addable.length ? addSession : null}
@@ -415,18 +398,6 @@
 		addIntents={view.addIntents}
 		onclose={closeSheet}
 		onadded={added}
-	/>
-{/if}
-{#if view}
-	<plan.component
-		bind:open={plan.open}
-		title={view.program.title}
-		blocks={view.plan}
-		{weekHref}
-		onweek={openWeek}
-		onclose={closeSheet}
-		road={view.road}
-		openGoals={view.openGoals}
 	/>
 {/if}
 

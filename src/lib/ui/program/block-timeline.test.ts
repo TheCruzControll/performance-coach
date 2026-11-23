@@ -1,8 +1,7 @@
 /**
  * BlockTimeline as the server renders it: M3's timeline without a season (Today's BuildPreview and
- * desk Today pass none), and with Train's season the goal lanes, the ticked weeks, the counted
- * outline run and the track; while it streams, the lanes' and the track's room held. The region,
- * aria-busy and the loading status are PlanOverviewSheet's (the e2e spec's).
+ * desk Today pass none), and with a season (/design's) the goal lanes, the ticked weeks, the
+ * counted outline run and the track; while it streams, the lanes' and the track's room held.
  */
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';

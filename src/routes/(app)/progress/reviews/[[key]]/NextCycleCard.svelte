@@ -10,7 +10,7 @@
     and its fingerprint is the one the action reads.
   - Adjust: keep an exercise the rules rotate, move the deload to the other end or skip it.
   - 'Start next block' posts the chosen start with its preview's fingerprint (?/startCycle), then
-    the plan overview opens with the toast 'Next block planned · version 3'. 'Not now' leaves it
+    the whole plan (/train/plan) opens with the toast 'Next block planned · version 3'. 'Not now' leaves it
     waiting here, as the reviews list.
   - Pending: aria-busy, and a second tap posts nothing (generating takes about a second). A stale
     preview (the profile or training changed) reloads with the fresh one and says so. Offline:

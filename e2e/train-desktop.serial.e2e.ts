@@ -4,13 +4,12 @@
  * session, the week's one line and More stand in the 560 px column, 200 px from the rail, and every
  * designed state keeps that frame at the column's top: a week loading, a failed load, offline, no
  * program, a rest day, not started, beyond the plan, the first block complete, and the plate
- * calculator's and plan's chunks failing (their notices under their rows in More). The week's note
- * and More open as the right-hand panel, and a tool as a centred dialog over it. The picked
+ * calculator's chunk failing (its notice under its row in More). The week's note and More open as
+ * the right-hand panel, and a tool as a centred dialog over it; the whole plan is a page of its
+ * own, in the same readable column. The picked
  * session's column at the right arrives with v2/08. Serial: programs are the one owner's
  * (e2e/program-support.ts).
  */
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { addDays } from '../src/lib/domain/calendar';
@@ -206,7 +205,7 @@ test.describe('a program this week', () => {
 		await page.keyboard.press('Escape');
 		await expect(page.getByTestId('week-note')).toBeHidden();
 
-		// More is the right-hand panel too; the plan overview opens over it as a centred dialog.
+		// More is the right-hand panel too; the whole plan is a page, in the readable column.
 		await openMore(page);
 		await expectRightPanel(moreSheet(page));
 		expect((await boxOf(sheetPanel(moreSheet(page)))).x, 'the week in view').toBeGreaterThanOrEqual(
@@ -214,8 +213,9 @@ test.describe('a program this week', () => {
 		);
 		await captureScreen(page, testInfo, 'train-desktop-more');
 		await moreSheet(page).getByTestId('open-plan').click();
-		await expectCentredDialog(page, page.getByRole('dialog', { name: 'Your plan' }));
-		await expect(moreSheet(page)).toBeVisible();
+		await expect(page).toHaveURL(/\/train\/plan$/);
+		await expect(page.getByTestId('plan-phases')).toBeVisible();
+		await expectReadableFrame(page);
 		await captureScreen(page, testInfo, 'train-desktop-plan');
 		expect(errors).toEqual([]);
 	});
@@ -481,36 +481,6 @@ test.describe('the lazy sheets’ chunks failing', () => {
 		failing = false;
 		await notice.getByRole('button', { name: 'Try again' }).click();
 		await expectCentredDialog(page, page.getByRole('dialog', { name: 'Plate calculator' }));
-		await expect(moreSheet(page)).toBeVisible();
-	});
-
-	test('the plan’s Retry notice sits under its row in More; Retry opens a centred dialog', async ({
-		page
-	}, testInfo) => {
-		const manifest = JSON.parse(
-			readFileSync(
-				path.resolve(import.meta.dirname, '../.svelte-kit/output/client/.vite/manifest.json'),
-				'utf8'
-			)
-		) as Record<string, { file: string } | undefined>;
-		const file = manifest['src/lib/ui/program/PlanOverviewSheet.svelte']?.file;
-		expect(file, 'the plan sheet is in the build under test').toBeTruthy();
-		const chunk = `**/${file}`;
-		await page.route(chunk, (route) => route.abort('internetdisconnected'));
-		await gotoHydrated(page, '/train');
-
-		await openMore(page);
-		const plan = page.getByTestId('open-plan');
-		await plan.click();
-		const notice = page.getByRole('alert').filter({ hasText: 'Couldn’t open your plan' });
-		await expect(notice).toBeVisible();
-		await expectUnder(page, notice, plan);
-		await expectNoSideScroll(page);
-		await auditBothThemes(page, testInfo, 'plan-retry');
-
-		await page.unroute(chunk);
-		await notice.getByRole('button', { name: 'Try again' }).click();
-		await expectCentredDialog(page, page.getByRole('dialog', { name: 'Your plan' }));
 		await expect(moreSheet(page)).toBeVisible();
 	});
 });

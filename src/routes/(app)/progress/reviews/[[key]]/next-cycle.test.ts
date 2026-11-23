@@ -289,7 +289,7 @@ describe("the next block's card", () => {
 		expect(decided({ state: 'applied', versionNumber: 3 })).toMatchObject({
 			state: 'applied',
 			title: 'Next block planned · version 3',
-			link: { href: '/train?tool=plan', label: 'Open your plan' },
+			link: { href: '/train/plan', label: 'Open your plan' },
 			previews: []
 		});
 		expect(decided({ state: 'rejected' })).toMatchObject({
@@ -351,7 +351,7 @@ describe("the card's form", () => {
 		);
 		expect(body).not.toContain('<form');
 		expect(body).toContain('Next block planned · version 3');
-		expect(body).toContain('href="/train?tool=plan"');
+		expect(body).toContain('href="/train/plan"');
 	});
 
 	it('the chosen start’s fingerprint is the one posted, with the overrides only when given', () => {

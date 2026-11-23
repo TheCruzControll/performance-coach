@@ -36,7 +36,7 @@ export const START_LABEL: Record<NextBlockStart, string> = {
 	next_monday: 'Next Monday'
 };
 
-/** Where the card links once the block is planned: Train with the plan overview open. */
+/** Where the card links once the block is planned: the whole plan. */
 export const PLAN_LINK = { href: PLAN_OVERVIEW_HREF, label: 'Open your plan' };
 
 /** The deload choice that leaves it where the rules put it. */

@@ -5,7 +5,8 @@
   it on intent, as it loads each tool. A tool's row opens the tool over this sheet, which stays
   open beneath it (a dialog from 1024 px), so closing the tool gives the focus back to its row; a
   tool whose code fails to load says so under its row, with Retry. A link row leaves Train, and
-  this sheet with it. "Add a session to this week" and "Change when the plan starts" are Train's
+  this sheet with it: the whole plan (/train/plan) and what has changed (/train/history) are pages
+  of their own (v2/07b). "Add a session to this week" and "Change when the plan starts" are Train's
   own, which Paper does not place: leaving them out would take the capability away. A session added
   closes this sheet with Add session (Train's `onadded`), so the new line is in view on Train.
 -->
@@ -23,8 +24,8 @@
 	interface Props {
 		open: boolean;
 		onclose?: () => void;
-		/** The whole plan, with a program: its row and History's. */
-		plan: Tool | null;
+		/** A program: the whole plan's row and History's. */
+		program: boolean;
 		plates: Tool;
 		rest: Tool;
 		/** Adding a session to the week shown, when a day of it can take one. */
@@ -33,8 +34,9 @@
 		movable: boolean;
 	}
 
-	let { open = $bindable(), onclose, plan, plates, rest, add, movable }: Props = $props();
+	let { open = $bindable(), onclose, program, plates, rest, add, movable }: Props = $props();
 
+	const PLAN_HREF = resolve('/(app)/train/plan');
 	const HISTORY_HREF = resolve('/(app)/train/history/[[version]]', {});
 	const START_HREF = resolve('/(app)/train/start');
 	const LOG_HREF = resolve('/workout');
@@ -54,16 +56,14 @@
 <BottomSheet bind:open title="Plan and tools" {onclose} desktop="panel" data-testid="more-sheet">
 	<!-- Each row in its own item, so each keeps its hairline, a failed tool's notice under it. -->
 	<ul class="rows" role="list">
-		{#if plan}
-			<li class="tool" aria-busy={plan.busy}>
+		{#if program}
+			<li class="tool">
 				<ListRow
 					title="See the whole plan"
-					onpointerdown={plan.prefetch}
-					onpointerenter={plan.prefetch}
-					onclick={plan.show}
+					href={PLAN_HREF}
+					aria-busy={navigating.to?.url.pathname === PLAN_HREF}
 					data-testid="open-plan"
 				/>
-				{@render retry(plan, 'Couldn’t open your plan')}
 			</li>
 			<li class="tool">
 				<ListRow

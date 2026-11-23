@@ -8,14 +8,14 @@
   week is a link to it (≥ 44 px) and `onweek` hears the tap first; without it (a preview) no week
   is a link.
 
-  With `season` (Train's plan sheet, m7/39; season.ts), every block from this one on names each
-  goal's role ('Marathon · secondary', the leader first), its phase tone colours its node beside
-  its name, its deload, taper and recovery weeks carry the word, this week is ringed, and a long
-  run of outline weeks is one counted row. From 1024 px a segmented track (aria-hidden: the list
-  is its twin) runs above with the events and today on it. While the season streams (null, with
-  `lanes` goals) each block holds its lanes' room (the goals and a caption) and the track its own,
-  so the swap moves nothing (no lanes' room with no goals). Without `season` (also once it
-  failed), none of this renders.
+  With `season` (m7/39; season.ts, shown on /design since the plan sheet left Train in v2/07b),
+  every block from this one on names each goal's role ('Marathon · secondary', the leader first),
+  its phase tone colours its node beside its name, its deload, taper and recovery weeks carry the
+  word, this week is ringed, and a long run of outline weeks is one counted row. From 1024 px a
+  segmented track (aria-hidden: the list is its twin) runs above with the events and today on it.
+  While the season is pending (null, with `lanes` goals) each block holds its lanes' room (the
+  goals and a caption) and the track its own, so the swap moves nothing (no lanes' room with no
+  goals). Without `season` (also once it failed), none of this renders.
 -->
 <script lang="ts">
 	import Badge from '../components/Badge.svelte';
@@ -30,10 +30,10 @@
 		weekHref?: (week: number) => string;
 		/** A tap on a week's link, before the browser follows it (it may prevent that). */
 		onweek?: (event: MouseEvent, week: number) => void;
-		/** The season over the blocks; null while it streams. */
+		/** The season over the blocks; null while it is pending. */
 		season?: SeasonView | null;
 		/**
-		 * The goals each block's lanes list, their room held while the season streams. The owner's
+		 * The goals each block's lanes list, their room held while the season is pending. The owner's
 		 * open goals now: a block planned with more goals than that grows when its lanes land (rare).
 		 */
 		lanes?: number;
@@ -375,7 +375,7 @@
 		--node: var(--color-positive);
 	}
 
-	/* The goals' lanes: fixed-height lines, their room held from the goal count while it streams. */
+	/* The goals' lanes: fixed-height lines, their room held from the goal count while pending. */
 	.lanes {
 		--lane: 1.375rem;
 		min-height: calc(var(--lines) * var(--lane));
@@ -448,7 +448,7 @@
 		box-shadow: inset 0 0 0 2px var(--color-accent-ring);
 	}
 
-	/* The track: a desktop window only; its room is held while the season streams. */
+	/* The track: a desktop window only; its room is held while the season is pending. */
 	.track {
 		display: none;
 	}

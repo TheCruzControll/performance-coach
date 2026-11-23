@@ -240,17 +240,19 @@ async function weeklyJourney(page: Page, request: APIRequestContext, testInfo: T
 		await shoot(page, testInfo, 'train-session');
 	});
 
-	await test.step('5. History: version 2 with every why, current; version 1 still viewable', async () => {
+	await test.step('5. Changes: version 2 first, current, with every why; version 1 still viewable', async () => {
 		const { decisions } = await applied(s);
 		await gotoHydrated(page, '/train/history');
-		const newest = page.getByTestId('version').first();
-		await expect(newest.getByTestId('decision')).toHaveCount(decisions.length);
-		for (const d of decisions) await expect(newest).toContainText(d.why);
+		await expect(page.getByTestId('version-link').first()).toHaveAttribute(
+			'aria-label',
+			/, version 2$/
+		);
 		await shoot(page, testInfo, 'history');
 
 		await gotoHydrated(page, '/train/history/2');
 		await expect(page.getByTestId('current-version')).toBeVisible();
 		const changes = page.getByTestId('version-changes');
+		await expect(changes.getByTestId('decision')).toHaveCount(decisions.length);
 		for (const d of decisions) {
 			await expect(changes.getByTestId('decision').filter({ hasText: d.why })).toBeVisible();
 		}

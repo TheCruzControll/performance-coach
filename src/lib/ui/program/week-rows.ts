@@ -1,7 +1,7 @@
 /**
- * How BlockTimeline lists a block's weeks under Train's season (m7/39): a long run of outline
- * weeks counted in one row (OUTLINE_RUN), so a long road stays legible at 320 px. No runtime
- * import: the lazy plan sheet carries it, and none of season.ts's vocabulary.
+ * How BlockTimeline lists a block's weeks under a season (m7/39): a long run of outline weeks
+ * counted in one row (OUTLINE_RUN), so a long road stays legible at 320 px. No runtime import:
+ * BlockTimeline carries it, and none of season.ts's vocabulary.
  */
 import type { TimelineWeek } from './timeline.ts';
 

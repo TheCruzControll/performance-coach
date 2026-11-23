@@ -3,15 +3,14 @@
  * late cycle review left three unplanned weeks after Base, this week the last, and Build starts
  * next Monday. Train shows 'Free week', between blocks, with the next block's start and no rest
  * days, and lists the run logged this week as a line of its own; its next step and the next
- * week's arrow open Build's first week; the plan timeline labels the bridge with its length;
- * History's version shows the same state; Today's panel names the next block's start with 'Log
- * something else'. Axe is clean in both themes on a phone (393 × 659) and in a desktop window
+ * week's arrow open Build's first week; the whole plan names the bridge with its length, as its
+ * current phase; History's change that made it says the week was not planned before it;
+ * Today's panel names the next block's start with 'Log something else'. Axe is clean in both themes on a phone (393 × 659) and in a desktop window
  * (1440 × 900), where each screen is captured.
  *
  * Serial: the program is the one owner's, which every browser and worker shares.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { addDays } from '../src/lib/domain/calendar';
 import { longDate, shortDate } from '../src/lib/ui/program/words';
 import {
 	ANALYTICS_TZ,
@@ -93,40 +92,48 @@ test('the next step and the next week’s arrow open the new block’s first wee
 	await expect(page.getByTestId('week-lines')).toBeVisible();
 });
 
-test('the plan timeline labels the bridge with its length, hatched', async ({ page }) => {
+test('the whole plan names the bridge with its length, as the phase now', async ({ page }) => {
 	await gotoHydrated(page, '/train');
 	await openMore(page);
 	await page.getByTestId('open-plan').click();
-	const sheet = page.getByRole('dialog', { name: 'Your plan' });
-	await expect(sheet).toBeVisible();
-	const blocks = sheet.getByTestId('plan-block');
-	await expect(blocks.getByRole('heading', { level: 3 })).toHaveText([
-		'Base',
-		'Between blocks · 3 weeks',
-		'Build'
+	await expect(page).toHaveURL(/\/train\/plan$/);
+	const phases = page.getByTestId('plan-phases').getByRole('listitem');
+	// Base, Mon 5 Oct to Sun 1 Nov in the fixture's weeks, then the bridge's three, then Build.
+	const bridgeFrom = seeded.nextBlock.week - 3;
+	await expect(phases).toHaveText([
+		/^Base\s*Weeks 1 to 4/,
+		new RegExp(`^Between blocks · 3 weeks, now\\s*Weeks ${bridgeFrom} to ${bridgeFrom + 2}`),
+		new RegExp(`^Build\\s*Weeks ${seeded.nextBlock.week} to ${seeded.nextBlock.week + 3}`)
 	]);
-	const bridge = blocks.nth(1);
-	await expect(bridge).toHaveAttribute('data-bridge', '');
-	await expect(bridge).toHaveAttribute('data-current', '');
-	const from = addDays(seeded.weekStart, -14);
-	await expect(bridge.getByTestId('plan-block-span')).toHaveText(
-		`${shortDate(from)} – ${shortDate(addDays(seeded.weekStart, 6))} · Nothing planned`
-	);
-	await expect(bridge.getByTestId('plan-week')).toHaveCount(3);
-	await expect(bridge.getByText('Unplanned', { exact: true })).toHaveCount(3);
+	await expect(phases.nth(0)).toHaveAttribute('data-state', 'done');
+	await expect(phases.nth(1)).toHaveAttribute('data-state', 'now');
 	await auditBothThemes(page, 'the plan, a bridge');
 });
 
-test('History’s version shows the same state for the bridge week', async ({ page }) => {
+// The bridge came with version 2 (the late review's next block), which names no dated session: the
+// week it touched is this one, where version 1 had nothing planned (Base ended three weeks ago).
+// The week before that change says so, and never draws Base's week 1.
+test('History’s change that made the bridge says the week was not planned before it', async ({
+	page
+}) => {
 	await gotoHydrated(page, '/train/history/2');
-	const week = page.getByTestId('version-week');
-	await expect(week.getByTestId('history-bridge')).toContainText('Unplanned week · between blocks');
-	await expect(week.getByTestId('history-bridge')).toContainText(
-		`The next block starts ${shortDate(seeded.nextBlock.startsOn)}`
+	await page.getByTestId('see-week').click();
+	await expect(page).toHaveURL(/\/train\/history\/2\?week=?$/);
+	await expect(page.getByTestId('version-week-label')).toHaveText(
+		`Week of ${shortDate(seeded.weekStart)} · before this change`
 	);
-	await expect(week.getByTestId('rest-day')).toHaveCount(0);
-	await expect(week.getByTestId('week-strip')).toHaveCount(0);
-	await auditBothThemes(page, 'History, a bridge week');
+	const week = page.getByTestId('version-week');
+	await expect(week.getByTestId('history-not-planned')).toHaveText(
+		/^Not planned before this change\s*Your plan ended before this week then/
+	);
+	await expect(week.getByTestId('week-lines')).toHaveCount(0);
+	await expect(week.getByTestId('history-bridge')).toHaveCount(0);
+	// The change itself is one step back.
+	await page.getByTestId('back-to-change').click();
+	await expect(page).toHaveURL(/\/train\/history\/2$/);
+	await expect(page.getByTestId('version-changes')).toBeVisible();
+	await gotoHydrated(page, '/train/history/2?week');
+	await auditBothThemes(page, 'History, the week before a bridge');
 });
 
 test('Today’s panel names the next block’s start, with Log something else', async ({
@@ -170,8 +177,8 @@ test.describe('in a desktop window', () => {
 		await auditBothThemes(page, 'Train, a bridge week, desktop');
 		await captureScreen(page, testInfo, 'bridge-week-train-desktop');
 
-		await gotoHydrated(page, '/train/history/2');
-		await expect(page.getByTestId('history-bridge')).toBeVisible();
+		await gotoHydrated(page, '/train/history/2?week');
+		await expect(page.getByTestId('history-not-planned')).toBeVisible();
 		await expectNoSideScroll(page);
 		await captureScreen(page, testInfo, 'bridge-week-history-desktop');
 

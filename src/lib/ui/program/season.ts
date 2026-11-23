@@ -1,14 +1,14 @@
 /**
- * The season as Train's plan sheet lays it over M3's timeline (m7/39 periodisation-timeline):
- * each block from this one on with its phase tone, a lane per goal saying its role, its deload,
- * taper and recovery weeks, and the events and today along the whole road. Like timeline.ts, it
- * reads calendar strings, never the device's clock, and is composed on the server (Train's road
- * read), so the sheet carries none of the vocabulary. The road it reads is the periodisation road
+ * The season as BlockTimeline lays it over M3's timeline (m7/39 periodisation-timeline): each
+ * block from this one on with its phase tone, a lane per goal saying its role, its deload, taper
+ * and recovery weeks, and the events and today along the whole road. Like timeline.ts, it reads
+ * calendar strings, never the device's clock. Train's plan sheet, which read it, left Train in
+ * v2/07b; /design still shows it. The road it reads is the periodisation road
  * (services/periodisation/road-view.ts), declared here as far as this reads it: UI declares its
  * own prop types.
  *
- * How BlockTimeline lists a block's weeks under the season is week-rows.ts's, apart, so the lazy
- * sheet loads none of this vocabulary.
+ * How BlockTimeline lists a block's weeks under the season is week-rows.ts's, apart, so a
+ * timeline without a season loads none of this vocabulary.
  */
 import { addDays, daysBetween, type IsoDate } from '#lib/domain/calendar.ts';
 import { shortDate } from './words.ts';

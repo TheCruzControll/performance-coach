@@ -128,8 +128,11 @@ test.describe('review-ahead: every change still ahead', () => {
 		await expect(page.getByTestId('exercises')).toContainText('87.5 kg');
 
 		const why = versions[1]!.decisions.find((d) => d.why.includes('Bench press'))!.why;
-		await gotoHydrated(page, '/train/history');
-		await expect(page.getByTestId('version').first().getByTestId('decision')).toContainText([why]);
+		// The change's page (version 2) says why.
+		await gotoHydrated(page, '/train/history/2');
+		await expect(
+			page.getByTestId('version-changes').getByTestId('decision').filter({ hasText: why })
+		).toBeVisible();
 
 		await gotoHydrated(page, pageOf(seeded));
 		await expect(card(page)).toHaveAttribute('data-state', 'applied');

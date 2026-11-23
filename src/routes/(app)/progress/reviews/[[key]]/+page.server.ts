@@ -95,7 +95,7 @@ export const actions = {
 		if (parseReviewKey(params.key)?.kind !== 'cycle')
 			return fail(404, { reason: 'not_found' as const });
 		const result = await decideCycle(ownerId(locals), { form: await request.formData() });
-		// Posted without JavaScript: the plan overview, as the toast would.
+		// Posted without JavaScript: the whole plan, as the toast would.
 		const href = 'href' in result && result.href;
 		if (href && !request.headers.has('x-sveltekit-action')) redirect(303, href);
 		return result;

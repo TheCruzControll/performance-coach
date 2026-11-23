@@ -64,7 +64,11 @@ async function seedOnboarded(request: APIRequestContext, scenario: ReviewScenari
 const card = (page: Page) => page.getByTestId('next-cycle');
 const preview = (page: Page) => page.locator('[data-testid="next-cycle-preview"]:visible');
 const position = (page: Page) => page.getByTestId('program-position');
-const planSheet = (page: Page) => page.getByRole('dialog', { name: 'Your plan' });
+/** The whole plan's phase lines (/train/plan). */
+const phases = (page: Page) => page.getByTestId('plan-phases').getByRole('listitem');
+/** A change's line in Changes, by its version. */
+const changeLink = (page: Page, n: number) =>
+	page.locator(`[data-testid="version-link"][aria-label$=", version ${n}"]`);
 
 /** One step's evidence: nothing scrolls sideways, and the screen is captured. */
 async function capture(page: Page, testInfo: TestInfo, step: string) {
@@ -137,14 +141,16 @@ async function onTime(page: Page, seeded: SeededReview, testInfo: TestInfo) {
 	// 3. Start it: the block ends this Sunday, so it starts Monday, the only start on offer.
 	await expect(page.getByTestId('next-cycle-start')).toHaveCount(0);
 	await page.getByTestId('next-cycle-start-block').click();
-	await expect(page).toHaveURL(/\/train\?tool=plan$/);
+	await expect(page).toHaveURL(/\/train\/plan$/);
 	await expect(toastWith(page, 'Next block planned · version 2')).toBeVisible();
-	await expect(planSheet(page)).toBeVisible();
+	// The whole plan: the block lived through now, the new one ahead of it.
+	await expect(phases(page).nth(0)).toHaveAttribute('data-state', 'now');
+	await expect(phases(page).nth(1)).toHaveAttribute('data-state', 'ahead');
 	await capture(page, testInfo, '3-plan-after-start');
 
-	// 4. Train on the new block's week 1; its loads read as a share of the estimated 1RM.
-	const newBlock = planSheet(page).getByTestId('plan-block').nth(1);
-	await newBlock.locator('a[data-testid="plan-week"]').first().click();
+	// 4. Train on the new block's week 1; its loads read as a share of the estimated 1RM. The
+	// plan's phases are not links: the week is Train's ?week.
+	await gotoHydrated(page, `/train?week=${weekNumber(cycle, next)}`);
 	await expect(page).toHaveURL(new RegExp(`/train\\?week=${weekNumber(cycle, next)}$`));
 	const strength = await firstStrength(seeded.programId!, 2, next);
 	// The week's lines link each session: no day to pick first.
@@ -159,15 +165,14 @@ async function onTime(page: Page, seeded: SeededReview, testInfo: TestInfo) {
 	await expect(page.getByTestId('exercises')).toContainText('of your estimated 1RM');
 	await capture(page, testInfo, '4-session-estimated');
 
-	// 5. History: version 2 and the previous version 1, which opens read-only.
+	// 5. Changes: version 2, and version 1 (the plan created), which opens read-only.
 	await gotoHydrated(page, '/train/history');
-	const links = page.getByTestId('version-link');
-	await expect(links.filter({ hasText: /^\s*Version 2\b/ })).toHaveCount(1);
-	await expect(links.filter({ hasText: /^\s*Version 1\b/ })).toHaveCount(1);
+	await expect(changeLink(page, 2)).toHaveCount(1);
+	await expect(changeLink(page, 1)).toHaveText(/Plan created/);
 	await capture(page, testInfo, '5-history');
-	await links.filter({ hasText: /^\s*Version 1\b/ }).click();
+	await changeLink(page, 1).click();
 	await expect(page).toHaveURL(/\/train\/history\/1$/);
-	await expect(page.getByTestId('older-version')).toContainText('Older version · read-only');
+	await expect(page.getByTestId('older-version')).toContainText('An earlier version, read-only');
 	await expect(page.getByTestId('move-session')).toHaveCount(0);
 	await capture(page, testInfo, '5-history-version-1');
 	expect((await programVersions(seeded.programId!)).map((v) => [v.number, v.current])).toEqual([
@@ -220,14 +225,13 @@ async function late(page: Page, seeded: SeededReview, testInfo: TestInfo) {
 
 	// Starting this week creates the bridge, then the block from this Monday.
 	await page.getByTestId('next-cycle-start-block').click();
-	await expect(page).toHaveURL(/\/train\?tool=plan$/);
-	const sheet = planSheet(page);
-	await expect(sheet).toBeVisible();
-	const bridge = sheet.locator('[data-testid="plan-block"][data-bridge]');
+	await expect(page).toHaveURL(/\/train\/plan$/);
+	// The whole plan names the bridge with its length and its weeks, lived through.
+	const bridge = phases(page).filter({ hasText: 'Between blocks' });
 	await expect(bridge).toHaveCount(1);
-	await expect(bridge.getByRole('heading', { level: 3 })).toHaveText(`Between blocks · ${weeks}`);
-	await expect(bridge.getByTestId('plan-week')).toHaveCount(k);
-	await expect(bridge.getByText('Unplanned', { exact: true })).toHaveCount(k);
+	await expect(bridge).toContainText(`Between blocks · ${weeks}`);
+	await expect(bridge).toContainText(k === 1 ? `Week ${from}` : `Weeks ${from} to ${from + k - 1}`);
+	await expect(bridge).toHaveAttribute('data-state', 'done');
 	await capture(page, testInfo, 'late-3-plan-bridge');
 	const blocks = await query<{ phase: string; startsOn: string; outline: boolean }>(
 		`select b.phase, to_char(b.starts_on, 'YYYY-MM-DD') as "startsOn", b.outline

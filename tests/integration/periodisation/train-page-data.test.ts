@@ -16,7 +16,6 @@ import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { seedAnalyticsFixture } from '../../../src/lib/server/test-support/analytics-fixtures/index';
 import { FIXTURE_WEEKS } from '../../../src/lib/server/test-support/analytics-fixtures/periodisation-week';
-import { loadTrainRoad } from '../../../src/routes/(app)/train/road.server';
 import { loadTrainWeek } from '../../../src/routes/(app)/train/week.server';
 import { withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
@@ -35,7 +34,8 @@ const baseline = JSON.parse(
 
 /**
  * What each M7 Train slice may add, in KB of gzip (m7-plan; 3.0 KB in all). A slice turns on its
- * own row in ON when it lands.
+ * own row in ON when it lands. The timeline's row (m7/39's season) is off: the season left Train
+ * with its plan sheet (v2/07b), and the whole plan is its own page.
  */
 const ALLOWANCES = {
 	findings: 0.6,
@@ -44,7 +44,7 @@ const ALLOWANCES = {
 	timeline: 0.7,
 	replanNote: 0.1
 } as const;
-const ON: readonly (keyof typeof ALLOWANCES)[] = ['findings', 'why', 'weekKinds', 'timeline'];
+const ON: readonly (keyof typeof ALLOWANCES)[] = ['findings', 'why', 'weekKinds'];
 /** Random ids and the store's timestamps move a measure by a few bytes either way. */
 const TOLERANCE_B = 64;
 
@@ -69,10 +69,7 @@ describe('Train’s page data', () => {
 				};
 				const week = await loadTrainWeek(owner, { now, week: WEEKS[name], origin }, { db });
 				if (week.state !== 'program') throw new Error(`expected a program, got ${week.state}`);
-				// The season +page.server.ts streams beside the week (m7/39), in the same payload.
-				const road = await loadTrainRoad(owner, { today: week.today, origin }, { db });
-				expect(road).not.toBeNull();
-				const data = { ...week, road };
+				const data = week;
 				const bytes = gzipSync(JSON.stringify(data)).length;
 				// The same data without each session's why (the week's note, v2/07): the why's own
 				// bytes, held to its own row.
@@ -80,18 +77,14 @@ describe('Train’s page data', () => {
 				const why = bytes - size({ ...data, noteParts: { ...data.noteParts, why: [] } });
 				// The same data without the week-kind line: its own bytes.
 				const weekKinds = bytes - size({ ...data, noteParts: { ...data.noteParts, kind: null } });
-				// The same data without the season and its lanes' count: the timeline's own bytes.
-				const { road: _road, openGoals: _lanes, ...flat } = data;
-				const timeline = bytes - gzipSync(JSON.stringify(flat)).length;
 				const allowed = ON.reduce((sum, row) => sum + ALLOWANCES[row] * 1024, 0);
 				const growth = bytes - baseline.bytes[name];
 				console.log(
-					`Train page data, ${name} week: ${bytes} B gzip (${growth >= 0 ? '+' : ''}${growth} B on ${baseline.bytes[name]} B, allowed +${Math.round(allowed)} B; the why ${why} B of ${ALLOWANCES.why * 1024} B; week kinds ${weekKinds} B of ${ALLOWANCES.weekKinds * 1024} B; the timeline ${timeline} B of ${ALLOWANCES.timeline * 1024} B)`
+					`Train page data, ${name} week: ${bytes} B gzip (${growth >= 0 ? '+' : ''}${growth} B on ${baseline.bytes[name]} B, allowed +${Math.round(allowed)} B; the why ${why} B of ${ALLOWANCES.why * 1024} B; week kinds ${weekKinds} B of ${ALLOWANCES.weekKinds * 1024} B)`
 				);
 				expect(growth).toBeLessThanOrEqual(allowed + TOLERANCE_B);
 				expect(why).toBeLessThanOrEqual(ALLOWANCES.why * 1024);
 				expect(weekKinds).toBeLessThanOrEqual(ALLOWANCES.weekKinds * 1024);
-				expect(timeline).toBeLessThanOrEqual(ALLOWANCES.timeline * 1024);
 			});
 		}
 	);

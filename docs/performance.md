@@ -49,8 +49,8 @@ shared component costs every route, Security included.
   The toasts' styles moved into every route's CSS (0.3 KB) when the toasts joined the initial JS,
   which put Train over its 14 KB. Its `PlateSheet` loaded on intent, but the server build could
   reach that import, so SvelteKit linked its stylesheets (sheet, stepper, segmented control) into
-  Train. The server build now leaves it out (`import.meta.env.SSR`), as it does the plan sheet,
-  and those stylesheets arrive with the sheet (#245).
+  Train. The server build now leaves it out (`import.meta.env.SSR`), as it does Train's other
+  sheets, and those stylesheets arrive with the sheet (#245).
 
 - **`/design` renders with the CSS of its Buttons group only** (13.8 → 6.7 KB). Its Inputs, Data
   and Feedback groups loaded their JS with their tab, but SvelteKit still linked their CSS into
