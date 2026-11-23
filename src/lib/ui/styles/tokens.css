@@ -222,7 +222,7 @@
 	--safe-right: env(safe-area-inset-right, 0px);
 	--safe-bottom: env(safe-area-inset-bottom, 0px);
 	--safe-left: env(safe-area-inset-left, 0px);
-	--gutter: var(--space-7); /* 28px: every phone board pads its content this far */
+	--gutter: 1.25rem; /* v2 boards pad 28px (--space-7); the gutter moves with the shell in v2/03 */
 	--content-max: 34rem;
 	--nav-height: 3.625rem;
 	--touch-target: 2.75rem; /* 44px minimum (Apple HIG) */

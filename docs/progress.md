@@ -85,9 +85,10 @@ runs the criteria and updates milestones.md.
   built: each block's day pattern is planned across week boundaries, and every clash a generated
   week keeps is recorded as explained (a priority trade-off or a schedule_kept decision). m7r/04 to
   m7r/10, m7/58 and m7/59 build on it. The old M7 pull requests stay open until their rows merge.
-- **Instrument v2 tokens (`v2/01a`).** The colours, surfaces, borders, spacing, radii, the 28 px
-  gutter and the theme colour follow Instrument v2 in `src/lib/ui/styles/tokens.css`, in dark and
-  light; `docs/design-system.md` and `/design` show them. The type (`v2/01b`) is next. The rest of
+- **Instrument v2 tokens (`v2/01a`).** The colours, surfaces, borders, spacing, radii and the theme
+  colour follow Instrument v2 in `src/lib/ui/styles/tokens.css`, in dark and
+  light; `docs/design-system.md` and `/design` show them. The type (`v2/01b`) is next. The 28 px gutter moves with the shell in `v2/03`: at 28 px the workout's
+  logger wraps its effort chips and grows over the exercise header, which `v2/10` redesigns. The rest of
   the Instrument v2 rows are queued in `plan/queue.md` and wait on the tokens.
 - **Adding a session to a program.** The builder, the storage
   (`src/lib/server/services/programs/add.ts`), Train's Add session sheet and the coach's proposal

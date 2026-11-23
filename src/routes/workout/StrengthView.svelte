@@ -526,15 +526,9 @@
 
 <ExerciseList {items} current={current?.position} onadd={openPicker} onintent={prefetchPicker} />
 
-<div
-	class="main"
-	data-testid="workout-main"
-	bind:this={main}
-	style:--logger-height="{loggerHeight}px"
-	style:--pill-height="{pillHeight}px"
->
+<div class="main" data-testid="workout-main" bind:this={main}>
 	{#if rest}
-		<div class="rest">
+		<div class="rest" style:--logger-height="{loggerHeight}px" style:--pill-height="{pillHeight}px">
 			<div class="pill" bind:offsetHeight={pillHeight}>
 				<RestTimer
 					{rest}
@@ -548,7 +542,11 @@
 		</div>
 	{:else if current && startable}
 		{@const position = current.position}
-		<div class="rest start">
+		<div
+			class="rest start"
+			style:--logger-height="{loggerHeight}px"
+			style:--pill-height="{pillHeight}px"
+		>
 			<div class="pill" bind:offsetHeight={pillHeight}>
 				<Button
 					variant="secondary"
@@ -816,15 +814,6 @@
 		.main:has(> .rest) > :global([data-testid='set-logger']),
 		.main:has(> .rest) > .logger-space {
 			margin-top: 0;
-		}
-
-		/* The logger and the pill above it stick to the foot, so a control the browser scrolls into view
-		   needs their height as scroll margin, or it lands under them. */
-		.swipe :global(button),
-		.navigation :global(button) {
-			scroll-margin-bottom: calc(
-				max(var(--logger-height), var(--safe-bottom)) + var(--pill-height) + var(--space-4)
-			);
 		}
 	}
 </style>

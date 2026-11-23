@@ -274,8 +274,8 @@ Fallback` → local Menlo/Courier New (`size-adjust` 99.7%, `ascent-override` 10
 
 - **Spacing** (4 px grid): `--space-0-5` 2 · `1` 4 · `1-5` 6 · `2` 8 · `2-5` 10 · `3` 12 · `3-5` 14 ·
   `4` 16 · `4-5` 18 · `5` 20 · `6` 24 · `7` 28 · `8` 32 · `9` 36 · `10` 40 · `11` 44 · `12` 48 ·
-  `14` 56 · `16` 64 · `20` 80 px. Page gutter `--gutter` 28 px: every phone board pads its content
-  that far.
+  `14` 56 · `16` 64 · `20` 80 px. Page gutter `--gutter` 20 px for now. Every v2 phone board pads its
+  content 28 px (`--space-7`); the gutter takes it with the shell in `v2/03`.
 - **Radii:** 2 handle and segments · 14 fields · 16 buttons and toasts · 18 the workout's Done ·
   20 bubbles · 28 sheets and the composer · full avatar and dots; no card radius, v2 has no cards.
   The tokens are `--radius-xs`, `-sm`, `-md`, `-lg`, `-xl`, `-action-lg` and `-full`.
