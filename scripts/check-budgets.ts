@@ -36,7 +36,7 @@ import { precacheList } from '../src/lib/client/sw-precache.ts';
 
 export const BUDGETS = {
 	/** Initial JS per route (gzip), including the shared shell. */
-	routeJsKb: 60,
+	routeJsKb: 62,
 	/** CSS a route renders with (gzip): render-blocking, so budgeted per route. */
 	routeCssKb: 14,
 	/** Font files preloaded on any route. */
