@@ -37,11 +37,24 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   The workout keeps the 20 px gutter (`src/routes/workout/Shell.svelte`) until v2/10, for the same
   reason: at 28 px the steppers' 22 rem row is lost on a 393 px phone. On a 390 px iPhone the
   steppers already stack at 20 px.
-- **Twelve files still style their own underlined links; screen rows move them to `.text-link`.**
+- **Eleven files still style their own underlined links; screen rows move them to `.text-link`.**
   The links in running text are styled by each file: ProposalCard, RichText, Notice,
-  ReplanNotice, ProgramHeader, ArchivedSheet, KnowsSheet, ThreadList, the proposal detail, and the
-  three Train pages. (Toaster adopted `.text-link` in `v2/02c`.)
+  ReplanNotice, ArchivedSheet, KnowsSheet, ThreadList, the proposal detail, and the three Train
+  pages. (Toaster adopted `.text-link` in `v2/02c`.)
   Closes when each screen row adopts `.text-link` (or `Button variant="link"` for a standalone action).
+- **Train on desktop shows the week alone.** Paper's board 11 puts the picked session in a column
+  at the right of the week; `v2/07a1` leaves that column out, so a session opens on its own page.
+  Closes when v2/08 builds the session's page and its desktop column.
+- **Train's week note and More open in place, not as sheets, until `v2/07a2`.** The one line
+  under the week and the More row are native disclosures in the column (`src/routes/(app)/train/+page.svelte`);
+  Paper draws both as sheets (a right-hand panel from 1024 px). A rest timer's Skip moves the focus
+  to its row only while More is open. Closes when `v2/07a2` adds the More sheet and the week-note
+  sheet.
+- **A finding on two sessions is listed once per session in Train's week note.** `headsUps`
+  (`src/lib/ui/program/week-lines.ts`) keeps one note per distinct text, and the evaluation words
+  each session's note with where it sits ('You moved this here', 'After Lower A the day before'),
+  so the line says '1 heads-up' over two notes. Found building `v2/07a1`. Closes when the note
+  lists a finding once, with the sessions it names.
 - **`ListRow` still takes `icon` and `tone`, and draws neither.** v2 rows have no icon tiles, so
   both props are deprecated and accepted for the screens that still pass them.
   Closes when the last screen row drops them and `src/lib/ui/components/ListRow.svelte` removes them.

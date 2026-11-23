@@ -1,8 +1,9 @@
 <!--
   /design: the program display components (loaded when its tab opens), on one fixture week of a
-  hybrid plan, Wednesday 4 November 2026 being today: every session state, a card whose link is
-  navigating (pending), prescriptions in describe.ts's words, the Move sheet's body with the
-  days left this week and with none left, and the plan sheet's season (m7/39) loaded and streaming.
+  hybrid plan, Wednesday 4 November 2026 being today: Train's week as lines (Paper's week, v2/07),
+  every session state, a card whose link is navigating (pending), prescriptions in describe.ts's
+  words, the Move sheet's body with the days left this week and with none left, and the plan
+  sheet's season (m7/39) loaded and streaming.
 -->
 <script lang="ts">
 	import { addDays, type IsoDate } from '#lib/domain/calendar.ts';
@@ -23,6 +24,8 @@
 	import { seasonView, type SeasonRoad } from '#lib/ui/program/season.ts';
 	import { moveOption } from '#lib/ui/program/session-words.ts';
 	import { timelineView } from '#lib/ui/program/timeline.ts';
+	import WeekLines from '#lib/ui/program/WeekLines.svelte';
+	import { weekLines, type LineDay } from '#lib/ui/program/week-lines.ts';
 	import WeekStrip from '#lib/ui/program/WeekStrip.svelte';
 	import {
 		cardView,
@@ -234,9 +237,40 @@
 		{ today: TODAY, goals: GOALS }
 	);
 	const SEASON = seasonView(ROAD, TODAY);
+
+	/** Paper's week (4 · Train, "The week"): Monday 16 November 2026, Saturday 21 being today. */
+	const PAPER_WEEK: LineDay[] = (
+		[
+			['Lower body', 'completed', 60],
+			['Intervals', 'completed', 45],
+			['Full body', 'completed', 60],
+			['Muay Thai class', 'completed', 90],
+			null,
+			['Long run', 'planned', 45],
+			['Upper body', 'planned', 50]
+		] as const
+	).map((s, i) => ({
+		date: addDays('2026-11-16', i),
+		weekday: WEEKDAYS[i]!,
+		sessions: s
+			? [
+					{
+						lineage: s[0].toLowerCase().replace(/ /g, '-'),
+						title: s[0],
+						status: s[1],
+						estMinutes: s[2]
+					}
+				]
+			: []
+	}));
+	const LINES = weekLines(PAPER_WEEK, '2026-11-21');
 </script>
 
 <div class="grid">
+	<Section title="Week lines">
+		<WeekLines lines={LINES} label="Week 3" href={(lineage) => `#${lineage}`} />
+	</Section>
+
 	<Section title="Week strip">
 		<WeekStrip days={STRIP} today={TODAY} bind:selected label="Week 1" data-testid="week-strip" />
 		<p class="readout" data-testid="week-value">selected: {selected}</p>

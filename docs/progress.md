@@ -219,6 +219,15 @@ milestones.md.
   `desktop="panel"` as a full-height 496 px panel at the right (no caller yet; `/design` →
   Feedback shows one). The workout keeps its 640 px column until `v2/10`. The e2e run is CI's to
   prove.
+- **Instrument v2 Train week (`v2/07a1`).** Train shows the week's place ("Week 3 of 14 ·
+  Build") with two arrows, its title ("This week") and what is done, then one 60 px line per
+  session from `WeekLines` (a day off says Rest), each linking to its session. The week's one line
+  under it opens, in place, its findings, a review's changes, its kind, week 1's brief, a re-plan
+  and why each day holds its session; More opens the plan, history and tools in place. Another
+  week ends with Back to this week. Each state is one statement with one thing to do. The week
+  strip, the pills, the cards and the program header leave Train; Train is a readable screen. The
+  More sheet and the week's note sheet are `v2/07a2`; the whole plan and Changes are `v2/07b`.
+  The e2e run and the budgets are CI's to prove.
 - **Instrument v2 legacy components (`v2/02d`), which completes `v2/02`.** Cards, chips, badges,
   segmented controls, stat tiles, tabs and section headings lose their pills, fills, tint and amber
   and keep their padding and sizes, so no screen moves. A card keeps a hairline outline until its

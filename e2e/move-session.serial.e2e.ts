@@ -17,7 +17,13 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { addDays } from '../src/lib/domain/calendar';
 import { longDate, shortDate } from '../src/lib/ui/program/words';
 import { DESKTOP, expectNoSideScroll } from './desktop';
-import { PROGRAM_TZ, seedProgram, type SeededProgram, type SeededSession } from './program-support';
+import {
+	PROGRAM_TZ,
+	seedProgram,
+	sessionLine,
+	type SeededProgram,
+	type SeededSession
+} from './program-support';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -187,12 +193,9 @@ test.describe('a program that starts next week', () => {
 
 		// Train shows it on Wednesday, moved, and a reload keeps it there.
 		await page.getByTestId('back-to-train').click();
-		await page
-			.getByTestId('week-strip')
-			.getByRole('radio', { name: new RegExp(`^${longDate(wednesday)}\\b`) })
-			.click();
-		const card = page.getByTestId('session-card').filter({ hasText: 'Full body' });
-		await expect(card).toContainText('Moved from Mon');
+		const line = sessionLine(page, 'Full body', wednesday);
+		await expect(line).toHaveAttribute('data-status', 'moved');
+		await expect(line).toHaveAttribute('aria-label', `${longDate(wednesday)}, Full body, 60 min`);
 		await gotoHydrated(page, open(full));
 		await expect(page.getByTestId('session-status')).toHaveText('Moved from Mon');
 		expect(errors).toEqual([]);

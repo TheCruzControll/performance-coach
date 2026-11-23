@@ -1,18 +1,19 @@
 /**
- * Train in a desktop window (docs/design-system.md, Responsive layout → Screens): a wide screen.
- * The program header and the week strip span the content, the selected day's sessions sit in the
- * main column beside the week's brief and the tools, and every designed state keeps that frame:
- * a week loading, a failed load, offline, no program, a rest day, not started, beyond the plan,
- * the first block complete, and the plate calculator's and plan's chunks failing. The program
- * components adapt to their column with container queries (WeekStrip, SessionCard,
- * ProgramHeader). Serial: programs are the one owner's (e2e/program-support.ts).
+ * Train in a desktop window (docs/design-system.md, Responsive layout → Screens): a readable
+ * screen (Instrument v2, Paper 11 · Desktop). The week's top line, its title, one 60 px line per
+ * session, the week's one line and More stand in the 560 px column, 200 px from the rail, and every
+ * designed state keeps that frame at the column's top: a week loading, a failed load, offline, no
+ * program, a rest day, not started, beyond the plan, the first block complete, and the plate
+ * calculator's and plan's chunks failing (their notices under their rows in More). The picked
+ * session's column at the right arrives with v2/08. Serial: programs are the one owner's
+ * (e2e/program-support.ts).
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { addDays } from '../src/lib/domain/calendar';
-import { longDate, shortDate } from '../src/lib/ui/program/words';
+import { longDate } from '../src/lib/ui/program/words';
 import {
 	BELOW_DESKTOP_WIDTH,
 	DESKTOP,
@@ -24,7 +25,14 @@ import {
 	layoutWidth,
 	tokenPx
 } from './desktop';
-import { PROGRAM_TZ, seedProgram, type SeededProgram } from './program-support';
+import {
+	dayLines,
+	openMore,
+	PROGRAM_TZ,
+	seedProgram,
+	sessionLine,
+	type SeededProgram
+} from './program-support';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -43,15 +51,13 @@ test.beforeEach(async () => {
 const THEMES = ['dark', 'light'] as const;
 type Theme = (typeof THEMES)[number];
 
-const strip = (page: Page) => page.getByTestId('week-strip');
-const daySessions = (page: Page) => page.getByTestId('day-sessions');
+const lines = (page: Page) => page.getByTestId('week-lines');
 const cards = (page: Page) => page.getByTestId('session-card');
-const tools = (page: Page) => page.getByRole('region', { name: 'Tools' });
 const header = (page: Page) => page.getByTestId('program-header');
 const position = (page: Page) => page.getByTestId('program-position');
 const weekRegion = (page: Page) => page.getByTestId('train-week');
-const dayOf = (page: Page, date: string) =>
-	strip(page).getByRole('radio', { name: new RegExp(`^${longDate(date)}\\b`) });
+const more = (page: Page) => page.getByTestId('open-more');
+const mainBox = (page: Page) => boxOf(page.locator('main#main'));
 
 /** Change week from the keyboard (WebKit focuses no link on a click): the link keeps focus. */
 async function press(link: Locator) {
@@ -93,20 +99,34 @@ async function auditBothThemes(
 	await page.evaluate(() => delete document.documentElement.dataset.theme);
 }
 
-/** `main` lies wholly left of `side`, and their tops are level (±1 px). */
-async function expectBeside(main: Locator, side: Locator) {
-	const [left, right] = [await boxOf(main), await boxOf(side)];
-	expect(left.x + left.width, `${main} ends before ${side} starts`).toBeLessThanOrEqual(right.x);
-	expect(Math.abs(left.y - right.y), `${main} and ${side} start level`).toBeLessThanOrEqual(1);
+/**
+ * The screen is readable (--content-readable, centred beside the rail but at most 200 px from it
+ * to the text, as expectMainCentred places every screen), nothing sits right of main, and nothing
+ * scrolls sideways.
+ */
+async function expectReadableFrame(page: Page) {
+	await expectMainCentred(page, await tokenPx(page, '--content-readable'));
+	const main = await mainBox(page);
+	const right = await page
+		.locator('main#main')
+		.evaluate((el) =>
+			Math.max(...[...el.querySelectorAll('*')].map((n) => n.getBoundingClientRect().right))
+		);
+	expect(right, 'nothing right of main').toBeLessThanOrEqual(main.x + main.width + 1);
+	await expectNoSideScroll(page);
 }
 
-/**
- * The screen is wide (--content-wide, centred beside the rail but at most 200 px from it to the
- * text, as expectMainCentred places every screen) and nothing scrolls sideways.
- */
-async function expectWideFrame(page: Page) {
-	await expectMainCentred(page, await tokenPx(page, '--content-wide'));
-	await expectNoSideScroll(page);
+/** Each of `parts` starts at the same left edge (±1 px). */
+async function expectSameLeft(parts: Locator[]) {
+	const xs = await Promise.all(parts.map(async (part) => (await boxOf(part)).x));
+	for (const [i, x] of xs.entries())
+		expect(Math.abs(x - xs[0]!), `${parts[i]} starts on the column's edge`).toBeLessThanOrEqual(1);
+}
+
+/** A state stands at the column's top on a desktop (on a phone at its foot), not further down. */
+async function expectAtTop(page: Page, state: Locator) {
+	const [main, box] = [await mainBox(page), await boxOf(state)];
+	expect(box.y - main.y, `${state} at the column's top`).toBeLessThan(160);
 }
 
 /** The sheet's visible panel is centred in the window, at most 32rem wide. */
@@ -131,78 +151,42 @@ test.describe('a program this week', () => {
 		seeded = await seedProgram(request, { fixture: 'hybrid', start: 'this_week' });
 	});
 
-	test('the strip spans the content, the day’s sessions sit beside the brief and the tools', async ({
+	test('the week is one readable column: lines, the note line and More', async ({
 		page
 	}, testInfo) => {
 		const errors = trackConsoleErrors(page);
 		await gotoHydrated(page, '/train');
-		await expectWideFrame(page);
-		const readable = await tokenPx(page, '--content-readable');
+		await expectReadableFrame(page);
 
-		// The header and the strip span the content: wider than any readable column.
-		const top = await boxOf(header(page));
-		const week = await boxOf(strip(page));
-		expect(Math.abs(week.width - top.width), 'the strip spans the header’s width').toBeLessThan(1);
-		expect(week.width, 'wider than a readable column').toBeGreaterThan(readable);
-		await expect(dayOf(page, seeded.today)).toHaveAttribute('aria-current', 'date');
-		await expect(dayOf(page, seeded.today)).toHaveAttribute('aria-checked', 'true');
+		// One column: the top line, the lines, the week's one line and More share its left edge.
+		await expectSameLeft([header(page), lines(page), page.getByTestId('week-line'), more(page)]);
+		await expect(dayLines(page, seeded.today).first().locator('.day')).toHaveText('Today');
+		await expect(lines(page).locator('[data-date]')).toHaveCount(8);
 
-		// Sessions in the main column (at most readable), the brief then the tools beside them.
-		const brief = page.getByTestId('baseline-brief');
-		await expectBeside(daySessions(page), brief);
-		expect((await boxOf(daySessions(page))).width).toBeLessThanOrEqual(readable + 1);
-		const [briefBox, toolsBox] = [await boxOf(brief), await boxOf(tools(page))];
-		expect(Math.abs(briefBox.x - toolsBox.x), 'the tools share the brief’s column').toBeLessThan(1);
-		expect(toolsBox.y, 'the tools come under the brief').toBeGreaterThan(
-			briefBox.y + briefBox.height
-		);
-
-		// A tapped day updates the session column, which stays in place.
-		const days = Array.from({ length: 7 }, (_, i) => addDays(seeded.weekStart, i));
-		const column = await boxOf(daySessions(page));
-		await dayOf(page, days[3]!).click();
-		await expect(daySessions(page).getByRole('heading')).toHaveText(longDate(days[3]!));
-		await expect(cards(page)).toHaveCount(2);
-		const after = await boxOf(daySessions(page));
-		expect([after.x, after.y, after.width]).toEqual([column.x, column.y, column.width]);
-
-		// A session card has a hover state and a focus ring.
-		const card = cards(page).first();
-		const border = () => card.evaluate((el) => getComputedStyle(el).borderColor);
-		const resting = await border();
-		await card.hover();
-		await expect.poll(border, { message: 'a hover state' }).not.toBe(resting);
+		// A session's line has a hover state and a focus ring.
+		const line = cards(page).first();
+		const colour = () => line.locator('.title').evaluate((el) => getComputedStyle(el).color);
+		const resting = await colour();
+		await line.hover();
+		await expect.poll(colour, { message: 'a hover state' }).not.toBe(resting);
 		await page.mouse.move(5, 5);
 
-		// Arrow keys move through the strip; Tab goes strip → sessions → the tools' column.
-		await dayOf(page, days[3]!).focus();
-		await page.keyboard.press('ArrowRight');
-		await expect(dayOf(page, days[4]!)).toBeFocused();
-		await expect(dayOf(page, days[4]!)).toHaveAttribute('aria-checked', 'true');
-		await expect(page.getByTestId('rest-day')).toBeVisible();
-		await page.keyboard.press('ArrowLeft');
-		await expect(dayOf(page, days[3]!)).toBeFocused();
-		await expect(cards(page)).toHaveCount(2);
-		for (const target of [
-			cards(page).nth(0),
-			cards(page).nth(1),
-			page.getByTestId('open-plates')
-		]) {
+		// Tab goes from the arrows through each session's line, then the week's line and More.
+		await page.getByTestId('next-week').focus();
+		for (let n = 0; n < 5; n++) {
 			await page.keyboard.press('Tab');
-			await expect(target).toBeFocused();
+			await expect(cards(page).nth(n)).toBeFocused();
 			expect(
-				await target.evaluate((el) => getComputedStyle(el).outlineStyle),
-				`${target} shows a focus ring`
+				await cards(page)
+					.nth(n)
+					.evaluate((el) => getComputedStyle(el).outlineStyle),
+				'a session line shows a focus ring'
 			).not.toBe('none');
 		}
-		// Tools follow the whole brief, so only the columns are checked here, not level tops.
-		const [lastCard, plates] = [
-			await boxOf(cards(page).nth(1)),
-			await boxOf(page.getByTestId('open-plates'))
-		];
-		expect(lastCard.x + lastCard.width, 'sessions sit left of the tools').toBeLessThanOrEqual(
-			plates.x
-		);
+		await page.keyboard.press('Tab');
+		await expect(page.getByTestId('week-line')).toBeFocused();
+		await page.keyboard.press('Tab');
+		await expect(more(page)).toBeFocused();
 
 		for (const width of [...DESKTOP_WIDTHS, BELOW_DESKTOP_WIDTH]) {
 			await page.setViewportSize({ width, height: 900 });
@@ -211,30 +195,43 @@ test.describe('a program this week', () => {
 		await page.setViewportSize(DESKTOP.viewport);
 		await auditBothThemes(page, testInfo, 'week');
 
-		// The plan overview opens as a centred dialog.
+		// More opens its rows in the column; the plan overview opens as a centred dialog.
+		await openMore(page);
+		await expectSameLeft([lines(page), page.getByTestId('more-tools')]);
 		await page.getByTestId('open-plan').click();
 		await expectCentredDialog(page, page.getByRole('dialog', { name: 'Your plan' }));
 		await captureScreen(page, testInfo, 'train-desktop-plan');
 		expect(errors).toEqual([]);
 	});
 
-	test('a rest day is designed in the session column', async ({ page }, testInfo) => {
+	test('a rest day is a line of the week, in the column', async ({ page }, testInfo) => {
 		await gotoHydrated(page, '/train');
-		await dayOf(page, addDays(seeded.weekStart, 4)).click();
-		await expect(page.getByTestId('rest-day')).toContainText('Rest day');
-		await expectBeside(daySessions(page), page.getByTestId('baseline-brief'));
-		await expectWideFrame(page);
+		const rest = dayLines(page, addDays(seeded.weekStart, 4));
+		await expect(rest).toHaveAttribute('data-testid', 'rest-day');
+		await expect(rest).toHaveAttribute(
+			'aria-label',
+			`${longDate(addDays(seeded.weekStart, 4))}, rest`
+		);
+		await expectSameLeft([rest, sessionLine(page, 'Full body', seeded.weekStart)]);
+		expect(Math.round((await boxOf(rest)).height)).toBe(60);
+		await expectReadableFrame(page);
 		await auditBothThemes(page, testInfo, 'rest-day');
 	});
 
-	test('?week past the plan is not planned yet, its card beside the tools', async ({
+	test('?week past the plan is not planned yet: its statement at the column’s top', async ({
 		page
 	}, testInfo) => {
 		await gotoHydrated(page, '/train?week=99');
-		await expect(position(page)).toHaveText('Week 99 · Not planned yet');
-		await expect(strip(page)).toHaveCount(0);
-		await expectBeside(page.getByTestId('train-not-planned'), tools(page));
-		await expectWideFrame(page);
+		await expect(position(page)).toHaveText('Week 99');
+		await expect(lines(page)).toHaveCount(0);
+		const state = page.getByTestId('train-not-planned');
+		await expectAtTop(page, state);
+		// Its next step is the way back, under it; More is not drawn on another week.
+		const next = page.getByTestId('train-next');
+		await expect(next).toHaveText('Back to this week');
+		expect((await boxOf(next)).y).toBeGreaterThanOrEqual((await boxOf(state)).y);
+		await expect(more(page)).toHaveCount(0);
+		await expectReadableFrame(page);
 		await auditBothThemes(page, testInfo, 'not-planned');
 	});
 
@@ -261,12 +258,11 @@ test.describe('a program this week', () => {
 			page
 		}, testInfo) => {
 			await gotoHydrated(page, '/train?week=2');
-			await dayOf(page, addDays(seeded.weekStart, 7)).click(); // Monday: a card to watch
-			const boxes = [strip(page), daySessions(page)];
+			const boxes = [page.getByTestId('week-title'), lines(page)];
 
 			for (const [step, landing] of [
-				['next-week', 'Accumulation · Week 3 of 5'],
-				['previous-week', 'Accumulation · Week 2 of 5']
+				['next-week', 'Week 3 of 5 · Accumulation'],
+				['previous-week', 'Week 2 of 5 · Accumulation']
 			] as const) {
 				const release = await holdData(page);
 				await expectNoShift(page, {
@@ -300,15 +296,15 @@ test.describe('a program this week', () => {
 			await press(page.getByTestId('next-week'));
 			const error = page.getByTestId('error-view');
 			await expect(error).toContainText('Something went wrong');
-			// An error is not a dashboard: it keeps the readable column.
+			// An error keeps the readable column, as Train itself does.
 			await expectMainCentred(page, await tokenPx(page, '--content-readable'));
 			await expectNoSideScroll(page);
 			await auditBothThemes(page, testInfo, 'error');
 
 			await page.unrouteAll({ behavior: 'ignoreErrors' });
 			await error.getByRole('button', { name: 'Try again' }).click();
-			await expect(position(page)).toHaveText('Accumulation · Week 2 of 5');
-			await expectWideFrame(page);
+			await expect(position(page)).toHaveText('Week 2 of 5 · Accumulation');
+			await expectReadableFrame(page);
 		});
 	});
 
@@ -332,30 +328,39 @@ test.describe('a program this week', () => {
 	});
 });
 
-test('a program that starts next Monday says so, its week laid out in columns', async ({
+test('a program that starts next Monday says so, its week in the column', async ({
 	page,
 	request
 }, testInfo) => {
 	const seeded = await seedProgram(request, { fixture: 'hybrid', start: 'next_week' });
 	await gotoHydrated(page, '/train');
 	await expect(page.getByTestId('program-status')).toHaveText(
-		`Starts ${shortDate(seeded.weekStart)}`
+		`Starts ${longDate(seeded.weekStart)}`
 	);
-	await expect(strip(page).locator('[aria-current="date"]')).toHaveCount(0);
-	await expectBeside(daySessions(page), page.getByTestId('baseline-brief'));
-	await expectWideFrame(page);
+	await expect(
+		lines(page)
+			.locator('.day')
+			.filter({ hasText: /^Today$/ })
+	).toHaveCount(0);
+	await expectSameLeft([header(page), lines(page), more(page)]);
+	await expectReadableFrame(page);
 	await auditBothThemes(page, testInfo, 'not-started');
 });
 
-test('the first block complete: its summary beside the tools', async ({
+test('the first block complete: its statement at the column’s top, More under it', async ({
 	page,
 	request
 }, testInfo) => {
 	await seedProgram(request, { fixture: 'one-week', start: 'last_week' });
 	await gotoHydrated(page, '/train');
-	await expect(position(page)).toHaveText('First block complete');
-	await expectBeside(page.getByTestId('train-block-complete'), tools(page));
-	await expectWideFrame(page);
+	await expect(header(page)).toHaveCount(0);
+	const done = page.getByTestId('train-block-complete');
+	await expectAtTop(page, done);
+	await expect(done.getByTestId('train-next')).toHaveText('Review the block');
+	expect((await boxOf(more(page))).y).toBeGreaterThanOrEqual(
+		(await boxOf(done)).y + (await boxOf(done)).height - 1
+	);
+	await expectReadableFrame(page);
 	await auditBothThemes(page, testInfo, 'block-complete');
 });
 
@@ -383,19 +388,24 @@ async function completeProfile(request: APIRequestContext) {
 	expect(await finish.json()).toMatchObject({ type: 'redirect', location: '/today' });
 }
 
-test('with no program, its card and the way to Today’s Build sit beside the tools', async ({
+test('with no program, its statement and the way to Today’s Build sit at the column’s top', async ({
 	page,
 	request
 }, testInfo) => {
 	await completeProfile(request);
 	await gotoHydrated(page, '/train');
 	const empty = page.getByTestId('train-empty');
-	await expect(empty.getByRole('heading', { name: 'No program yet' })).toBeVisible();
-	await expect(page.getByTestId('train-next')).toHaveAttribute('href', '/today');
-	await expect(page.getByTestId('train-next')).toContainText('Build my program');
+	await expect(empty.getByRole('heading', { name: 'No plan yet' })).toBeVisible();
+	await expect(empty).toContainText('Your profile is ready, so I can plan week 1.');
+	const next = empty.getByTestId('train-next');
+	await expect(next).toHaveAttribute('href', '/today');
+	await expect(next).toHaveText('Build my program');
 	await expect(header(page)).toHaveCount(0);
-	await expectBeside(empty, tools(page));
-	await expectWideFrame(page);
+	await expectAtTop(page, empty);
+	expect((await boxOf(more(page))).y).toBeGreaterThanOrEqual(
+		(await boxOf(empty)).y + (await boxOf(empty)).height - 1
+	);
+	await expectReadableFrame(page);
 	await auditBothThemes(page, testInfo, 'no-program');
 });
 
@@ -411,7 +421,19 @@ test.describe('the lazy sheets’ chunks failing', () => {
 		await page.unrouteAll({ behavior: 'ignoreErrors' });
 	});
 
-	test('the plate calculator’s Retry notice sits in the tools’ column; Retry opens a centred dialog', async ({
+	/** The notice lies under `row`, inside More's list. */
+	async function expectUnder(page: Page, notice: Locator, row: Locator) {
+		const [box, opener, list] = [
+			await boxOf(notice),
+			await boxOf(row),
+			await boxOf(page.getByTestId('more-tools'))
+		];
+		expect(box.y, `under ${row}`).toBeGreaterThanOrEqual(opener.y + opener.height - 1);
+		expect(box.x).toBeGreaterThanOrEqual(list.x - 1);
+		expect(box.x + box.width, 'inside More').toBeLessThanOrEqual(list.x + list.width + 1);
+	}
+
+	test('the plate calculator’s Retry notice sits under its row in More; Retry opens a centred dialog', async ({
 		page
 	}, testInfo) => {
 		// Only the plate sheet's chunk carries this line (plate-calculator.e2e.ts).
@@ -427,14 +449,13 @@ test.describe('the lazy sheets’ chunks failing', () => {
 		await gotoHydrated(page, '/train');
 		failing = true;
 
+		await openMore(page);
 		await page.getByTestId('open-plates').click();
 		const notice = page
 			.getByRole('alert')
 			.filter({ hasText: 'Couldn’t open the plate calculator' });
 		await expect(notice).toBeVisible();
-		const [box, column] = [await boxOf(notice), await boxOf(tools(page))];
-		expect(box.x).toBeGreaterThanOrEqual(column.x - 1);
-		expect(box.x + box.width).toBeLessThanOrEqual(column.x + column.width + 1);
+		await expectUnder(page, notice, page.getByTestId('open-plates'));
 		await expectNoSideScroll(page);
 		await auditBothThemes(page, testInfo, 'plates-retry');
 
@@ -444,7 +465,7 @@ test.describe('the lazy sheets’ chunks failing', () => {
 		await expectCentredDialog(page, page.getByRole('dialog', { name: 'Plate calculator' }));
 	});
 
-	test('the plan’s Retry notice sits under Plan in the header; Retry opens a centred dialog', async ({
+	test('the plan’s Retry notice sits under its row in More; Retry opens a centred dialog', async ({
 		page
 	}, testInfo) => {
 		const manifest = JSON.parse(
@@ -459,13 +480,12 @@ test.describe('the lazy sheets’ chunks failing', () => {
 		await page.route(chunk, (route) => route.abort('internetdisconnected'));
 		await gotoHydrated(page, '/train');
 
+		await openMore(page);
 		const plan = page.getByTestId('open-plan');
 		await plan.click();
 		const notice = page.getByRole('alert').filter({ hasText: 'Couldn’t open your plan' });
 		await expect(notice).toBeVisible();
-		const [box, opener, top] = [await boxOf(notice), await boxOf(plan), await boxOf(header(page))];
-		expect(box.y, 'under Plan').toBeGreaterThanOrEqual(opener.y + opener.height - 1);
-		expect(box.x + box.width, 'inside the header').toBeLessThanOrEqual(top.x + top.width + 1);
+		await expectUnder(page, notice, plan);
 		await expectNoSideScroll(page);
 		await auditBothThemes(page, testInfo, 'plan-retry');
 

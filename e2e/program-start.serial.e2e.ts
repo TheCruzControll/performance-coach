@@ -11,6 +11,7 @@ import { addDays, mondayOf } from '../src/lib/domain/calendar';
 import { localDay } from '../src/lib/domain/dates';
 import { longDate, shortDate } from '../src/lib/ui/program/words';
 import { DESKTOP, expectMainCentred, expectNoSideScroll } from './desktop';
+import { openMore } from './program-support';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -98,7 +99,9 @@ test('before setup is finished there is no running program anywhere, and the bui
 	await expect(page.getByTestId('today-plan')).toHaveCount(0);
 
 	await gotoHydrated(page, '/train');
-	await expect(page.getByTestId('train-empty')).toContainText('Finish your training profile first');
+	await expect(page.getByTestId('train-empty')).toContainText(
+		'Finish setting up your profile, then I can plan week 1.'
+	);
 	await expect(page.getByTestId('program-header')).toHaveCount(0);
 
 	await gotoHydrated(page, '/train/start');
@@ -130,7 +133,9 @@ async function moveAWeekLater(page: Page, request: APIRequestContext) {
 	const built = nextMonday(today());
 	const moved = addDays(built, 7);
 
-	// Train offers Start date until the program has started.
+	// Train offers Start date, behind More, until the program has started.
+	await openMore(page);
+	await expect(page.getByTestId('open-start')).toHaveText('Change when the plan starts');
 	await page.getByTestId('open-start').click();
 	await expect(page).toHaveURL('/train/start');
 	await expect(page.getByTestId('start-current')).toHaveText(`Week 1 starts ${longDate(built)}.`);
@@ -143,7 +148,7 @@ async function moveAWeekLater(page: Page, request: APIRequestContext) {
 
 	await expect(toastWith(page, `Start moved to ${shortDate(moved)} · version 2`)).toBeVisible();
 	await expect(page).toHaveURL('/train');
-	await expect(page.getByTestId('program-status')).toHaveText(`Starts ${shortDate(moved)}`);
+	await expect(page.getByTestId('program-status')).toHaveText(`Starts ${longDate(moved)}`);
 
 	// Today shows the new first day.
 	await gotoHydrated(page, '/today');

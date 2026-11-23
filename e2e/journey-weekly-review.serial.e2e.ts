@@ -67,6 +67,11 @@ const card = (page: Page) => page.getByTestId('review-next-week');
 const items = (page: Page) => page.getByTestId('review-next-item');
 const passedItems = (page: Page) => items(page).filter({ has: page.locator('input:disabled') });
 const notice = (page: Page) => page.getByTestId('review-notice');
+/** Train's week note, opened from the week's one line, holding the review's notice. */
+async function openNotice(page: Page) {
+	if (!(await notice(page).isVisible())) await page.getByTestId('week-line').click();
+	await expect(notice(page)).toBeVisible();
+}
 const writeUp = (page: Page) => page.getByTestId('review-write-up');
 const pageOf = (s: Seeded) => `${LIST}/w-${s.review.weekStartsOn}`;
 
@@ -214,7 +219,8 @@ async function weeklyJourney(page: Page, request: APIRequestContext, testInfo: T
 	await test.step('4. Train’s next week: the notice with every why, and the changed prescriptions', async () => {
 		const { changes, review } = await applied(s);
 		expect(changes).toHaveLength(total - 1);
-		await expect(notice(page)).toContainText('Updated from your weekly review');
+		await openNotice(page);
+		await expect(page.locator('details.note')).toContainText('Updated from your weekly review');
 		await expect(notice(page)).toContainText(review.why);
 		await expect(notice(page).getByRole('listitem')).toHaveCount(changes.length);
 		for (const change of changes) await expect(notice(page)).toContainText(change.why);
@@ -255,6 +261,7 @@ async function weeklyJourney(page: Page, request: APIRequestContext, testInfo: T
 
 		// The review link lives on Train's notice: back to the review, which reads applied.
 		await gotoHydrated(page, train);
+		await openNotice(page);
 		await notice(page).getByTestId('review-notice-review').click();
 		await expect(page).toHaveURL(new RegExp(`${pageOf(s)}$`));
 		await expect(card(page)).toHaveAttribute('data-state', 'applied');
@@ -324,6 +331,7 @@ test.describe('review-aged: decided late in the week', () => {
 
 		const { changes } = await applied(s);
 		expect(changes).toHaveLength(total - passed);
+		await openNotice(page);
 		await expect(notice(page).getByRole('listitem')).toHaveCount(total - passed);
 		for (const change of changes) await expect(notice(page)).toContainText(change.why);
 		await notice(page).scrollIntoViewIfNeeded();

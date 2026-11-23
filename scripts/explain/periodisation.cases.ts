@@ -53,9 +53,10 @@ export function periodisationExplain({ db, owner }: PeriodisationHarness): void 
 		);
 		const elapsed = performance.now() - started;
 		if (data.state !== 'program') throw new Error(`Train's load gave ${data.state}`);
-		if ((data.weekLine !== null) !== (periodisation !== false)) {
+		const line = data.noteParts.summary;
+		if ((line !== null) !== (periodisation !== false)) {
 			throw new Error(
-				`Train's load gave week line ${data.weekLine} with periodisation ${periodisation !== false}`
+				`Train's load gave week line ${line} with periodisation ${periodisation !== false}`
 			);
 		}
 		return elapsed;

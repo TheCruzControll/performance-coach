@@ -507,8 +507,9 @@ describe('on Train', () => {
 				{ db, errorsDb: db, periodisation: { context: { statementTimeoutMs: SLOW_OK } } }
 			);
 			if (data.state !== 'program') throw new Error(`expected a program, got ${data.state}`);
-			const card = data.days.flatMap((d) => d.cards).find((c) => c.title === 'Lower A' && c.note);
-			expect(card?.note).toMatchObject({
+			// Lower A's finding, in the week's note (v2/07: the note lists each finding once).
+			const finding = data.noteParts.findings.find((f) => f.why.includes('Lower A'));
+			expect(finding).toMatchObject({
 				label: 'Heads-up',
 				text: expect.stringMatching(/^Heads-up · A hard session on an overloaded system · /),
 				why: expect.stringMatching(/Moving Lower A to \w+day clears this\.$/)
@@ -536,11 +537,12 @@ describe('on Train', () => {
 			);
 			if (data.state !== 'program') throw new Error(`expected a program, got ${data.state}`);
 			// checkWeek's finding on the owner's move, without the scheduler's fix.
-			expect(data.weekLine).toBe('1 heads-up this week');
-			const note = data.days
-				.flatMap((d) => d.cards)
-				.find((c) => c.lineage === seeded.lineages.moved)?.note;
-			expect(note?.why).toMatch(/You moved Lower A here from Friday\.$/);
+			expect(data.noteParts.summary).toBe('1 heads-up this week');
+			expect(data.note).toEqual({ text: '1 heads-up this week', opens: true });
+			// The one finding, on the moved session, which the week shows as a line.
+			expect(data.lines.some((l) => l.session?.lineage === seeded.lineages.moved)).toBe(true);
+			expect(data.noteParts.findings).toHaveLength(1);
+			expect(data.noteParts.findings[0]!.why).toMatch(/You moved Lower A here from Friday\.$/);
 			const errors = await findErrorsByRequestId(requestId, { db });
 			expect(errors.map((e) => e.context)).toEqual([
 				expect.objectContaining({ part: 'evaluation-context' })

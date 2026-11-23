@@ -1,10 +1,10 @@
 /**
  * Train's plan overview (src/lib/ui/program/PlanOverviewSheet.svelte, BlockTimeline.svelte):
- * Plan, in the program header's actions row, opens a sheet code-split out of Train that lists
+ * See the whole plan, a row in Train's More, opens a sheet code-split out of Train that lists
  * every block with its phase, dates and weeks. This week is marked, an outline block's weeks are
  * not planned yet and never links, and a dated goal sits in its week. A planned week opens on
- * Train through the week change's pending state; Close and Escape give the focus back to Plan;
- * and a sheet whose code fails to load offers Retry beside Plan, which opens it. Serial: the
+ * Train through the week change's pending state; Close and Escape give the focus back to its
+ * row; and a sheet whose code fails to load offers Retry under its row, which opens it. Serial: the
  * program and the goals are the one owner's (e2e/program-support.ts).
  */
 import { readFileSync } from 'node:fs';
@@ -15,7 +15,7 @@ import { addDays } from '../src/lib/domain/calendar';
 import { FIXTURE_GOAL } from '../src/lib/server/test-support/program-fixtures';
 import { shortDate } from '../src/lib/ui/program/words';
 import { DESKTOP, expectNoSideScroll } from './desktop';
-import { PROGRAM_TZ, seedProgram, type SeededProgram } from './program-support';
+import { openMore, PROGRAM_TZ, seedProgram, type SeededProgram } from './program-support';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -56,6 +56,8 @@ async function audit(page: Page): Promise<string[]> {
 }
 
 const plan = (page: Page) => page.getByTestId('open-plan');
+/** The plan's row in More, which is busy while the sheet's code is on its way. */
+const planRow = (page: Page) => page.locator('.tool').filter({ has: plan(page) });
 const sheet = (page: Page) => page.getByRole('dialog', { name: 'Your plan' });
 const blocks = (page: Page) => sheet(page).getByTestId('plan-block');
 const position = (page: Page) => page.getByTestId('program-position');
@@ -64,6 +66,7 @@ const range = (from: string, days: number) =>
 	`${shortDate(from)} – ${shortDate(addDays(from, days))}`;
 
 async function openPlan(page: Page) {
+	await openMore(page);
 	await plan(page).click();
 	await expect(sheet(page)).toBeVisible();
 }
@@ -134,25 +137,19 @@ test.describe('a program this week', () => {
 				.click();
 			await expect(sheet(page)).toBeHidden();
 			await expect(page.getByTestId('train-week')).toHaveAttribute('aria-busy', 'true');
-			await expect(page.getByRole('link', { name: /^Week 3$/ })).toHaveAttribute(
-				'aria-busy',
-				'true'
-			);
-			await expect(position(page)).toHaveText('Baseline week · Week 1 of 5');
+			await expect(position(page)).toHaveText('Week 1 of 5 · Baseline week');
 
 			release();
 			await expect(page).toHaveURL(/\/train\?week=3$/);
-			await expect(position(page)).toHaveText('Accumulation · Week 3 of 5');
+			await expect(position(page)).toHaveText('Week 3 of 5 · Accumulation');
 			await expect(page.getByTestId('train-week')).toHaveAttribute('aria-busy', 'false');
-			await expect(page.getByRole('link', { name: /^Week 3$/ })).toHaveAttribute(
-				'aria-current',
-				'page'
-			);
+			await expect(page.getByTestId('week-lines')).toHaveAttribute('aria-label', 'Week 3');
 		});
 	});
 
-	test('Close and Escape give the focus back to Plan', async ({ page }) => {
+	test('Close and Escape give the focus back to the plan’s row in More', async ({ page }) => {
 		await gotoHydrated(page, '/train');
+		await openMore(page);
 		// From the keyboard: WebKit focuses no button on a click.
 		await plan(page).focus();
 		await page.keyboard.press('Enter');
@@ -186,14 +183,15 @@ test.describe('a program this week', () => {
 	test.describe('on a desktop window', () => {
 		test.use(DESKTOP);
 
-		test('Plan has its hover and focus states, and the sheet keeps to the window', async ({
+		test('the plan’s row has its hover and focus states, and the sheet keeps to the window', async ({
 			page
 		}, testInfo) => {
 			await gotoHydrated(page, '/train');
-			const border = () => plan(page).evaluate((el) => getComputedStyle(el).borderColor);
-			const rest = await border();
+			await openMore(page);
+			const background = () => plan(page).evaluate((el) => getComputedStyle(el).backgroundColor);
+			const rest = await background();
 			await plan(page).hover();
-			await expect.poll(border, { message: 'a hover state' }).not.toBe(rest);
+			await expect.poll(background, { message: 'a hover state' }).not.toBe(rest);
 
 			await openPlan(page);
 			// From the sheet: Close, then the first week, which shows its focus ring.
@@ -314,21 +312,22 @@ test.describe('with the network in the test’s hands', () => {
 			await route.continue();
 		});
 		await gotoHydrated(page, '/train');
+		await openMore(page);
 		expect(requested, 'not fetched with Train').toEqual([]);
 
 		await plan(page).click();
 		await expect.poll(() => requested.length, { message: 'fetched on the tap' }).toBe(1);
-		await expect(plan(page)).toHaveAttribute('aria-busy', 'true');
+		await expect(planRow(page)).toHaveAttribute('aria-busy', 'true');
 		await page.waitForTimeout(400); // past the beat before the spinner shows
 		await captureScreen(page, testInfo, 'train-plan-pending');
 
 		release();
 		await expect(sheet(page)).toBeVisible();
-		await expect(plan(page)).toHaveAttribute('aria-busy', 'false');
+		await expect(planRow(page)).toHaveAttribute('aria-busy', 'false');
 		expect(requested).toHaveLength(1);
 	});
 
-	test('a sheet whose code fails to load offers Retry beside Plan, which opens it', async ({
+	test('a sheet whose code fails to load offers Retry under its row, which opens it', async ({
 		page,
 		request
 	}, testInfo) => {
@@ -339,11 +338,12 @@ test.describe('with the network in the test’s hands', () => {
 		await page.route(chunk, (route) => route.abort('internetdisconnected'));
 		await gotoHydrated(page, '/train');
 
+		await openMore(page);
 		await plan(page).click();
 		const notice = page.getByRole('alert').filter({ hasText: 'Couldn’t open your plan' });
 		await expect(notice).toBeVisible();
 		await expect(page.getByTestId('plan-sheet')).toHaveCount(0);
-		await expect(plan(page)).toHaveAttribute('aria-busy', 'false');
+		await expect(planRow(page)).toHaveAttribute('aria-busy', 'false');
 		const retry = notice.getByRole('button', { name: 'Try again' });
 		const target = await retry.boundingBox();
 		expect(target?.width, 'Try again is at least 44 px wide').toBeGreaterThanOrEqual(44);

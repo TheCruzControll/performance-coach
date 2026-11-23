@@ -13,6 +13,7 @@ import { contrast } from '../src/lib/ui/charts/palette-check';
 import { COACH_A11Y } from './coach-a11y';
 import { answerHistory, openWorkoutPanel, pick } from './design-workout';
 import { isDesktopPage } from './desktop';
+import { openMore } from './program-support';
 import { gotoHydrated, SCREENS as APP_ROOTS, signedOut } from './support';
 
 export const SCREENS = [
@@ -128,10 +129,15 @@ export function a11ySuite(theme: 'dark' | 'light'): void {
 			});
 		}
 
-		test('the plate calculator sheet has no violations', async ({ page }) => {
+		test('Train’s More, open, and the plate calculator sheet have no violations', async ({
+			page
+		}) => {
 			await page.goto('/train');
 			// Hydrated first: a tap on the server-rendered row before then does nothing.
 			await page.waitForLoadState('networkidle');
+			await openMore(page);
+			await page.waitForTimeout(300);
+			expect(await audit(page), 'More, open').toEqual([]);
 			await page.getByTestId('open-plates').click();
 			await expect(page.getByTestId('plates-result')).toBeVisible();
 			await page.waitForTimeout(500);

@@ -74,15 +74,14 @@ describe('Train’s page data', () => {
 				expect(road).not.toBeNull();
 				const data = { ...week, road };
 				const bytes = gzipSync(JSON.stringify(data)).length;
-				// The same data without the cards' why: the why's own bytes, held to its own row.
-				const days = data.days.map((d) => ({
-					...d,
-					cards: d.cards.map(({ why: _why, ...card }) => card)
-				}));
-				const why = bytes - gzipSync(JSON.stringify({ ...data, days })).length;
-				// The same data without the week-kind line and the pills' words: their own bytes.
-				const { weekKind: _kind, marks: _marks, ...unmarked } = data;
-				const weekKinds = bytes - gzipSync(JSON.stringify(unmarked)).length;
+				// The same data without each session's why (the week's note, v2/07): the why's own
+				// bytes, held to its own row.
+				const size = (value: unknown) => gzipSync(JSON.stringify(value)).length;
+				const why = bytes - size({ ...data, noteParts: { ...data.noteParts, why: [] } });
+				// The same data without the week-kind line and the weeks' words: their own bytes.
+				const { marks: _marks, ...unmarked } = data;
+				const weekKinds =
+					bytes - size({ ...unmarked, noteParts: { ...data.noteParts, kind: null } });
 				// The same data without the season and its lanes' count: the timeline's own bytes.
 				const { road: _road, openGoals: _lanes, ...flat } = data;
 				const timeline = bytes - gzipSync(JSON.stringify(flat)).length;

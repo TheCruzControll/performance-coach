@@ -355,17 +355,21 @@ describe('Train’s load', () => {
 				);
 			const current = await load(null);
 			expect(current.shown).toBe(KIND_WEEKS.deload);
-			expect(current.weekKind).toEqual({
+			// In the week's note (v2/07), which its one line opens.
+			expect(current.noteParts.kind).toEqual({
 				label: 'Deload week',
 				why: `${M7_DELOAD} · 10K race ${RACE_IN}`
 			});
+			expect(current.note?.opens).toBe(true);
 			expect(current.marks).toEqual({ 2: 'Deload', 4: 'Taper', 5: 'Event' });
-			expect(addedBy(current, ['weekKind', 'marks'])).toBeLessThanOrEqual(PAGE_DATA_B);
-			expect((await load(KIND_WEEKS.taper)).weekKind?.label).toBe('Taper');
-			expect((await load(KIND_WEEKS.next)).weekKind).toBeNull();
-			// A week later the deload has passed: no line on it, and its pill keeps its word.
+			const { kind, ...parts } = current.noteParts;
+			const flat = { ...current, noteParts: parts, kind };
+			expect(addedBy(flat, ['kind', 'marks'])).toBeLessThanOrEqual(PAGE_DATA_B);
+			expect((await load(KIND_WEEKS.taper)).noteParts.kind?.label).toBe('Taper');
+			expect((await load(KIND_WEEKS.next)).noteParts.kind).toBeNull();
+			// A week later the deload has passed: no line on it, and it keeps its word.
 			const later = await load(KIND_WEEKS.deload, new Date(NOW.getTime() + 7 * 86_400_000));
-			expect(later.weekKind).toBeNull();
+			expect(later.noteParts.kind).toBeNull();
 			expect(later.marks).toEqual(current.marks);
 		});
 	});
@@ -381,9 +385,9 @@ describe('Train’s load', () => {
 					{ db, errorsDb: db, periodisation: { line: { db: decisionsDown(db) } } }
 				)
 			);
-			expect(data.weekKind).toBeNull();
+			expect(data.noteParts.kind).toBeNull();
 			expect(data.marks).toEqual({});
-			expect(data.days.flatMap((d) => d.cards).length).toBeGreaterThan(0);
+			expect(data.lines.filter((l) => l.session).length).toBeGreaterThan(0);
 			const recorded = await findErrorsByRequestId(request.requestId, { db });
 			expect(recorded).toHaveLength(1);
 			expect(recorded[0]).toMatchObject({
@@ -402,7 +406,7 @@ describe('Train’s load', () => {
 				await loadTrainWeek(owner, { now: NOW, week: null, origin: origin() }, { db })
 			);
 			expect(data.shown).toBe(M3_WEEKS.deload);
-			expect(data.weekKind).toEqual({
+			expect(data.noteParts.kind).toEqual({
 				label: 'Deload week',
 				why: `${M3_STRUCTURE} · 5K race ${RACE_IN}`
 			});

@@ -1,6 +1,7 @@
 /**
- * Train's replan note (src/routes/(app)/train/week.server.ts, `replanNote`) on real Postgres: Train
- * names only the open re-plan a goal priority proposed, by its proposal id, and never the plan. No
+ * Train's replan note (src/routes/(app)/train/week.server.ts, `noteParts.replan`) on real
+ * Postgres: Train links only the open re-plan a goal priority proposed, by its proposal's page, and
+ * never the plan. No
  * open re-plan, or one the owner made, gives null. A read that fails is recorded (part 'replanNote')
  * and the week renders without the note.
  */
@@ -91,7 +92,7 @@ describe('Train’s replan note', () => {
 			const week = await train(owner, db);
 			expect(week.state).toBe('program');
 			if (week.state !== 'program') return;
-			expect(week.replanNote).toBeNull();
+			expect(week.noteParts.replan).toBeNull();
 		});
 	});
 
@@ -103,9 +104,13 @@ describe('Train’s replan note', () => {
 
 			const week = await train(owner, db);
 			if (week.state !== 'program') throw new Error(`expected a program, got ${week.state}`);
-			expect(week.replanNote).toEqual({ proposalId: paused.proposalId });
-			expect(Object.keys(week.replanNote ?? {})).toEqual(['proposalId']);
-			expect(week.replanNote).toEqual({ proposalId: (await getOpenReplan(owner, { db }))!.id });
+			// The week's note links to its proposal, and holds no more of it (v2/07).
+			expect(week.noteParts.replan).toEqual({ href: `/coach/proposals/${paused.proposalId}` });
+			expect(Object.keys(week.noteParts.replan ?? {})).toEqual(['href']);
+			expect(week.noteParts.replan).toEqual({
+				href: `/coach/proposals/${(await getOpenReplan(owner, { db }))!.id}`
+			});
+			expect(week.note?.opens).toBe(true);
 		});
 	});
 
@@ -124,7 +129,7 @@ describe('Train’s replan note', () => {
 
 			const week = await train(owner, db);
 			if (week.state !== 'program') throw new Error(`expected a program, got ${week.state}`);
-			expect(week.replanNote).toBeNull();
+			expect(week.noteParts.replan).toBeNull();
 		});
 	});
 
@@ -147,8 +152,8 @@ describe('Train’s replan note', () => {
 				errorsDb: db
 			});
 			if (week.state !== 'program') throw new Error(`expected a program, got ${week.state}`);
-			expect(week.replanNote).toBeNull();
-			expect(week.days.length).toBeGreaterThan(0);
+			expect(week.noteParts.replan).toBeNull();
+			expect(week.lines.length).toBeGreaterThan(0);
 
 			const [recorded] = await findErrorsByRequestId(requestId, { db });
 			expect(recorded).toMatchObject({ kind: 'load' });

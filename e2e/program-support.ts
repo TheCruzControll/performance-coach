@@ -7,7 +7,7 @@
  * - Use the dates seedProgram returns. Never compute a date in the browser or the spec: the
  *   server's today is the one the screens show, on any weekday and in any machine zone.
  */
-import { expect, type APIRequestContext } from '@playwright/test';
+import { expect, type APIRequestContext, type Page } from '@playwright/test';
 import { checkWeek, type Violation } from '../src/lib/domain/programming/interference';
 import { createDatabase, createPool } from '../src/lib/server/db/client';
 import { LOCAL_DATABASE_URLS } from '../src/lib/server/db/migrate';
@@ -15,6 +15,24 @@ import { createProgramsRepository } from '../src/lib/server/db/repositories/prog
 import { toStoredSessions } from '../src/lib/server/services/programs/mapping';
 import type { ProgramFixture } from '../src/lib/server/test-support/program-fixtures';
 import { query, SAME_ORIGIN } from './support';
+
+/** A day's lines on Train (or a version's week): its sessions, or its rest line. */
+export const dayLines = (page: Page, date: string) =>
+	page.locator(`[data-testid="week-lines"] [data-date="${date}"]`);
+
+/** A session's line on Train by its title, optionally on a day. */
+export const sessionLine = (page: Page, title: string, date?: string) =>
+	(date ? dayLines(page, date) : page.getByTestId('session-card')).filter({ hasText: title });
+
+/**
+ * Open Train's More row and wait for its list: the plan, history and tools (v2/07a1 opens them
+ * in place; once open, a second call leaves it open).
+ */
+export async function openMore(page: Page) {
+	const tools = page.getByTestId('more-tools');
+	if (!(await tools.isVisible())) await page.getByTestId('open-more').click();
+	await expect(tools).toBeVisible();
+}
 
 /** The owner's time zone in program specs: a zone with daylight saving, so neither UTC nor fixed. */
 export const PROGRAM_TZ = 'Europe/London';

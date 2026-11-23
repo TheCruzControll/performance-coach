@@ -14,6 +14,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { StrengthKit } from '../src/lib/domain/workout';
+import { openMore } from './program-support';
 import { captureScreen } from './support';
 import { gotoWorkout, seedWorkout, workoutDay } from './workout-support';
 
@@ -229,6 +230,8 @@ test.describe("Train's rest timer", () => {
 		await page.waitForLoadState('networkidle');
 		now = await page.evaluate(() => Date.now() + 1_000);
 		await page.clock.setFixedTime(now);
+		// Its row is in Train's More.
+		await openMore(page);
 	}
 
 	/** Moves the held time of day on by `ms`. */
@@ -262,7 +265,7 @@ test.describe("Train's rest timer", () => {
 		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:10');
 		expect(await stored(page, 'pc:rest:v1')).toMatchObject({ durationMs: 90_000, pausedAt: null });
 
-		// Closed, it runs under its row.
+		// Closed, it runs on Train, below More.
 		await page.keyboard.press('Escape');
 		await expect(sheet(page)).toBeHidden();
 		await expect(inline(page).getByTestId('rest-time')).toHaveText('1:10');
@@ -270,7 +273,7 @@ test.describe("Train's rest timer", () => {
 			0
 		);
 
-		// After a reload it is back under its row untapped, still running, at the right time.
+		// After a reload it is back untapped, still running, at the right time, More closed.
 		await page.reload();
 		await page.waitForLoadState('networkidle');
 		await expect(inline(page).getByTestId('rest-time')).toHaveText('1:10');
@@ -280,6 +283,7 @@ test.describe("Train's rest timer", () => {
 		await expect(page.getByRole('heading', { level: 1 })).toContainText('Today');
 		await nav.getByRole('link', { name: 'Train' }).click();
 		await expect(inline(page).getByTestId('rest-time')).toHaveText('1:10');
+		await openMore(page);
 		await row(page).click();
 		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:10');
 		await advance(page, 10_000);
@@ -295,6 +299,7 @@ test.describe("Train's rest timer", () => {
 		expect(await stored(page, 'pc:rest:v1')).toBeNull();
 		await page.reload();
 		await page.waitForLoadState('networkidle');
+		await openMore(page);
 		await row(page).click();
 		await expect(sheet(page).getByTestId('start-main-rest')).toBeVisible();
 		await expect(sheet(page).getByTestId('rest-timer')).toHaveCount(0);
@@ -328,6 +333,7 @@ test.describe("Train's rest timer", () => {
 			);
 			await page.goto('/train');
 			await page.waitForLoadState('networkidle');
+			await openMore(page);
 			await row(page).click();
 			await expect(sheet(page)).toBeVisible();
 			expect(await audit(page), 'idle').toEqual([]);
