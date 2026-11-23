@@ -18,6 +18,8 @@
  */
 import { error, isHttpError } from '@sveltejs/kit';
 import { cardOf } from '#lib/domain/coach/cards.ts';
+import { weighInLabel } from '#lib/domain/coach/recorded.ts';
+import { localDay } from '#lib/domain/dates.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
 import { isUuid } from '#lib/server/services/ids.ts';
 import { getAthleteProfile } from '#lib/server/services/profile/index.ts';
@@ -25,6 +27,7 @@ import { hasReview } from '#lib/server/services/reviews/store.ts';
 import { listThreadProposals } from '#lib/server/services/coach/proposals.ts';
 import { CoachNotFoundError, type CoachDeps } from '#lib/server/services/coach/shared.ts';
 import { getThreadView, listThreads } from '#lib/server/services/coach/threads.ts';
+import { listThreadWeightLogs } from '#lib/server/services/weight/index.ts';
 import {
 	prefillOf,
 	shownMessages,
@@ -90,6 +93,15 @@ export async function loadCoachScreen(
 			const runIds = view.messages.flatMap((row) => (row.runId ? [row.runId] : []));
 			const proposals = await listThreadProposals(ownerId, view.thread.id, runIds, { db });
 			const cards = proposals.map(({ runId, proposal }) => ({ runId, card: cardOf(proposal) }));
+			// The Undo card of each weigh-in a run logged, in the owner's day (weighInLabel's words).
+			const logged = await listThreadWeightLogs(ownerId, runIds, { db });
+			const { timeZone } = await getAthleteProfile(ownerId, { db });
+			const today = localDay(now(), timeZone);
+			const weighIns = logged.map(({ id, runId, ...entry }) => ({
+				runId,
+				entryId: id,
+				label: weighInLabel(entry, today)
+			}));
 			return {
 				prefill,
 				failed: false,
@@ -99,7 +111,7 @@ export async function loadCoachScreen(
 					id: view.thread.id,
 					title: view.thread.title,
 					archived: view.thread.archived,
-					messages: shownMessages(view.messages, cards)
+					messages: shownMessages(view.messages, cards, weighIns)
 				}
 			};
 		}

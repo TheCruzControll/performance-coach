@@ -170,6 +170,23 @@ describe('CoachTurn.apply', () => {
 		]);
 	});
 
+	it('shows a weigh-in its tool logged as one Undo card, with the run that logged it', () => {
+		const turn = new CoachTurn(request(), { frame: () => {} });
+		const logged = {
+			type: 'recorded',
+			kind: 'body_weight',
+			id: 41,
+			label: 'Logged 82.4 kg for today'
+		} as const;
+		// Before run_started there is no run to send Undo for: nothing is shown.
+		turn.apply(logged);
+		expect(turn.recorded).toEqual([]);
+		turn.apply(started);
+		turn.apply(logged);
+		turn.apply(logged);
+		expect(turn.recorded).toEqual([{ id: 41, label: 'Logged 82.4 kg for today', runId: RUN }]);
+	});
+
 	it('draws a block’s waiting words before the next block starts', () => {
 		const turn = new CoachTurn(request(), { frame: () => {} });
 		turn.apply({ type: 'block_started', block: 0, kind: 'note', method: null });

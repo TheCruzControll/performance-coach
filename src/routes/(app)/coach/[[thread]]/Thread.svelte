@@ -47,6 +47,7 @@
 	import type { TurnRef } from '#lib/client/coach/stream.ts';
 	import type { HistoryRequest } from '#lib/client/workout/exercise-history.ts';
 	import { ASK_FOR_CHANGES, type ProposalCardView } from '#lib/domain/coach/cards.ts';
+	import { weighInKey } from '#lib/domain/coach/recorded.ts';
 	import {
 		ANSWER_BLOCK_KIND_LABEL,
 		COACH_ERROR_KIND_LABEL,
@@ -61,6 +62,7 @@
 	import CoachNotice from '#lib/ui/coach/CoachNotice.svelte';
 	import LoadingRows from '#lib/ui/coach/LoadingRows.svelte';
 	import LiveAnnouncer from '#lib/ui/coach/LiveAnnouncer.svelte';
+	import RecordedCard from '#lib/ui/coach/RecordedCard.svelte';
 	import RichText from '#lib/ui/coach/RichText.svelte';
 	import ThinkingIndicator from '#lib/ui/coach/ThinkingIndicator.svelte';
 	import { SCREEN_FAILURE_LABEL, waitUntilWords, waitWords } from '#lib/ui/coach/coach-notices.ts';
@@ -126,14 +128,17 @@
 				return [
 					owner,
 					turn.answered ? turn.answerMessageId : null,
-					...turn.proposals.map((p) => p.id)
+					...turn.proposals.map((p) => p.id),
+					...turn.recorded.map((r) => weighInKey(r.id))
 				].filter((id) => id != null);
 			})
 		)
 	);
 
 	/** The last owner message or answer: the cards after it do not count. */
-	const lastShown = $derived(thread.messages.findLast((m) => m.from !== 'proposal'));
+	const lastShown = $derived(
+		thread.messages.findLast((m) => m.from !== 'proposal' && m.from !== 'recorded')
+	);
 
 	/**
 	 * The question behind an interrupted or failed last answer, when it can be asked again: the
@@ -473,6 +478,10 @@
 					{@render proposal(message.id, message.card.title)}
 					{@render footnotes(runs.footnotes.get(message.id))}
 				</li>
+			{:else if message.from === 'recorded'}
+				<li class="coach" data-testid="recorded">
+					<RecordedCard id={message.entryId} label={message.label} runId={message.runId} />
+				</li>
 			{:else if message.from === 'owner'}
 				<li class="owner" data-testid="owner-message">
 					<span class="visually-hidden">You:</span>
@@ -552,6 +561,11 @@
 							<div data-testid="proposal">{@render proposal(each.id, each.title)}</div>
 						{/each}
 						{@render footnotes(asked?.footnotes)}
+						{#each turn.recorded as each (each.id)}
+							<div data-testid="recorded">
+								<RecordedCard id={each.id} label={each.label} runId={each.runId} />
+							</div>
+						{/each}
 					{/if}
 					{#if end && QUIET.includes(end)}
 						{@render ended(

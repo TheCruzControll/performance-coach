@@ -5,6 +5,7 @@
  */
 import type { ProposalCardView } from '#lib/domain/coach/cards.ts';
 import type { CompletedBlock } from '#lib/domain/coach/index.ts';
+import { weighInKey } from '#lib/domain/coach/recorded.ts';
 import { parseRef, type SourceRef } from '#lib/domain/coach/sources.ts';
 import { MESSAGE_STATUS_LABEL, type MessageStatus } from '#lib/domain/coach/vocabulary.ts';
 import { addDays } from '#lib/domain/calendar.ts';
@@ -43,6 +44,16 @@ export type ShownMessage =
 			id: string;
 			from: 'proposal';
 			card: ProposalCardView;
+	  }
+	| {
+			/** The card's key (weighInKey). */
+			id: string;
+			from: 'recorded';
+			/** The weigh-in the coach logged: its id is Undo's path. */
+			entryId: number;
+			/** The run that logged it: Undo sends it, so Undo takes back that run's write only. */
+			runId: string;
+			label: string;
 	  };
 
 /** A stored row the screen may show (services/coach/threads.ts getThreadView). */
@@ -60,6 +71,13 @@ export interface DisplayedRow {
 export interface RunCard {
 	runId: string;
 	card: ProposalCardView;
+}
+
+/** A weigh-in run `runId` logged, with the label its Undo card shows. */
+export interface RunWeighIn {
+	runId: string;
+	entryId: number;
+	label: string;
 }
 
 /**
@@ -141,14 +159,16 @@ const isBlocks = (value: unknown): value is CompletedBlock[] =>
 	value.every((block) => typeof block === 'object' && block !== null && 'kind' in block);
 
 /**
- * The rows a conversation shows, in order: the owner's messages and the coach's answers, a
+ * The rows a conversation shows, in order: the owner’s messages and the coach’s answers, a
  * partial answer (display_only) with how it ended. A row with nothing to show is left out. Each
- * proposal card follows the last row of the run that proposed it; a card whose run has no row
- * here is left out (it belongs to another page).
+ * proposal card follows the last row of the run that proposed it, and then each weigh-in card of
+ * that run (after the proposals, so a proposal still follows its answer); a card whose run has no
+ * row here is left out (it belongs to another page).
  */
 export function shownMessages(
 	rows: readonly DisplayedRow[],
-	cards: readonly RunCard[] = []
+	cards: readonly RunCard[] = [],
+	weighIns: readonly RunWeighIn[] = []
 ): ShownMessage[] {
 	const lastOfRun = new Map<string, number>();
 	rows.forEach((row, at) => row.runId && lastOfRun.set(row.runId, at));
@@ -156,9 +176,17 @@ export function shownMessages(
 		const shown = shownMessage(row);
 		if (!row.runId || lastOfRun.get(row.runId) !== at) return shown;
 		const own = cards.filter((each) => each.runId === row.runId);
+		const logged = weighIns.filter((each) => each.runId === row.runId);
 		return [
 			...shown,
-			...own.map(({ card }): ShownMessage => ({ id: card.id, from: 'proposal', card }))
+			...own.map(({ card }): ShownMessage => ({ id: card.id, from: 'proposal', card })),
+			...logged.map(({ runId, entryId, label }): ShownMessage => ({
+				id: weighInKey(entryId),
+				from: 'recorded',
+				entryId,
+				runId,
+				label
+			}))
 		];
 	});
 }

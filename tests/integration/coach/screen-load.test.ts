@@ -6,7 +6,8 @@
  *   entry (from weekly_review, ref review:<key>) kept only for the owner's own review, and stored
  *   on the conversation its first turn starts.
  * - /coach/<id>: the conversation's shown messages in order, through the threads service, and
- *   whether it is archived (read-only until unarchived).
+ *   whether it is archived (read-only until unarchived). A weigh-in the coach logged in a run shows
+ *   its Undo card after that run's answer, while the weigh-in still holds the run's write.
  * - A malformed or unknown id, or someone else's conversation, is the 404 page.
  * - A read that fails is the screen's load-failed state, recorded.
  */
@@ -17,6 +18,7 @@ import { coachThreads, type Executor } from '../../../src/lib/server/db';
 import { findErrorsByRequestId } from '../../../src/lib/server/services/errors';
 import { saveBasics } from '../../../src/lib/server/services/profile/index';
 import { createWeeklyReview } from '../../../src/lib/server/services/reviews';
+import { logWeight, undoCoachWeight } from '../../../src/lib/server/services/weight/index';
 import { atLocal } from '../../../src/lib/server/test-support/analytics-fixtures/dashboards';
 import { seedAnalyticsFixture } from '../../../src/lib/server/test-support/analytics-fixtures/index';
 import {
@@ -267,6 +269,47 @@ describe('the Coach screen', () => {
 					}
 				]
 			});
+		});
+	});
+
+	it('shows the Undo card of a weigh-in its run logged after that answer, until Undo takes it back', async () => {
+		await withRollback(async (db) => {
+			const me = await owner(db);
+			const thread = await ask(db, me, 'I weighed 82.4 this morning', '2026-11-10T20:05:00Z');
+			await appendTurnStep(
+				me,
+				thread,
+				{
+					runId: RUN,
+					context: CONTEXT,
+					assistant: {
+						content: [{ type: 'text', text: 'Logged it.' }],
+						display: { blocks: [block('Logged it.')] }
+					}
+				},
+				{ db }
+			);
+			// The coach's write, as its tool makes it: source coach, under the run.
+			const { entry } = await logWeight(
+				me,
+				{ value: 82.4, unit: 'kg', measuredOn: '2026-11-11' },
+				{ db, now: () => NOW, source: 'coach', runId: RUN }
+			);
+
+			const shown = (await ready(load(db, me, thread))).thread!.messages;
+			expect(shown.map((message) => message.from)).toEqual(['owner', 'coach', 'recorded']);
+			// Sydney's today is 11 November, so the card says so.
+			expect(shown[2]).toEqual({
+				id: `weigh-in:${entry.id}`,
+				from: 'recorded',
+				entryId: entry.id,
+				runId: RUN,
+				label: 'Logged 82.4 kg for today'
+			});
+
+			await undoCoachWeight(me, entry.id, RUN, { db, now: () => NOW });
+			const after = (await ready(load(db, me, thread))).thread!.messages;
+			expect(after.map((message) => message.from)).toEqual(['owner', 'coach']);
 		});
 	});
 
