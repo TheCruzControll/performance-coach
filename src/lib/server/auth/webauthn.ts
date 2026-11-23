@@ -34,7 +34,7 @@ const registrationSchema = z.looseObject({
 	type: z.literal('public-key'),
 	response: z.looseObject({
 		clientDataJSON: b64url(4096).min(1),
-		attestationObject: b64url(32_768).min(1),
+		attestationObject: b64url(8192).min(1),
 		transports
 	}),
 	clientExtensionResults: z.record(z.string(), z.unknown()).default({}),

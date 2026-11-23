@@ -11,6 +11,7 @@
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
+import ts from 'typescript';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type * as RateLimit from './rate-limit';
 import { closeDb } from '../db';
@@ -36,8 +37,47 @@ const { POST: testSession } = await import('../../../routes/api/test-support/ses
 const { actions: recover } = await import('../../../routes/recover/+page.server.ts');
 
 const ROUTES_DIR = path.resolve(import.meta.dirname, '../../../routes');
-const SERVER_POST = /export\s+(const|async\s+function|function)\s+POST\b/;
 const FORM_ACTIONS = /export\s+const\s+actions\b/;
+/** The names a +server file exports to answer POST: POST, or fallback (SvelteKit's for any method). */
+const POST_HANDLERS = new Set(['POST', 'fallback']);
+
+const isExported = (node: ts.Node): boolean =>
+	(ts.canHaveModifiers(node) ? ts.getModifiers(node) : undefined)?.some(
+		(modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword
+	) ?? false;
+
+/**
+ * Whether a +server file answers POST: it exports POST or fallback, declared (`export const`,
+ * `export function`) or re-exported under that name (`export { handler as POST }`,
+ * `export { POST } from './x'`). It is read as TypeScript, so a name in a comment or a string does
+ * not count. `export * from` is not followed.
+ */
+function answersPost(text: string): boolean {
+	const sf = ts.createSourceFile('+server.ts', text, ts.ScriptTarget.Latest, true);
+	return sf.statements.some((statement) => {
+		if (ts.isVariableStatement(statement) && isExported(statement)) {
+			return statement.declarationList.declarations.some(
+				(declaration) =>
+					ts.isIdentifier(declaration.name) && POST_HANDLERS.has(declaration.name.text)
+			);
+		}
+		if (ts.isFunctionDeclaration(statement) && isExported(statement)) {
+			return POST_HANDLERS.has(statement.name?.text ?? '');
+		}
+		const clause = ts.isExportDeclaration(statement) ? statement.exportClause : undefined;
+		if (
+			ts.isExportDeclaration(statement) &&
+			!statement.isTypeOnly &&
+			clause &&
+			ts.isNamedExports(clause)
+		) {
+			return clause.elements.some(
+				(element) => !element.isTypeOnly && POST_HANDLERS.has(element.name.text)
+			);
+		}
+		return false;
+	});
+}
 
 /** Route ids (SvelteKit's, e.g. `/(app)/today`) of every endpoint or page with a POST handler. */
 function postRoutes(dir = ROUTES_DIR): string[] {
@@ -49,7 +89,7 @@ function postRoutes(dir = ROUTES_DIR): string[] {
 			continue;
 		}
 		const text = /^\+server\.(ts|js)$/.test(entry)
-			? SERVER_POST.test(readFileSync(full, 'utf8'))
+			? answersPost(readFileSync(full, 'utf8'))
 			: /^\+page\.server\.(ts|js)$/.test(entry) && FORM_ACTIONS.test(readFileSync(full, 'utf8'));
 		if (text) {
 			const rel = path.relative(ROUTES_DIR, dir).split(path.sep).filter(Boolean).join('/');
@@ -62,6 +102,49 @@ function postRoutes(dir = ROUTES_DIR): string[] {
 const publicPost = postRoutes().filter(
 	(id) => ROUTE_ACCESS[id as keyof typeof ROUTE_ACCESS] === 'public'
 );
+
+describe('which +server files answer POST', () => {
+	it.each([
+		['export const POST', 'export const POST = async () => new Response(null);', true],
+		['export function POST', 'export function POST() { return new Response(null); }', true],
+		[
+			'export async function POST',
+			'export async function POST() { return new Response(null); }',
+			true
+		],
+		[
+			'export const POST with a type',
+			`import type { RequestHandler } from './$types';\nexport const POST: RequestHandler = () => new Response(null);`,
+			true
+		],
+		['export const fallback', 'export const fallback = async () => new Response(null);', true],
+		[
+			'export { handler as POST }',
+			'const handler = async () => new Response(null);\nexport { handler as POST };',
+			true
+		],
+		['export { POST } from another file', "export { POST } from './handlers';", true],
+		[
+			'export { POST } of a local binding',
+			'const POST = async () => new Response(null);\nexport { POST };',
+			true
+		],
+		[
+			'export { POST as GET }, which exports GET',
+			'const POST = async () => new Response(null);\nexport { POST as GET };',
+			false
+		],
+		['export const GET only', 'export const GET = async () => new Response(null);', false],
+		[
+			'POST named in a comment or a string',
+			"// export const POST = 1\nexport const GET = () => new Response('export const POST');",
+			false
+		],
+		['a type-only export of POST', "export type { POST } from './types';", false]
+	])('%s', (_, source, answers) => {
+		expect(answersPost(source)).toBe(answers);
+	});
+});
 
 describe('public POST routes are rate-limited', () => {
 	it('finds the public POST routes on disk', () => {

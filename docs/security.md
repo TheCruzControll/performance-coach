@@ -238,11 +238,14 @@ device keeps everything.
 `hooks.server.ts` refuses a request whose declared `Content-Length` is over its cap with `413`
 before the guard reads a session and before any route parses the body (`body-limit.ts`): 64 KB on
 every route, 16 KB on a public route (a WebAuthn response or a recovery code is a few KB). A
-`/api/*` path answers `413 {"error":"too_large"}`, any other path plain text. Routes keep their own
-tighter caps with their own messages (coach turns 64 KB, client errors and vitals 16 KB, the coach's
-undo and thread edits 4 KB). A chunked body with no `Content-Length` is not checked by the hook:
-the adapter's limit applies instead (`BODY_SIZE_LIMIT` under adapter-node, the platform's limit on
-Vercel). Proven by `src/lib/server/body-limit.test.ts` and `src/hooks.server.test.ts`.
+`/api/*` path answers `413 {"error":"too_large"}`, a form action (`x-sveltekit-action: true`) answers
+an action failure that `deserialize` reads, and any other path plain text. Routes keep their own caps,
+the same or tighter, with their own messages (coach turns 64 KB, client errors and vitals 16 KB, the
+coach's undo and thread edits 4 KB). A chunked body with no `Content-Length` is not checked by the
+hook: the adapter's limit applies instead (`BODY_SIZE_LIMIT` under adapter-node, the platform's limit
+on Vercel). The public auth routes that read a JSON body (setup, sign-in) hold their own body to 16 KB
+with `readJsonBody`, so that cap holds without a length too. Proven by
+`src/lib/server/body-limit.test.ts`, `src/hooks.server.test.ts` and `src/routes/api/auth/public-bodies.test.ts`.
 
 ## Rate limits (Postgres, no Redis)
 
@@ -306,7 +309,7 @@ with `Retry-After`.
 | Guarantee                           | Enforced in                                                                                              | Proven by                                                                                                                                                                                  |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Every public POST is rate-limited   | `PUBLIC_POST_BUCKETS` (`rate-limit.ts`); each handler's service calls `enforceRateLimit` with its bucket | `src/lib/server/auth/rate-limit.test.ts` (unit: routes on disk against the map, and each handler's 429); `tests/integration/auth/rate-limit.test.ts` (counter, window, reset)              |
-| Every request body is capped        | `hooks.server.ts` through `body-limit.ts`, before the guard and any parse                                | `src/lib/server/body-limit.test.ts`; `src/hooks.server.test.ts` (an oversized public or owner POST is refused before the guard)                                                            |
+| Every declared body is capped       | `hooks.server.ts` through `body-limit.ts`, before the guard and any parse                                | `src/lib/server/body-limit.test.ts`; `src/hooks.server.test.ts` (an oversized public or owner POST is refused before the guard)                                                            |
 | Every cookie write is hardened      | `sessionCookie()` and `expiredSessionCookie()` (`cookies.ts`), called only from `http.ts` and `guard.ts` | `scripts/cookie-writes.test.ts` (the real `src/`, and fixture trees with a planted write that must fail); `src/lib/server/auth/cookies.test.ts` (the `__Host-session` and `session` flags) |
 | Deny by default for every route     | `guard.ts` and `ROUTE_ACCESS` (`routes.ts`)                                                              | `src/lib/server/auth/routes.test.ts` (walks `src/routes`); `e2e/access.e2e.ts` (over HTTP)                                                                                                 |
 | `Set-Cookie` survives the TLS proxy | the production build behind `scripts/e2e-tls`                                                            | `scripts/e2e-tls.test.ts` (a 303 with two `Set-Cookie` headers passes unchanged)                                                                                                           |

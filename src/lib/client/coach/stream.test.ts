@@ -106,6 +106,11 @@ describe('streamTurn', () => {
 			kind: 'refused',
 			error: 'invalid_request'
 		});
+		// The hook's answer to a body over its cap (the turn route takes 64 KB).
+		expect(await call(new Response('{"error":"too_large"}', { status: 413 }))).toEqual({
+			kind: 'refused',
+			error: 'invalid_request'
+		});
 		expect(await call(new Response('{}', { status: 500 }))).toEqual({
 			kind: 'refused',
 			error: 'provider'

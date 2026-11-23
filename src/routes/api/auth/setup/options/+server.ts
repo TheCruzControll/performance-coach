@@ -6,12 +6,16 @@ import {
 	NO_STORE,
 	readJsonBody
 } from '#lib/server/auth/index.ts';
+import { BODY_LIMITS } from '#lib/server/body-limit.ts';
 import type { RequestHandler } from './$types';
 
 /** First-run setup, step 1: registration options for the owner's first passkey. */
 export const POST: RequestHandler = async (event) => {
 	try {
-		const body = (await readJsonBody(event.request)) as { token?: unknown; name?: unknown };
+		const body = (await readJsonBody(event.request, BODY_LIMITS.public)) as {
+			token?: unknown;
+			name?: unknown;
+		};
 		const options = await beginSetup(
 			{ token: body?.token, name: body?.name },
 			authRequest(event, { webauthn: true })

@@ -4,9 +4,23 @@
  * name and its Secure, HttpOnly, SameSite and Path flags then have exactly one definition: a route
  * that calls `cookies.set` itself could set a cookie without them.
  *
- * A write is a call to `set`, `delete` or `serialize` on a `cookies` object, or a `set-cookie`
- * header set or appended by hand. The scan reads the TypeScript syntax tree, so a write in a
- * comment or a string does not count. The fixture trees below plant the violations this must catch.
+ * Outside those two files, a cookie write is any of:
+ * - a call to `set`, `delete` or `serialize` on a cookies object: `cookies` itself, `event.cookies`,
+ *   or a name bound to one by destructuring (`const { cookies: jar } = event`, a parameter too) or
+ *   by assignment (`const jar = event.cookies`);
+ * - a call on `cookieStore` (or `window.cookieStore`), or an assignment to `document.cookie`;
+ * - a string or template literal whose text is `set-cookie`, in any position: a header tuple, an
+ *   object key, a computed key, an index, a constant. Its read, as the first argument of `get` or
+ *   `has` (`headers.get('set-cookie')`), is not a write.
+ *
+ * Inside those two files, a `set-cookie` header set with `set`, `append` or an object key must take
+ * a cookies.serialize() result.
+ *
+ * The scan reads the TypeScript syntax tree, so a write in a comment does not count. It is not
+ * complete: a cookies object passed in under another name (`(jar) => jar.set(…)`) and a header name
+ * held in a variable (`headers.set(name, …)`, with `name` not a literal) are not seen. Every .ts,
+ * .js and .svelte file under src/ is scanned, tests included. The fixture trees below plant the
+ * violations this must catch.
  */
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -22,8 +36,12 @@ const WRITERS = ['src/lib/server/auth/http.ts', 'src/lib/server/auth/guard.ts'];
 /** The functions whose result a cookie write must take its options from. */
 const OPTION_SOURCES = new Set(['sessionCookie', 'expiredSessionCookie']);
 const WRITE_METHODS = new Set(['set', 'delete', 'serialize']);
+/** Calls whose first argument is a header name they only read. */
+const READ_METHODS = new Set(['get', 'has']);
 /** The index of the options argument: `set(name, value, options)`, `delete(name, options)`. */
 const OPTIONS_ARG = { set: 2, serialize: 2, delete: 1 } as const;
+const SET_COOKIE = 'set-cookie';
+const OUTSIDE = 'outside auth/http.ts and auth/guard.ts';
 
 interface Write {
 	file: string;
@@ -46,10 +64,36 @@ function scriptText(name: string, text: string): string {
 		.join('\n');
 }
 
-/** A `cookies` object: `cookies` itself, or `event.cookies`, `locals.cookies` and the like. */
-const isCookieJar = (node: ts.Expression): boolean =>
-	(ts.isIdentifier(node) && node.text === 'cookies') ||
-	(ts.isPropertyAccessExpression(node) && node.name.text === 'cookies');
+/** The text of a string literal or a template with no substitutions, else null. */
+const literalText = (node: ts.Node): string | null =>
+	ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) ? node.text : null;
+
+/** The name of a property or binding: an identifier or a string literal, else null. */
+const nameText = (node: ts.Node | undefined): string | null =>
+	node && (ts.isIdentifier(node) || ts.isStringLiteral(node)) ? node.text : null;
+
+const isSetCookie = (node: ts.Node | undefined): boolean =>
+	!!node && literalText(node)?.toLowerCase() === SET_COOKIE;
+
+/** A global named `name`, as `cookieStore` or `window.cookieStore` names it. */
+const isGlobal = (node: ts.Expression, name: string): boolean =>
+	(ts.isIdentifier(node) && node.text === name) ||
+	(ts.isPropertyAccessExpression(node) && node.name.text === name);
+
+const isAssignment = (kind: ts.SyntaxKind): boolean =>
+	kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment;
+
+/** A literal that is the first argument of `get` or `has`: a read of a header, not a write. */
+function isReadName(node: ts.Node): boolean {
+	const call = node.parent;
+	return (
+		!!call &&
+		ts.isCallExpression(call) &&
+		call.arguments[0] === node &&
+		ts.isPropertyAccessExpression(call.expression) &&
+		READ_METHODS.has(call.expression.name.text)
+	);
+}
 
 /** Every cookie write in one file, with the reason it is not allowed (null when it is). */
 function cookieWrites(name: string, text: string): Write[] {
@@ -58,9 +102,32 @@ function cookieWrites(name: string, text: string): Write[] {
 	const line = (node: ts.Node) => sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
 	const writer = WRITERS.includes(name);
 
+	// Names that hold a cookies object: `{ cookies: jar }` destructured, or `const jar = event.cookies`.
+	const jars = new Set<string>();
+	/** A `cookies` object: `cookies` itself, a name from the destructuring above, or `x.cookies`. */
+	const isCookieJar = (node: ts.Expression): boolean =>
+		(ts.isIdentifier(node) && (node.text === 'cookies' || jars.has(node.text))) ||
+		(ts.isPropertyAccessExpression(node) && node.name.text === 'cookies');
+
 	// Names bound from sessionCookie(...) or expiredSessionCookie(...), e.g. `const { options } = …`.
 	const optionNames = new Set<string>();
 	const collect = (node: ts.Node): void => {
+		if (
+			ts.isBindingElement(node) &&
+			ts.isObjectBindingPattern(node.parent) &&
+			ts.isIdentifier(node.name) &&
+			nameText(node.propertyName ?? node.name) === 'cookies'
+		) {
+			jars.add(node.name.text);
+		}
+		if (
+			ts.isVariableDeclaration(node) &&
+			ts.isIdentifier(node.name) &&
+			node.initializer &&
+			isCookieJar(node.initializer)
+		) {
+			jars.add(node.name.text);
+		}
 		if (
 			ts.isVariableDeclaration(node) &&
 			ts.isObjectBindingPattern(node.name) &&
@@ -78,37 +145,10 @@ function cookieWrites(name: string, text: string): Write[] {
 	collect(sf);
 
 	const writes: Write[] = [];
-	const visit = (node: ts.Node): void => {
-		if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-			const method = node.expression.name.text;
-			const receiver = node.expression.expression;
-			if (isCookieJar(receiver) && WRITE_METHODS.has(method)) {
-				const options = node.arguments[OPTIONS_ARG[method as keyof typeof OPTIONS_ARG]];
-				let reason: string | null = null;
-				if (!writer) reason = 'written outside auth/http.ts and auth/guard.ts';
-				else if (!options || !ts.isIdentifier(options) || !optionNames.has(options.text)) {
-					reason = 'options are not those sessionCookie() or expiredSessionCookie() return';
-				}
-				writes.push({ file: name, line: line(node), reason });
-			} else if (
-				(method === 'set' || method === 'append') &&
-				node.arguments[0] &&
-				ts.isStringLiteral(node.arguments[0]) &&
-				node.arguments[0].text.toLowerCase() === 'set-cookie'
-			) {
-				headerWrite(node, node.arguments[1]);
-			}
-		} else if (
-			ts.isPropertyAssignment(node) &&
-			(ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) &&
-			node.name.text.toLowerCase() === 'set-cookie'
-		) {
-			// `{ headers: { 'set-cookie': … } }` (a Response's init object).
-			headerWrite(node, node.initializer);
-		}
-		ts.forEachChild(node, visit);
-	};
-	/** A header write is allowed only in a writer, and only with a cookies.serialize() result. */
+	const record = (node: ts.Node, reason: string | null) =>
+		writes.push({ file: name, line: line(node), reason });
+
+	/** A header write in a writer is allowed only with a cookies.serialize() result. */
 	const headerWrite = (node: ts.Node, value: ts.Node | undefined): void => {
 		const serialized =
 			!!value &&
@@ -116,12 +156,49 @@ function cookieWrites(name: string, text: string): Write[] {
 			ts.isPropertyAccessExpression(value.expression) &&
 			value.expression.name.text === 'serialize' &&
 			isCookieJar(value.expression.expression);
-		const reason = !writer
-			? 'set-cookie header written outside auth/http.ts and auth/guard.ts'
-			: serialized
-				? null
-				: 'set-cookie header is not a cookies.serialize() result';
-		if (reason) writes.push({ file: name, line: line(node), reason });
+		record(node, serialized ? null : 'set-cookie header is not a cookies.serialize() result');
+	};
+
+	const visit = (node: ts.Node): void => {
+		if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+			const method = node.expression.name.text;
+			const receiver = node.expression.expression;
+			if (isCookieJar(receiver) && WRITE_METHODS.has(method)) {
+				if (!writer) {
+					record(node, `written ${OUTSIDE}`);
+				} else {
+					const options = node.arguments[OPTIONS_ARG[method as keyof typeof OPTIONS_ARG]];
+					const ok = !!options && ts.isIdentifier(options) && optionNames.has(options.text);
+					record(
+						node,
+						ok ? null : 'options are not those sessionCookie() or expiredSessionCookie() return'
+					);
+				}
+			} else if (isGlobal(receiver, 'cookieStore') && !writer) {
+				record(node, `cookieStore is called ${OUTSIDE}`);
+			} else if (
+				writer &&
+				(method === 'set' || method === 'append') &&
+				isSetCookie(node.arguments[0])
+			) {
+				headerWrite(node, node.arguments[1]);
+			}
+		} else if (
+			ts.isBinaryExpression(node) &&
+			isAssignment(node.operatorToken.kind) &&
+			ts.isPropertyAccessExpression(node.left) &&
+			node.left.name.text === 'cookie' &&
+			isGlobal(node.left.expression, 'document') &&
+			!writer
+		) {
+			record(node, `document.cookie is assigned ${OUTSIDE}`);
+		} else if (writer && ts.isPropertyAssignment(node) && isSetCookie(node.name)) {
+			// `{ headers: { 'set-cookie': … } }`, a Response's init object.
+			headerWrite(node, node.initializer);
+		} else if (!writer && isSetCookie(node) && !isReadName(node)) {
+			record(node, `'set-cookie' named ${OUTSIDE}`);
+		}
+		ts.forEachChild(node, visit);
 	};
 	visit(sf);
 	return writes;
@@ -183,6 +260,51 @@ export function clearIt(cookies: any, url: URL) {
 				`export const GET = () => new Response(null, { headers: { 'set-cookie': 'session=1' } });\n`
 			],
 			[
+				'a set-cookie header tuple',
+				'src/routes/api/y/+server.ts',
+				`export const GET = () => new Response(null, { headers: [['set-cookie', 'session=1']] });\n`
+			],
+			[
+				'a set-cookie computed key',
+				'src/routes/api/y/+server.ts',
+				`export const GET = () => new Response(null, { headers: { ['set-cookie']: 'session=1' } });\n`
+			],
+			[
+				'a set-cookie index assignment',
+				'src/routes/api/y/+server.ts',
+				`export function GET(headers: any) { headers['set-cookie'] = 'session=1'; }\n`
+			],
+			[
+				'a set-cookie template literal',
+				'src/routes/api/y/+server.ts',
+				'export const GET = (headers: any) => headers.append(`set-cookie`, "session=1");\n'
+			],
+			[
+				'a set-cookie constant',
+				'src/routes/api/y/+server.ts',
+				`const HEADER = 'set-cookie';\nexport const GET = (headers: any) => headers.set(HEADER, 'session=1');\n`
+			],
+			[
+				'document.cookie assigned',
+				'src/lib/client/x.ts',
+				`export const f = () => { document.cookie = 'session=1; Path=/'; };\n`
+			],
+			[
+				'a cookieStore call',
+				'src/lib/client/x.ts',
+				`export const f = () => cookieStore.set('session', 'x');\n`
+			],
+			[
+				'a cookies object renamed by destructuring',
+				'src/lib/server/services/x.ts',
+				`export function f(event: any) { const { cookies: jar } = event; jar.delete('session', { path: '/' }); }\n`
+			],
+			[
+				'a cookies object assigned to another name',
+				'src/lib/server/services/x.ts',
+				`export function f(event: any) { const jar = event.cookies; jar.set('session', 'x', { path: '/' }); }\n`
+			],
+			[
 				'a writer that passes inline options, not sessionCookie()’s',
 				'src/lib/server/auth/http.ts',
 				`export function bad(cookies: any) { cookies.set('session', 't', { httpOnly: false }); }\n`
@@ -211,12 +333,39 @@ export function clearIt(cookies: any, url: URL) {
 			}
 		});
 
+		it('passes a writer that appends a set-cookie header from cookies.serialize()', () => {
+			dir = mkdtempSync(path.join(os.tmpdir(), 'cookie-writes-'));
+			try {
+				plant('src/lib/server/auth/http.ts', CLEAN_WRITER);
+				plant(
+					'src/lib/server/auth/guard.ts',
+					`import { expiredSessionCookie } from './cookies';\nexport function deny(event: any, url: URL) {\n\tconst { name, options } = expiredSessionCookie(url);\n\tevent.headers.append('set-cookie', event.cookies.serialize(name, '', options));\n}\n`
+				);
+				expect(violations(scan(dir))).toEqual([]);
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		});
+
 		it('ignores a write named in a comment or a string', () => {
 			dir = mkdtempSync(path.join(os.tmpdir(), 'cookie-writes-'));
 			try {
 				plant(
 					'src/routes/z/+page.server.ts',
 					`// cookies.set('session', 'x', { path: '/' })\nexport const s = "cookies.delete('session')";\n`
+				);
+				expect(violations(scan(dir))).toEqual([]);
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		});
+
+		it('ignores a read of set-cookie, which is the first argument of get or has', () => {
+			dir = mkdtempSync(path.join(os.tmpdir(), 'cookie-writes-'));
+			try {
+				plant(
+					'src/routes/z/+page.server.ts',
+					`export const f = (r: Response) => [r.headers.get('set-cookie'), r.headers.has('Set-Cookie')];\n`
 				);
 				expect(violations(scan(dir))).toEqual([]);
 			} finally {

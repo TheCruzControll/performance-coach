@@ -1,10 +1,11 @@
+import { parse } from 'devalue';
 import { describe, expect, it } from 'vitest';
 import { BODY_LIMITS, bodyLimitFor, oversizedBodyResponse } from './body-limit';
 
 const KB = 1024;
 
-function post(length: number | null, method = 'POST'): Request {
-	const headers: Record<string, string> = {};
+function post(length: number | null, method = 'POST', extra: Record<string, string> = {}): Request {
+	const headers: Record<string, string> = { ...extra };
 	if (length !== null) headers['content-length'] = String(length);
 	return new Request('https://coach.nikocruz.com/api/x', { method, headers });
 }
@@ -46,6 +47,25 @@ describe('oversizedBodyResponse', () => {
 		expect(page.headers.get('content-type')).toMatch(/text\/plain/);
 		expect(page.headers.get('cache-control')).toBe('no-store');
 		expect(await page.text()).toBe('Request body too large.');
+	});
+
+	it('answers a form action with an action failure that deserialize() reads as a failure', async () => {
+		const action = oversizedBodyResponse(
+			post(1e9, 'POST', { 'x-sveltekit-action': 'true' }),
+			'/recover',
+			'public'
+		)!;
+		expect(action.status).toBe(413);
+		expect(action.headers.get('content-type')).toMatch(/application\/json/);
+		expect(action.headers.get('cache-control')).toBe('no-store');
+		const answer = JSON.parse(await action.text()) as {
+			type: string;
+			status: number;
+			data: string;
+		};
+		expect(answer).toMatchObject({ type: 'failure', status: 413 });
+		// deserialize() is JSON.parse, then devalue's parse of `data`, which must not throw.
+		expect(parse(answer.data)).toEqual({ error: 'too_large', message: 'Request body too large.' });
 	});
 
 	it('does not check a request without a declared length, or a read-only method', () => {

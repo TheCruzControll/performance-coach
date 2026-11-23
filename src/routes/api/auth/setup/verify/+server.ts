@@ -8,6 +8,7 @@ import {
 	readSessionToken,
 	setSessionCookie
 } from '#lib/server/auth/index.ts';
+import { BODY_LIMITS } from '#lib/server/body-limit.ts';
 import type { RequestHandler } from './$types';
 
 /**
@@ -16,7 +17,10 @@ import type { RequestHandler } from './$types';
  */
 export const POST: RequestHandler = async (event) => {
 	try {
-		const body = (await readJsonBody(event.request)) as { token?: unknown; response?: unknown };
+		const body = (await readJsonBody(event.request, BODY_LIMITS.public)) as {
+			token?: unknown;
+			response?: unknown;
+		};
 		const result = await completeSetup(
 			{ token: body?.token, response: body?.response },
 			readSessionToken(event.cookies, event.url),
