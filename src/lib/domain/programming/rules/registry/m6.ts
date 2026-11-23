@@ -579,6 +579,17 @@ const nextBlock: RuleDefinition[] = [
 	)
 ];
 
+/** A weekly review's changes, applied as a new version (M5's accept path). */
+const applied: RuleDefinition = {
+	id: 'review.weekly',
+	kind: 'behaviour',
+	statement:
+		'A change from a weekly review is applied as a new program version with a review_applied decision naming the review, who decided, and any change left out because its session had passed.',
+	rationale:
+		'Every change to your program traces back to what proposed it, so a review’s changes can be found and explained later.',
+	source: 'src/lib/server/services/coach/apply/program.ts#PROGRAM_APPLIERS.program_adjustment'
+};
+
 export const rules: readonly RuleDefinition[] = [
 	...strength,
 	...running,
@@ -586,5 +597,6 @@ export const rules: readonly RuleDefinition[] = [
 	...nextWeek,
 	...reviews,
 	...directives,
-	...nextBlock
+	...nextBlock,
+	applied
 ];

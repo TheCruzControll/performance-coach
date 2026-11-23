@@ -1353,6 +1353,15 @@ generators and a plan with no season keep M6's rule. `rules/registry/targets.tes
 average RPE against the block's caps) and `reviews/weekly.test.ts` (a maintenance week against
 its dose). `review/weekly.test.ts`: `avgRpeCall`.
 
+m7/58 rules-reference: `scripts/programming-rules-doc.test.ts` keeps `docs/programming-rules.md`
+equal to a fresh render of the rules registry (`pnpm docs:rules` rewrites it); every export of
+`src/lib/domain/programming/rules/` is a registered rule or a listed non-rule, and the constants
+the M7 plan's drift list names outside it are registered; every rule key the programming code,
+its services and M3's and M7's scenario plans cite resolves to an active rule; a changed value
+changes the render, a superseded rule names its replacement, and a value JSON cannot print
+throws. `rules/registry/m3.test.ts` and `m6.test.ts` also scan the build, start-move and
+review-applier services.
+
 ## The LLM in tests
 
 ## Coach (M5)
