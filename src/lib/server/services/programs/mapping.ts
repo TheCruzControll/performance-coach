@@ -26,6 +26,7 @@ import type {
 	DecisionRow,
 	DecisionValues,
 	ProgramTreeRows,
+	SessionTreeRows,
 	VersionRow,
 	VersionTreeRows
 } from '../../db/repositories/programs';
@@ -148,36 +149,21 @@ export function planRows(plan: ProgramPlan, p: NewProgram) {
 			tree.versionWeeks.push({ versionId, weekId: weekRow.id });
 			sessions.forEach((session, s) => {
 				const sessionPath = `${weekPath}.sessions.${s}`;
-				const sessionRow = { ...sessionColumns(session), ...node(sessionPath), weekId: weekRow.id };
-				const sessionId = sessionRow.id;
-				tree.sessions.push(sessionRow);
-				if (session.kind === 'run') {
-					session.segments.forEach((segment, k) =>
-						tree.segments.push({ ...segment, id: newId(), sessionId, position: k + 1 })
-					);
-				} else if (session.kind === 'other') {
-					tree.details.push({ ...session.details, sessionId });
-				} else {
-					session.exercises.forEach(({ exercise, substitutedFrom, sets, ...rest }, x) => {
-						const exerciseRow = {
-							...rest,
-							...node(`${sessionPath}.exercises.${x}`),
-							sessionId,
-							position: x + 1,
-							exerciseId: p.exerciseId(exercise),
-							substitutedFromExerciseId: substitutedFrom && p.exerciseId(substitutedFrom)
-						};
-						tree.exercises.push(exerciseRow);
-						sets.forEach((set, k) =>
-							tree.sets.push({
-								...set,
-								id: newId(),
-								plannedExerciseId: exerciseRow.id,
-								position: k + 1
-							})
-						);
-					});
-				}
+				const lineageId = newId();
+				lineages.set(sessionPath, lineageId);
+				const rows = sessionTreeRows(session, {
+					weekId: weekRow.id,
+					lineageId,
+					exerciseId: p.exerciseId
+				});
+				tree.sessions.push(rows.session);
+				tree.exercises.push(...rows.exercises);
+				tree.sets.push(...rows.sets);
+				tree.segments.push(...rows.segments);
+				tree.details.push(...rows.details);
+				rows.exercises.forEach((row, x) =>
+					lineages.set(`${sessionPath}.exercises.${x}`, row.lineageId!)
+				);
 			});
 		});
 	});
@@ -191,6 +177,54 @@ export function planRows(plan: ProgramPlan, p: NewProgram) {
 		createdAt: p.at
 	}));
 	return { tree, decisions };
+}
+
+/**
+ * A session and its children as rows, with fresh ids: the session's lineage and week are given, and
+ * each exercise gets a lineage of its own (its position in `session` is its index in the rows).
+ * `exerciseId` resolves each ExerciseRef to its library row.
+ */
+export function sessionTreeRows(
+	session: SessionPlan,
+	{
+		weekId,
+		lineageId,
+		exerciseId
+	}: { weekId: string; lineageId: string; exerciseId: (ref: ExerciseRef) => string }
+): SessionTreeRows {
+	const newId = () => crypto.randomUUID();
+	const id = newId();
+	const rows: SessionTreeRows = {
+		session: { ...sessionColumns(session), id, lineageId, weekId },
+		exercises: [],
+		sets: [],
+		segments: [],
+		details: []
+	};
+	if (session.kind === 'run') {
+		session.segments.forEach((segment, k) =>
+			rows.segments.push({ ...segment, id: newId(), sessionId: id, position: k + 1 })
+		);
+	} else if (session.kind === 'other') {
+		rows.details.push({ ...session.details, sessionId: id });
+	} else {
+		session.exercises.forEach(({ exercise, substitutedFrom, sets, ...rest }, x) => {
+			const exerciseRow = {
+				...rest,
+				id: newId(),
+				lineageId: newId(),
+				sessionId: id,
+				position: x + 1,
+				exerciseId: exerciseId(exercise),
+				substitutedFromExerciseId: substitutedFrom && exerciseId(substitutedFrom)
+			};
+			rows.exercises.push(exerciseRow);
+			sets.forEach((set, k) =>
+				rows.sets.push({ ...set, id: newId(), plannedExerciseId: exerciseRow.id, position: k + 1 })
+			);
+		});
+	}
+	return rows;
 }
 
 /** A session's own columns, without its kind's children. */

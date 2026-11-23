@@ -5,6 +5,7 @@
 	import { navigating, page } from '$app/state';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
 	import Badge from '#lib/ui/components/Badge.svelte';
+	import Button from '#lib/ui/components/Button.svelte';
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import ListRow from '#lib/ui/components/ListRow.svelte';
@@ -12,6 +13,7 @@
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
+	import type AddSessionSheetType from '#lib/ui/program/AddSessionSheet.svelte';
 	import ProgramHeader from '#lib/ui/program/ProgramHeader.svelte';
 	import SessionCard from '#lib/ui/program/SessionCard.svelte';
 	import type PlanSheetType from '#lib/ui/program/PlanOverviewSheet.svelte';
@@ -146,6 +148,14 @@
 				: import('#lib/ui/program/PlanOverviewSheet.svelte'),
 		'plan'
 	);
+	/** Add a session to the day shown (AddSessionSheet): loaded on its button's first tap. */
+	const addSession = new LazySheet<ComponentProps<typeof AddSessionSheetType>>(
+		() =>
+			import.meta.env.SSR
+				? Promise.reject(new Error('client only'))
+				: import('#lib/ui/program/AddSessionSheet.svelte'),
+		'add'
+	);
 
 	/** A week tapped in the plan: shown as a week pill shows it (keeping scroll and focus), pending
 	 * state included. */
@@ -161,6 +171,7 @@
 		const tool = page.url.searchParams.get('tool');
 		if (tool === 'plates') plates.show();
 		if (tool === 'plan' && view) plan.show();
+		if (tool === 'add' && view) addSession.show();
 		if (tool === 'rest') restTimer.show();
 		// A rest left running (a reload, or back from another screen) shows under its row again,
 		// with its alarm and keep-awake, without a tap. The key literal keeps standalone-rest.ts
@@ -174,6 +185,7 @@
 			plates.leave();
 			restTimer.leave();
 			plan.leave();
+			addSession.leave();
 		};
 	});
 
@@ -313,6 +325,19 @@
 				<Section title={words.heading} data-testid="day-sessions">
 					{#snippet action()}
 						{#if day.date === view!.today}<Badge tone="accent">Today</Badge>{/if}
+						{#if view!.addable.includes(day.date)}
+							<Button
+								variant="secondary"
+								size="sm"
+								icon="plus"
+								loading={addSession.busy}
+								onpointerdown={addSession.prefetch}
+								onclick={addSession.show}
+								data-testid="open-add-session"
+							>
+								Add session
+							</Button>
+						{/if}
 					{/snippet}
 					{#each words.cards as card (card.lineage)}
 						{@const href = sessionHref(card.lineage)}
@@ -352,6 +377,13 @@
 						</Surface>
 					{/each}
 				</Section>
+			{/if}
+
+			{#if addSession.failed}
+				<Notice tone="danger" title="Couldn’t open adding a session">
+					<button type="button" class="retry" onclick={addSession.show} use:reveal>Try again</button
+					>
+				</Notice>
 			{/if}
 
 			{#if view!.aside.length}
@@ -434,6 +466,16 @@
 
 <!-- Each renders nothing until its code has arrived (a dynamic component that is null). -->
 <plates.component bind:open={plates.open} unit={preferences.units} onclose={closeSheet} />
+{#if view && day}
+	<addSession.component
+		bind:open={addSession.open}
+		version={view.version}
+		addable={view.addable}
+		day={day.date}
+		addIntents={view.addIntents}
+		onclose={closeSheet}
+	/>
+{/if}
 {#if view}
 	<plan.component
 		bind:open={plan.open}

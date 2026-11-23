@@ -98,7 +98,18 @@ export async function resolveExercises(
 	plan: ProgramPlan,
 	deps: TrainingDeps
 ): Promise<(ref: ExerciseRef) => string> {
-	const refs = exerciseRefs(plan);
+	return resolveRefs(ownerId, exerciseRefs(plan), deps);
+}
+
+/**
+ * The library row of each ExerciseRef, each under the path its field errors take: a function from
+ * a ref to its row's id, or a TrainingInputError at each unknown one.
+ */
+export async function resolveRefs(
+	ownerId: string,
+	refs: [path: string, ref: ExerciseRef][],
+	deps: TrainingDeps
+): Promise<(ref: ExerciseRef) => string> {
 	const keys = refs.flatMap(([, ref]) => ('key' in ref ? [ref.key] : []));
 	const ids = refs.flatMap(([, ref]) => ('customId' in ref ? [ref.customId] : []));
 	const catalogue = await resolveKeys(keys, deps);

@@ -32,6 +32,7 @@ import type { TradeoffDecision } from './evaluate';
 /** The decisions that say why a session sits on its day (m7-plan, placement-why). */
 export const WHY_KINDS = [
 	'session_moved',
+	'session_added',
 	'schedule_repaired',
 	'priority_tradeoff',
 	'schedule_kept',

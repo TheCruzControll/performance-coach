@@ -23,6 +23,7 @@ import {
 	type ExerciseChange,
 	type SegmentChange,
 	type SessionChange,
+	type SessionTreeRows,
 	type SetChange,
 	type WeekChange
 } from '../../db/repositories/programs';
@@ -112,6 +113,11 @@ export interface Revision {
 	moreDecisions?: RevisionDecision[];
 	/** The version's summary in History; `decision`'s when left out. */
 	summary?: string;
+	/**
+	 * Sessions the revision adds, each to a week it copies (services/programs/add.ts): `rows` builds
+	 * the session's rows once its week's copy has its id. The week is one of `weekLineages`.
+	 */
+	added?: { weekLineage: string; rows: (weekId: string) => SessionTreeRows }[];
 }
 
 export interface RevisedVersion {
@@ -226,6 +232,10 @@ export async function reviseProgram(
 	if (!weekLineages.length) {
 		throw new TrainingInputError({ weekLineages: 'Name the weeks this edit changes' });
 	}
+	const added = revision.added ?? [];
+	if (added.some(({ weekLineage }) => !weekLineages.includes(weekLineage))) {
+		throw new Error('the revision adds a session to a week it does not copy');
+	}
 	if (!isVersionNumber(revision.baseVersionNumber)) {
 		throw new TrainingNotFoundError('program version');
 	}
@@ -282,6 +292,15 @@ export async function reviseProgram(
 				},
 				changes
 			);
+			if (added.length) {
+				await repo.insertSessionTrees(
+					added.map(({ weekLineage, rows }) => {
+						const weekId = copies.weeks.get(weekLineage)?.to;
+						if (!weekId) throw new Error('the revision adds a session outside the weeks it copies');
+						return rows(weekId);
+					})
+				);
+			}
 			await repo.insertDecisions(
 				decisions.map((d) => ({ ...d, programId: head.id, versionId, createdAt: at }))
 			);

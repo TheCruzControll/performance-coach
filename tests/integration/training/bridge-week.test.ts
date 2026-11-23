@@ -87,6 +87,8 @@ describe('a bridge week', () => {
 				// Never seven rest days.
 				expect(view.strip).toEqual([]);
 				expect(view.days).toEqual([]);
+				// Nothing to add to: no day of a bridge week takes a session.
+				expect(view.addable).toEqual([]);
 				const day = today === MONDAY ? 'Mon 16 Nov' : 'Wed 18 Nov';
 				expect(view.offPlan).toEqual([
 					{

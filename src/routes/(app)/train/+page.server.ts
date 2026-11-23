@@ -3,6 +3,7 @@ import { version } from '$app/env';
 import { programAction } from '#lib/server/forms/program.ts';
 import { ownerId } from '#lib/server/forms/read.ts';
 import { archiveProgram } from '#lib/server/services/programs/index.ts';
+import { addActions } from './add.server';
 import type { Actions, PageServerLoad } from './$types';
 import { loadTrainRoad } from './road.server';
 import { loadTrainWeek } from './week.server';
@@ -40,7 +41,13 @@ export const load: PageServerLoad = async ({ locals, request, route, url }) => {
 
 const endPlan = programAction((owner) => archiveProgram(owner));
 
+const { addSession } = addActions();
+
 export const actions = {
+	/**
+	 * Add Session: a session on a day of a planned week (add.server.ts). The sheet posts it as ?/addSession.
+	 */
+	addSession,
 	/**
 	 * End this plan: the program is archived (services/programs/archive.ts) and the owner lands on
 	 * Today, where Build my program starts the next one. A workout in progress is a 409
