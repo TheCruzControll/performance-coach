@@ -19,7 +19,7 @@ describe('the schedule rules', () => {
 		{ timeout: 60_000 },
 		() => {
 			const cited = [...staticRuleKeys(['src/lib/domain/programming/schedule/**/*.ts'])].sort();
-			expect(cited).toEqual(['schedule.drop', 'schedule.priority_kept']);
+			expect(cited).toEqual(['schedule.drop', 'schedule.kept', 'schedule.priority_kept']);
 			for (const key of cited) expect(RULE_BY_ID.get(key)?.area).toBe('schedule');
 		}
 	);

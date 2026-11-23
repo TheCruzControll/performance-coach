@@ -76,13 +76,15 @@ export interface RepairContext {
 }
 
 type DecisionOf<
-	K extends 'schedule_repaired' | 'load_eased' | 'priority_tradeoff' | 'session_dropped'
+	K extends
+		'schedule_repaired' | 'load_eased' | 'priority_tradeoff' | 'schedule_kept' | 'session_dropped'
 > = { kind: K; ruleKey: string; facts: FactsFor<K> };
 /** The facts of the decision an action or a kept finding is recorded with. */
 export type RepairDecision =
 	| DecisionOf<'schedule_repaired'>
 	| DecisionOf<'load_eased'>
 	| DecisionOf<'priority_tradeoff'>
+	| DecisionOf<'schedule_kept'>
 	| DecisionOf<'session_dropped'>;
 
 export interface Slot {
@@ -107,8 +109,12 @@ export interface KeptFinding {
 	finding: Finding;
 	/** Why the week keeps it, in one sentence. */
 	tradeoff: string;
-	/** When a higher-priority goal's session holds it. */
-	decision?: DecisionOf<'priority_tradeoff'>;
+	/**
+	 * Why the week keeps an avoid finding: a higher-priority goal's session holds it (priority_tradeoff),
+	 * else the finding's headline and this reason are recorded as schedule_kept. Never set for a
+	 * finding the owner's commitments fix alone.
+	 */
+	decision?: DecisionOf<'priority_tradeoff'> | DecisionOf<'schedule_kept'>;
 }
 
 /** An M3 moveSession input: valid under moveSessionSchema. */
@@ -564,7 +570,17 @@ export function repairWeek<S extends EvaluatedSession>(
 		const keptGoal = priorities && first && goalOf(first.now, priorities);
 		const given = priorities && last && goalOf(last.now, priorities);
 		const held = finding.resolution?.kind === 'priority_kept' && keptGoal && given;
-		if (!held || keptGoal.rank >= given.rank) return { finding, tradeoff };
+		if (!held || keptGoal.rank >= given.rank) {
+			if (finding.severity !== 'avoid' || finding.resolution?.kind === 'commitment_fixed') {
+				return { finding, tradeoff };
+			}
+			const facts = { headline: clip(finding.headline, 120), reason: clip(tradeoff, 200) };
+			return {
+				finding,
+				tradeoff,
+				decision: { kind: 'schedule_kept', ruleKey: 'schedule.kept', facts }
+			};
+		}
 		const facts = {
 			kept: clip(keptGoal.title, 40),
 			given: clip(given.title, 80),

@@ -33,6 +33,7 @@ export const WHY_KINDS = [
 	'session_moved',
 	'schedule_repaired',
 	'priority_tradeoff',
+	'schedule_kept',
 	'interference_resolved',
 	'maintenance_dose',
 	'session_placed',
@@ -41,11 +42,13 @@ export const WHY_KINDS = [
 
 /**
  * The priority trade-offs that keep a clash the week then shows as a finding: placement.ts's on
- * the session that keeps its day, and schedule repair's (schedule/repair.ts).
+ * the session that keeps its day, and schedule repair's (schedule/repair.ts). Its schedule_kept
+ * decisions, the avoid findings it keeps for no priority, are the same kind of explanation.
  */
 export const CLASH_KEPT_RULES: readonly string[] = [
 	'placement.priority_kept',
-	'schedule.priority_kept'
+	'schedule.priority_kept',
+	'schedule.kept'
 ];
 
 /**
@@ -124,7 +127,9 @@ export async function getPlacementWhy(
 	}
 	const tradeoffs = rows
 		.filter(
-			(row) => row.kind === 'priority_tradeoff' && CLASH_KEPT_RULES.includes(row.ruleKey ?? '')
+			(row) =>
+				(row.kind === 'priority_tradeoff' || row.kind === 'schedule_kept') &&
+				CLASH_KEPT_RULES.includes(row.ruleKey ?? '')
 		)
 		.map(({ why, affected }) => ({ why, affected }));
 	return { byLineage, tradeoffs };
@@ -190,7 +195,9 @@ export async function getScheduleTradeoffs(
 		}));
 	const tradeoffs = rows
 		.filter(
-			(row) => row.kind === 'priority_tradeoff' && CLASH_KEPT_RULES.includes(row.ruleKey ?? '')
+			(row) =>
+				(row.kind === 'priority_tradeoff' || row.kind === 'schedule_kept') &&
+				CLASH_KEPT_RULES.includes(row.ruleKey ?? '')
 		)
 		.map(({ why, affected }) => ({ why, affected }));
 	return { decisions, tradeoffs };
