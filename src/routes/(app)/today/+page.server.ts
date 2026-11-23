@@ -1,6 +1,7 @@
 import { version } from '$app/env';
 import { buildActions } from '#lib/server/forms/build.ts';
 import { ownerId } from '#lib/server/forms/read.ts';
+import { logWeightAction } from '#lib/server/forms/weight.ts';
 import { logWhenSettled } from '#lib/server/observability/timing.ts';
 import type { Actions, PageServerLoad } from './$types';
 import { loadToday } from './load.server';
@@ -22,5 +23,11 @@ export const load: PageServerLoad = async ({ locals, request, route, url }) => {
 	return data;
 };
 
-/** Build my program: ?/preview, then ?/build (forms/build.ts). */
-export const actions = buildActions() satisfies Actions;
+/**
+ * Build my program: ?/preview, then ?/build (forms/build.ts). Today's one-tap weigh-in: ?/logWeight
+ * (forms/weight.ts).
+ */
+export const actions = {
+	...buildActions(),
+	logWeight: logWeightAction
+} satisfies Actions;

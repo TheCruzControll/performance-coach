@@ -42,7 +42,8 @@ describe('COACH_TOOLS', () => {
 			'periodisation.ts',
 			'workout.ts',
 			'preferences.ts',
-			'analytics.ts'
+			'analytics.ts',
+			'weight.ts'
 		]);
 		const groups = new Set(TOOL_GROUP_FILES.map((each) => each.group));
 		expect(groups).toEqual(new Set(Object.values(TOOL_CATALOGUE).map((entry) => entry.group)));

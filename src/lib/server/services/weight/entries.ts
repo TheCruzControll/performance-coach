@@ -68,12 +68,14 @@ function isWeightSource(value: string): value is WeightSource {
 	return (WEIGHT_SOURCES as readonly string[]).includes(value);
 }
 
-/** The day a form or the coach left out (absent or blank) is today. */
-function withDay(input: unknown, today: IsoDate): unknown {
+/** The day a form or the coach left out (absent or blank) is `day`. */
+function withDay(input: unknown, day: IsoDate): unknown {
 	if (typeof input !== 'object' || input === null) return input;
 	const entry = input as Record<string, unknown>;
-	const day = entry.measuredOn;
-	return day === undefined || day === null || day === '' ? { ...entry, measuredOn: today } : input;
+	const given = entry.measuredOn;
+	return given === undefined || given === null || given === ''
+		? { ...entry, measuredOn: day }
+		: input;
 }
 
 /** The refusal for moving a weigh-in onto a day that already has one. */
@@ -145,9 +147,11 @@ export async function logWeight(
 }
 
 /**
- * Change a weigh-in's value, unit or day. Moving it onto a day that already has one is refused at
- * `measuredOn`. An edit is a new write by the caller, so it clears run_id and replaced: a coach
- * entry the owner changes is no longer one Undo can take back.
+ * Change a weigh-in's value, unit or day. The entry is read first: one that is missing, or another
+ * owner's, is refused before the input is looked at. An input with no day keeps the entry's own
+ * day. Moving it onto a day that already has one is refused at `measuredOn`. An edit is a new write
+ * by the caller, so it clears run_id and replaced: a coach entry the owner changes is no longer one
+ * Undo can take back.
  */
 export async function editWeight(
 	ownerId: string,
@@ -161,10 +165,10 @@ export async function editWeight(
 			const at = now();
 			const profile = await createProfileRepository(tx).ensureProfile(ownerId);
 			const today = localDay(at, profile.timeZone);
-			const weigh = parseWith(weightEntrySchema(today), withDay(input, today));
 			const repo = createWeightRepository(tx);
 			const current = await repo.getById(ownerId, id);
 			if (!current) throw new ProfileNotFoundError('Weigh-in');
+			const weigh = parseWith(weightEntrySchema(today), withDay(input, current.measuredOn));
 			if (
 				weigh.measuredOn !== current.measuredOn &&
 				(await repo.listRange(ownerId, weigh.measuredOn, weigh.measuredOn)).length > 0

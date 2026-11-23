@@ -15,6 +15,10 @@ export const edits = {
 		summary: 'Skipped {session} on {day}',
 		why: '{who} skipped {session} on {day}. {reason}'
 	},
+	session_added: {
+		summary: 'Added {session} on {day}',
+		why: '{who} added {session} on {day}: {what}, built from your profile. {reason}{warnings}'
+	},
 	exercise_swapped: {
 		summary: 'Swapped {from} for {to}',
 		why: '{who} swapped {from} for {to} {scope}. {reason}'

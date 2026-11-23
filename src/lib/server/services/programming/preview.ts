@@ -87,6 +87,7 @@ export const DECISION_GROUP: Readonly<Record<DecisionKind, DecisionGroup | null>
 	start_moved: null,
 	session_moved: null,
 	session_skipped: null,
+	session_added: null,
 	exercise_swapped: null,
 	prescription_adjusted: null,
 	preference_recorded: null,

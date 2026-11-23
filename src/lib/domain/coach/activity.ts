@@ -190,7 +190,12 @@ const WORDING: Readonly<Record<ToolName, (f: Facts) => Triple>> = {
 		return [`Working out ${s}…`, `Worked out ${s}`, `Couldn’t work out ${s}`];
 	},
 	get_performance_trends: (f) =>
-		check(f.exercise ? `your ${f.exercise} trend` : 'your performance trends')
+		check(f.exercise ? `your ${f.exercise} trend` : 'your performance trends'),
+	get_body_weight: () => [
+		'Reading your weight trend…',
+		'Read your weight trend',
+		'Couldn’t read your weight trend'
+	]
 };
 
 /**

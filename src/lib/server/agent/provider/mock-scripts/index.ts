@@ -16,6 +16,7 @@ import { reviewScripts } from './reviews.ts';
 import { safetyScripts } from './safety.ts';
 import { summaryScripts } from './summaries.ts';
 import { testScripts } from './test.ts';
+import { weightScripts } from './weight.ts';
 import { workoutScripts } from './workout.ts';
 
 export const MOCK_SCRIPTS: readonly MockScript[] = Object.freeze([
@@ -28,6 +29,7 @@ export const MOCK_SCRIPTS: readonly MockScript[] = Object.freeze([
 	...workoutScripts,
 	...preferenceScripts,
 	...analyticsScripts,
+	...weightScripts,
 	...safetyScripts,
 	...testScripts,
 	...generalScripts

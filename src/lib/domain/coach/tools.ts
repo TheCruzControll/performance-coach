@@ -1,5 +1,5 @@
 /**
- * The coach's 29 tools, each named once (PRD §4, the M5 brief): its group, its effect and whether
+ * The coach's 30 tools, each named once (PRD §4, the M5 brief): its group, its effect and whether
  * it drafts. The registry (server/agent/tools) defines one tool per entry, the activity chips
  * word them (activity.ts), the per-tool deadlines read `drafts` (budgets.ts) and diagnostics
  * group by them, so a tool that is not here cannot run.
@@ -86,7 +86,9 @@ const CATALOGUE = {
 	// Analytics: metrics computed by code, with their method.
 	get_weekly_training_summary: read('analytics'),
 	get_training_load: read('analytics'),
-	get_performance_trends: read('analytics')
+	get_performance_trends: read('analytics'),
+	/** The owner's weight: trend, rate, goal status and milestones, computed by code. */
+	get_body_weight: read('analytics')
 } satisfies Record<string, ToolCatalogueEntry>;
 
 /** A tool's name: one of the catalogue's keys. */
