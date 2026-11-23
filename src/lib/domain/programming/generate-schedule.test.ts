@@ -20,6 +20,7 @@ import type {
 	StrengthSessionPlan,
 	WeekPlan
 } from '../training/types';
+import { CLASH_KEPT_RULES } from '../training/vocabulary';
 import { validate } from '../validation';
 import { DecisionLog } from './decisions';
 import { evaluateWeek } from './evaluate/week';
@@ -38,7 +39,7 @@ import { EASE } from './rules/schedule';
 import { openDates } from './running';
 import { SCENARIO_START, SCENARIOS } from './scenarios';
 import type { ScenarioKey } from './scenarios';
-import type { Draft, Periodisation, StageContext } from './stage';
+import type { Draft, GenerateOptions, Periodisation, StageContext } from './stage';
 import { prepare } from './stages/prepare';
 import { schedule } from './stages/schedule';
 import { estimateMinutes } from './timefit';
@@ -48,10 +49,10 @@ const inputOf = (profile: TrainingProfile) =>
 	buildProgrammingInput(profile, { catalogue: CATALOGUE });
 
 /** Every stage but schedule run on `profile`, the draft schedule receives, and its context. */
-function beforeSchedule(profile: TrainingProfile) {
+function beforeSchedule(profile: TrainingProfile, options: GenerateOptions = OPTIONS) {
 	const log = new DecisionLog();
-	const prepared = prepare(inputOf(profile), OPTIONS, log);
-	const context: StageContext = { input: prepared.input, options: OPTIONS, log };
+	const prepared = prepare(inputOf(profile), options, log);
+	const context: StageContext = { input: prepared.input, options, log };
 	let draft = firstDraft(prepared);
 	for (const stage of STAGES.filter((s) => s.name !== 'schedule')) {
 		draft = stage.run(draft, context);
@@ -134,26 +135,22 @@ function judgeWeeks(
 	);
 }
 
-function generated(profile: TrainingProfile) {
-	const { draft, context, periodisation } = beforeSchedule(profile);
-	const plan = generateProgram(inputOf(profile), OPTIONS);
+function generated(profile: TrainingProfile, options: GenerateOptions = OPTIONS) {
+	const { draft, context, periodisation } = beforeSchedule(profile, options);
+	const plan = generateProgram(inputOf(profile), options);
 	const weeks = judgeWeeks(plan, context.input, periodisation, draft.demand!.budget.days);
 	return { plan, weeks };
 }
 
-/** The decisions that explain a clash a week keeps: a priority trade-off, or a schedule_kept. */
-const EXPLAINING = ['priority_tradeoff', 'schedule_kept'] as const;
+/** Whether a decision explains a clash a week keeps: its rule is one of CLASH_KEPT_RULES. */
+const explains = (d: { ruleKey: string }) => CLASH_KEPT_RULES.includes(d.ruleKey);
 
 /**
  * Each avoid finding a judged week keeps, naming a session of its own, that no decision of the plan
  * explains (its session's ref in a decision citing it). Empty when every clash is gone or explained.
  */
 function unexplained(plan: ProgramPlan, weeks: ReturnType<typeof judgeWeeks>) {
-	const explained = new Set(
-		plan.decisions
-			.filter((d) => (EXPLAINING as readonly string[]).includes(d.kind))
-			.flatMap((d) => d.refs)
-	);
+	const explained = new Set(plan.decisions.filter(explains).flatMap((d) => d.refs));
 	return weeks.flatMap(({ b, w, week, evaluation }) =>
 		evaluation.findings
 			.filter(
@@ -206,6 +203,28 @@ describe('every M3 and M7 scenario', () => {
 				expect(RULE_BY_ID.has(d.ruleKey), d.ruleKey).toBe(true);
 			}
 			expect(JSON.stringify(generateProgram(inputOf(p()), OPTIONS))).toBe(JSON.stringify(plan));
+		}
+	);
+});
+
+/**
+ * Scenarios planned from a Monday other than SCENARIO_START: the same days meet other weeks'
+ * commitments and loads, so a clash can stand in a week the scenario's own start never shows.
+ */
+const FROM_MONDAY: [string, () => TrainingProfile, string][] = [
+	['multiGoal from 2026-11-16', M7_SCENARIOS.multiGoal, '2026-11-16'],
+	['multiGoal from 2026-12-14', M7_SCENARIOS.multiGoal, '2026-12-14'],
+	['longSeason from 2026-11-16', M7_SCENARIOS.longSeason, '2026-11-16']
+];
+
+describe('every scenario planned from another Monday', () => {
+	it.each(FROM_MONDAY)(
+		'%s: every avoid finding a week keeps is explained by a clash-keeping decision',
+		{ timeout: 60_000 },
+		(_, profile, startsOn) => {
+			const { plan, weeks } = generated(profile(), { startsOn, firstPlannedDay: startsOn });
+			expect(unexplained(plan, weeks)).toEqual([]);
+			expect(validate(programPlanSchema, plan)).toEqual({ ok: true, data: plan });
 		}
 	);
 });
@@ -265,7 +284,7 @@ describe('the schedule stage on its own', () => {
 			const log = new DecisionLog();
 			const after = schedule(draft, { ...context, log });
 			expect(after.blocks).toEqual(draft.blocks);
-			const changed = log.list().filter((d) => !(EXPLAINING as readonly string[]).includes(d.kind));
+			const changed = log.list().filter((d) => !explains(d));
 			expect(changed).toEqual([]);
 			// offSeason keeps a clash of its own (a strength session over a run), so it logs that as kept.
 			if (key !== 'offSeason') expect(log.list()).toEqual([]);
@@ -461,7 +480,7 @@ describe('the schedule stage run twice', () => {
 			const log = new DecisionLog();
 			const twice = schedule({ ...draft, blocks: once.blocks }, { ...context, log });
 			expect(twice.blocks).toEqual(once.blocks);
-			const changed = log.list().filter((d) => !(EXPLAINING as readonly string[]).includes(d.kind));
+			const changed = log.list().filter((d) => !explains(d));
 			expect(changed).toEqual([]);
 		}
 	);

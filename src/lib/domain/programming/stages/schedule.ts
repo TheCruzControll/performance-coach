@@ -48,7 +48,7 @@ import type {
 	SessionPlan,
 	WeekPlan
 } from '../../training/types.ts';
-import type { WeekKind } from '../../training/vocabulary.ts';
+import { CLASH_KEPT_RULES, type WeekKind } from '../../training/vocabulary.ts';
 import { sessionPath } from '../commitments.ts';
 import type { FactsFor } from '../decisions.ts';
 import { clip } from '../demand.ts';
@@ -257,11 +257,11 @@ function recordKeptAsPlanned(
 	const { budget } = demandIn(draft);
 	const events = eventsOf(input);
 	const level = input.experience[input.disciplines[0]!];
-	// Explained already: a priority_tradeoff or schedule_kept citing the session, from any stage.
+	// Explained already: a clash-keeping decision (CLASH_KEPT_RULES) citing the session, from any stage.
 	const explained = new Set(
 		log
 			.list()
-			.filter((d) => d.kind === 'priority_tradeoff' || d.kind === 'schedule_kept')
+			.filter((d) => CLASH_KEPT_RULES.includes(d.ruleKey))
 			.flatMap((d) => d.refs)
 	);
 	const found = new Map<string, { refs: PlanPath[]; facts: FactsFor<'schedule_kept'> }>();
