@@ -66,8 +66,9 @@ runs the criteria and updates milestones.md.
   week findings and the season timeline, the coach's interference and trade-off reads, the whole
   re-plan path with its notice, proposal card and Propose again, the weekly review's deload, and
   the coach's block, deload and taper proposals with this week's block in every turn. m7r/03 is
-  parked for a redesign; m7r/04 to m7r/10, m7/58 and m7/59 wait on it. The old M7 pull requests
-  stay open until their rows merge.
+  built: each block's day pattern is planned across week boundaries, and every clash a generated
+  week keeps is recorded as explained (a priority trade-off or a schedule_kept decision). m7r/04 to
+  m7r/10, m7/58 and m7/59 build on it. The old M7 pull requests stay open until their rows merge.
 - **Coach run trace and self-improving evals.** Planned, nothing built. The plan is eight PRs in
   `plan/trace-evals/plan.md`, written 738 commits ago, so its file pointers need re-checking
   against `main` before anyone builds from it. The owner must provide three secrets before the

@@ -5,13 +5,13 @@
  * weekPlan. Its block type, modes, deloads and running follow M7's rules, recorded as decisions;
  * M3's own generator is untouched.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { addDays, daysBetween } from '../../calendar';
 import { CATALOGUE } from '../../exercises/index';
 import type { TrainingProfile } from '../../profile/types';
 import type { WeekPlan } from '../../training/types';
 import { DecisionLog } from '../decisions';
-import { generateProgram } from '../generate';
+import { generateProgram, STAGES } from '../generate';
 import { buildProgrammingInput } from '../input';
 import { M7_SCENARIOS } from '../periodisation/scenarios';
 import { canonicalJson, fnv1a64 } from '../random';
@@ -257,11 +257,19 @@ describe('the next block from the season', () => {
 	it('leaves M3’s generateProgram byte-identical', () => {
 		// Hashes of M3's plan for three scenarios, taken on origin/m7r/02-generator-season before
 		// this change: the season planner moved them from the old base's, and this change leaves them.
+		// M3's stages alone: the schedule stage (generator-schedule) is M7's, so it is left out here,
+		// as generate.test.ts leaves it out for the same hashes.
+		const schedule = vi.spyOn(
+			STAGES.find((s) => s.name === 'schedule')!,
+			'run'
+		);
+		schedule.mockImplementation((d) => d);
 		const hashes = (['journeyHybrid', 'multiGoal', 'hypertrophyBlock'] as const).map((key) => {
 			const input = buildProgrammingInput(M7_SCENARIOS[key](), { catalogue: CATALOGUE });
 			const options = { startsOn: SCENARIO_START, firstPlannedDay: SCENARIO_START };
 			return fnv1a64(canonicalJson(generateProgram(input, options)));
 		});
+		schedule.mockRestore();
 		expect(hashes).toEqual(['0345b59dcc02ce27', 'd42123cacb5212c3', '313bf3d8930c995d']);
 	});
 });

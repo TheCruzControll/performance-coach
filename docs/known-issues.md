@@ -19,6 +19,12 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   count as running training time and load, as planned zone 2 bikes do, never as running distance.
 - Swap to the bike is offered whatever equipment the owner has: the device does not hold the
   equipment list.
+- **A next block's first week is planned against no week before.** The schedule stage
+  (`src/lib/domain/programming/stages/schedule.ts`) starts the load of the week before from nothing
+  in a next-block generation, so the previous block's last week is not counted when the new block's
+  first week is repaired and judged. Found reading the stage for m7r/03. The previous block is
+  `previous.block` in `src/lib/domain/programming/next-block/generate.ts`. Closes when that week is
+  passed into the stage as the week before, and a next block's first week is judged against it.
 
 ## Stale documentation
 

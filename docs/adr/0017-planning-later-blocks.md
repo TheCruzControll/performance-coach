@@ -37,7 +37,7 @@
   version's own first planned day, which is week 1 of the program. `planBlock` also refuses any
   new-block session dated before the chosen `firstPlannedDay`, naming the session and the day, so
   a 'this week' start on a Wednesday plans nothing on Monday or Tuesday.
-- **The input stays with the block.** The version stores the generator (`next-block/2+perfo-programming/2`), the
+- **The input stays with the block.** The version stores the generator (`next-block/2+perfo-programming/3`), the
   fingerprint, the catalogue digest and the input snapshot. A week is judged by the input of the
   lowest-numbered generated version that plans its block, so the planning version judges the new
   block and earlier blocks keep theirs.

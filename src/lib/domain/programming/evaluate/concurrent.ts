@@ -490,6 +490,17 @@ export const weightFor =
 		priorities?.length ? weightOfSession(session, priorities) : 1;
 
 /**
+ * Whether the priorities rank a same-day pair's goals apart: only then does same_day_priority_order
+ * judge the pair in place of M3's same_day_order (review/evaluation.ts). An unranked or
+ * equal-weight pair keeps M3's same_day_order.
+ */
+export const rankedApart = (
+	weight: (session: { discipline: Discipline }) => number,
+	earlier: { discipline: Discipline },
+	later: { discipline: Discipline }
+) => weight(earlier) !== weight(later);
+
+/**
  * The concurrent rules `sessions` break in `context`: by first day, then in CONCURRENT_RULES'
  * order. Pass the sessions that will happen, skipped ones left out.
  */

@@ -106,6 +106,7 @@ export const DECISION_GROUP: Readonly<Record<DecisionKind, DecisionGroup | null>
 	taper_planned: 'purpose',
 	schedule_repaired: 'placement',
 	load_eased: 'conflicts',
+	schedule_kept: 'conflicts',
 	volume_progressed: 'loads',
 	long_run_progressed: 'loads',
 	sparring_load: 'loads',

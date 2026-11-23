@@ -17,6 +17,7 @@
 import type { IsoDate } from '../../../domain/calendar';
 import { weekdayOf } from '../../../domain/calendar';
 import { WEEKDAY_INFO } from '../../../domain/profile/catalog';
+import { CLASH_KEPT_RULES } from '../../../domain/programming/decisions';
 import {
 	DECIDER_LABEL,
 	DECISION_KIND_LABEL,
@@ -33,6 +34,7 @@ export const WHY_KINDS = [
 	'session_moved',
 	'schedule_repaired',
 	'priority_tradeoff',
+	'schedule_kept',
 	'interference_resolved',
 	'maintenance_dose',
 	'session_placed',
@@ -40,13 +42,23 @@ export const WHY_KINDS = [
 ] as const satisfies readonly DecisionKind[];
 
 /**
- * The priority trade-offs that keep a clash the week then shows as a finding: placement.ts's on
- * the session that keeps its day, and schedule repair's (schedule/repair.ts).
+ * The clash-keeping decisions among `rows` (CLASH_KEPT_RULES), each with its sentence and sessions.
  */
-export const CLASH_KEPT_RULES: readonly string[] = [
-	'placement.priority_kept',
-	'schedule.priority_kept'
-];
+function clashTradeoffs(
+	rows: readonly {
+		kind: DecisionKind;
+		ruleKey: string | null;
+		why: string;
+		affected: readonly string[];
+	}[]
+): TradeoffDecision[] {
+	return rows.flatMap((row) =>
+		(row.kind === 'priority_tradeoff' || row.kind === 'schedule_kept') &&
+		CLASH_KEPT_RULES.includes(row.ruleKey ?? '')
+			? [{ why: row.why, affected: row.affected }]
+			: []
+	);
+}
 
 /**
  * Decision (m7-plan, placement-why): the most decisions one session's disclosure lists. Older
@@ -122,11 +134,7 @@ export async function getPlacementWhy(
 			byLineage[lineage] = { title: `Why ${WEEKDAY_INFO[weekdayOf(date)].label}?`, items };
 		}
 	}
-	const tradeoffs = rows
-		.filter(
-			(row) => row.kind === 'priority_tradeoff' && CLASH_KEPT_RULES.includes(row.ruleKey ?? '')
-		)
-		.map(({ why, affected }) => ({ why, affected }));
+	const tradeoffs = clashTradeoffs(rows);
 	return { byLineage, tradeoffs };
 }
 
@@ -188,10 +196,6 @@ export async function getScheduleTradeoffs(
 			version: row.version,
 			sessions: lineages.filter((lineage) => row.affected.includes(lineage))
 		}));
-	const tradeoffs = rows
-		.filter(
-			(row) => row.kind === 'priority_tradeoff' && CLASH_KEPT_RULES.includes(row.ruleKey ?? '')
-		)
-		.map(({ why, affected }) => ({ why, affected }));
+	const tradeoffs = clashTradeoffs(rows);
 	return { decisions, tradeoffs };
 }

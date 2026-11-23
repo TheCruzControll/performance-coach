@@ -126,7 +126,7 @@ function liftsIn(week: WeekPlan, input: ProgrammingInput): BaselineLift[] {
  * A main lift in the last of `weeks` (their targets, the block's first week first): knownShare of
  * a known 1RM, M1's table share of the estimate otherwise.
  */
-function loadLater(
+export function loadLater(
 	planned: PlannedExercisePlan,
 	main: MainLift,
 	weeks: readonly WeekTargets[],

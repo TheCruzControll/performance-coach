@@ -422,6 +422,7 @@ export const DECISION_KIND_LABEL = {
 	block_type_chosen: 'Block type',
 	schedule_repaired: 'Schedule adjusted',
 	load_eased: 'Session eased',
+	schedule_kept: 'Clash kept',
 	deload_triggered: 'Deload triggered',
 	taper_planned: 'Taper planned',
 	volume_progressed: 'Volume progressed',
