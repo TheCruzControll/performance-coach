@@ -53,6 +53,7 @@ import {
 	moveSessionSchema,
 	skipSessionSchema,
 	swapSchema,
+	type AddIntent,
 	type MoveSessionInput
 } from '../../../domain/training/edits';
 import { sessionLoadOf } from '../../../domain/training/metrics';
@@ -62,7 +63,12 @@ import {
 	runSegmentSchema,
 	setPrescriptionSchema
 } from '../../../domain/training/schemas';
-import type { OtherDetails, RunSegment, SetPrescription } from '../../../domain/training/types';
+import type {
+	OtherDetails,
+	RunSegment,
+	SessionPlan,
+	SetPrescription
+} from '../../../domain/training/types';
 import {
 	SET_ROLE_LABEL,
 	type DecisionKind,
@@ -104,12 +110,13 @@ import {
 	reviseProgram,
 	type CopyChanges,
 	type RevisedVersion,
+	type Revision,
 	type RevisionDecision
 } from './revise';
 import { MAX_VERSION } from './store';
 
-/** sessionPlanSchema's bound on one day's sessions: a move never makes a fifth. */
-const SESSIONS_A_DAY = 4;
+/** sessionPlanSchema's bound on one day's sessions: a move or an add never makes a fifth. */
+export const SESSIONS_A_DAY = 4;
 
 /** decisionPlanSchema's bound on a decision's 'why'. */
 const WHY_MAX = 1000;
@@ -192,6 +199,8 @@ export interface PlannedEdit {
 	changes: CopyChanges;
 	decision: RevisionDecision;
 	write?: (tx: Executor) => Promise<void>;
+	/** Sessions the edit adds, to the weeks it copies (Revision.added). */
+	added?: Revision['added'];
 	/**
 	 * An adjustment's session and its estimate: from every change `changes` makes to the session's
 	 * prescription, each composed row checked whole with M3's schema (a TrainingInputError), the
@@ -220,7 +229,7 @@ export type EditApplier = (
 ) => Promise<PlannedEdit>;
 
 /** Write one planned edit as the next version. */
-function revise(
+export function revise(
 	ownerId: string,
 	edit: PlannedEdit,
 	at: EditAt,
@@ -235,7 +244,8 @@ function revise(
 				await edit.write?.(tx);
 				return settled(edit.changes, edit);
 			},
-			decision: edit.decision
+			decision: edit.decision,
+			...(edit.added && { added: edit.added })
 		},
 		deps
 	);
@@ -256,7 +266,7 @@ interface Target {
 	exerciseRows: Map<string, ExerciseRow>;
 }
 
-function checkToday(today: unknown): IsoDate {
+export function checkToday(today: unknown): IsoDate {
 	if (typeof today === 'string' && parseIsoDate(today)) return today;
 	throw new TrainingInputError({ today: 'Not a calendar date (YYYY-MM-DD)' });
 }
@@ -303,7 +313,7 @@ async function locate(
  * Sunday week, so a move copies that one week, and only to a day from today on. Reaching other
  * weeks would copy the destination week too and move the session's row into it.
  */
-function reachableDates({ week }: Target, today: IsoDate): IsoDate[] {
+function reachableDates({ week }: Pick<Target, 'week'>, today: IsoDate): IsoDate[] {
 	const dates: IsoDate[] = [];
 	for (let date = week.startsOn; date <= week.endsOn; date = addDays(date, 1)) {
 		if (date >= today) dates.push(date);
@@ -335,6 +345,16 @@ function destinationRefusal(target: Target, toDate: IsoDate, today: IsoDate): st
 const timeRank = (time: TimeOfDay | null) =>
 	time === null || time === 'varies' ? null : TIMES_OF_DAY.indexOf(time);
 
+/**
+ * Where a session at `timeOfDay` goes in its day's sessions: before the first one at a later time
+ * of day, else last. A session with no time of day, or 'varies', goes last.
+ */
+export function placeInDay(day: readonly StoredSession[], timeOfDay: TimeOfDay | null): number {
+	const rank = timeRank(timeOfDay);
+	const later = day.findIndex((s) => rank !== null && (timeRank(s.timeOfDay) ?? -1) > rank);
+	return later === -1 ? day.length : later;
+}
+
 /** The sessions that will happen: what the interference rules read. */
 const happening = (sessions: StoredSession[]) => sessions.filter((s) => s.status !== 'skipped');
 
@@ -359,7 +379,7 @@ const TALLY_RULES: ReadonlySet<string> = new Set(
  * tally rule's finding goes by its rule and its sessions in any order, whatever their days; the
  * hard-day cap also by how many days hold them.
  */
-const findingKey = (f: Finding) => {
+export const findingKey = (f: Finding) => {
 	const named = f.sessions.map((s) => s.lineage ?? `${s.title} ${s.date}`);
 	if (!TALLY_RULES.has(f.rule)) return [f.rule, ...f.days, ...named].join(' ');
 	// hard_days_cap counts days, not sessions: spreading the same hard sessions over one more day
@@ -372,8 +392,8 @@ const findingKey = (f: Finding) => {
  * The week judged by evaluateWeek: with the context, its load modelled again on these sessions
  * (a move moves its fatigue) and every M7 rule; without one, M3's checkWeek alone, as before M7.
  */
-function judge(
-	target: Target,
+export function judge(
+	target: Pick<Target, 'versionId' | 'week'>,
 	sessions: readonly StoredSession[],
 	today: IsoDate,
 	context: EvaluationContext | null
@@ -395,7 +415,7 @@ function judge(
 }
 
 /** A finding as a move's warning: its rule by its key in its area. */
-const toWarning = ({ rule, area, severity, days, message, why }: Finding): MoveWarning => ({
+export const toWarning = ({ rule, area, severity, days, message, why }: Finding): MoveWarning => ({
 	rule: rule.slice(rule.indexOf('.') + 1) as MoveWarning['rule'],
 	area,
 	severity,
@@ -431,10 +451,8 @@ function planMove(
 	checkMovable(target, move.toDate, today);
 	const { session, sessions } = target;
 	const timeOfDay = move.timeOfDay === undefined ? session.timeOfDay : move.timeOfDay;
-	const rank = timeRank(timeOfDay);
 	const day = sessions.filter((s) => s.date === move.toDate);
-	const later = day.findIndex((s) => rank !== null && (timeRank(s.timeOfDay) ?? -1) > rank);
-	const place = later === -1 ? day.length : later;
+	const place = placeInDay(day, timeOfDay);
 	const firstDay = session.movedFrom ?? session.date;
 	const back = move.toDate === firstDay;
 
@@ -464,7 +482,12 @@ function planMove(
 }
 
 /** The context of the target's week, from the request's or batch's contexts (MoveDeps). */
-function contextOf(ownerId: string, target: Target, today: IsoDate, deps: MoveDeps) {
+export function contextOf(
+	ownerId: string,
+	target: Pick<Target, 'versionId' | 'week'>,
+	today: IsoDate,
+	deps: MoveDeps
+) {
 	const contexts = deps.contexts ?? createContextCache(ownerId, { db: resolveDeps(deps).db });
 	return contexts.get({ versionId: target.versionId, weekStartsOn: target.week.startsOn, today });
 }
@@ -504,7 +527,7 @@ function suggestedDay(
 const dayLabel = (date: IsoDate) => WEEKDAY_INFO[weekdayOf(date)].short;
 
 /** The owner's reason as a sentence, or NO_REASON. */
-function reasonText(reason: string | undefined): string {
+export function reasonText(reason: string | undefined): string {
 	const text = reason?.trim();
 	if (!text) return NO_REASON;
 	return /[.!?…]$/.test(text) ? text : `${text}.`;
@@ -527,6 +550,17 @@ function warningsText(messages: readonly string[], room: number): string {
 	return text;
 }
 
+/**
+ * The warnings a decision's 'why' ends with, after its head (`head`): each with its rule's reason
+ * the first time the rule is named, as many as fit in WHY_MAX.
+ */
+function warningsSaid(head: string, warnings: readonly MoveWarning[]): string {
+	const messages = warnings.map((w, n) =>
+		warnings.findIndex((o) => o.rule === w.rule) === n ? `${w.message} ${w.why}` : w.message
+	);
+	return warningsText(messages, WHY_MAX - head.length);
+}
+
 function moveDecision(
 	session: StoredSession,
 	toDate: IsoDate,
@@ -543,16 +577,46 @@ function moveDecision(
 		reason: reasonText(reason)
 	};
 	const head = render(template.why, { ...facts, warnings: '' }, 'session_moved');
-	// Each warning, with its rule's reason the first time the rule is named.
-	const messages = warnings.map((w, n) =>
-		warnings.findIndex((o) => o.rule === w.rule) === n ? `${w.message} ${w.why}` : w.message
-	);
 	return {
 		kind: 'session_moved',
 		summary: render(template.summary, facts, 'session_moved'),
-		why: head + warningsText(messages, WHY_MAX - head.length),
+		why: head + warningsSaid(head, warnings),
 		affected: [session.lineage],
 		evidence: { from: session.date, to: toDate, warnings: warnings.length }
+	};
+}
+
+/**
+ * The decision an added session records (services/programs/add.ts): what it is, how long and how
+ * hard, the owner's reason, and the week's new warnings, which never block it. `session` is the
+ * session as built, `intent` the effort it was built for.
+ */
+export function addDecision(
+	session: SessionPlan,
+	intent: AddIntent,
+	reason: string | undefined,
+	warnings: MoveWarning[],
+	source: Decider,
+	lineage: string
+): RevisionDecision {
+	const template = TEMPLATES.session_added;
+	const count = session.kind === 'strength' ? session.exercises.length : 0;
+	const facts = {
+		who: WHO[source],
+		session: session.title,
+		day: dayLabel(session.date),
+		what:
+			`${session.estMinutes} min at RPE ${session.targetRpe}` +
+			(count ? `, ${count} ${count === 1 ? 'exercise' : 'exercises'} by RPE` : ''),
+		reason: reasonText(reason)
+	};
+	const head = render(template.why, { ...facts, warnings: '' }, 'session_added');
+	return {
+		kind: 'session_added',
+		summary: render(template.summary, facts, 'session_added'),
+		why: head + warningsSaid(head, warnings),
+		affected: [lineage],
+		evidence: { date: session.date, kind: session.kind, intent }
 	};
 }
 

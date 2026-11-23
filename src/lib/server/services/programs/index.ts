@@ -70,6 +70,7 @@ export {
 	type PlannedSlot,
 	type SwapOptions
 } from './edits';
+export { addApplier, addSession, type AddedSession } from './add';
 export { APPEND, planBlock, type BlockPlanning, type ShiftedBlock } from './next-block';
 export { weekChanges, type WeekAtVersion, type WeekChanges } from './week-changes';
 export type {
