@@ -1,17 +1,21 @@
 <!--
   @component
-  The resume bar (resume.ts decides what it offers): loaded by the app shell on idle, never in the
-  first render, and drawn only when there is something to offer. Screen chrome, fixed over the
-  content column: above the tab bar below 1024 px, at the bottom of the column beside the rail
-  from there. It raises --nav-inset-bottom by its own room (tokens.css, --resume-inset), so the
-  shell's bottom padding and every other bottom chrome clear it and it covers nothing.
-  - Resume workout · title, a link to the kind's page, then the time and the sync pill.
+  The resume line (resume.ts decides what it offers and its words): loaded by the app shell on
+  idle, never in the first render, and drawn only when there is something to offer. One plain
+  row on the canvas, 44 px with 12 px below it (Paper, 3 · Today: "The floating bar became one
+  line, on every tab"): screen chrome on the tab bar's hairline below 1024 px, at the bottom of
+  the column beside the rail from there. Its height is --resume-inset, which --nav-inset-bottom
+  includes (tokens.css), so the shell's bottom padding and every other bottom chrome clear it and
+  it covers nothing.
+  - Resume {title}, a link to the kind's page, then the time, the sync pill and a chevron.
   - N changes waiting to sync, with the pill: a link to History. While changes wait (here or in a
     workout in progress), the screen's sync engine runs, so they sync from any tab.
-  - Continue here (Today only, online, nothing on this device): builds the other device's workout
-    here, then opens its page.
-  It looks again on every screen change, when the page becomes visible again, and once the
-  engine has synced everything. data-looked names the screen it last looked for.
+  - {title} is in progress on another device, and Continue here (Today only, online, nothing on
+    this device): builds the other device's workout here, then opens its page.
+  A screen that draws the workout in progress itself claims it (resume-state.svelte.ts), and the
+  line then shows only changes waiting there. It looks again on every screen change, when the
+  page becomes visible again, and once the engine has synced everything. data-looked names the
+  screen it last looked for.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -27,29 +31,45 @@
 	import Stopwatch from '#lib/ui/workout/Stopwatch.svelte';
 	import SyncPill from '#lib/ui/workout/SyncPill.svelte';
 	import {
-		continueHere,
+		continueHereFlow,
 		findResume,
 		hasPending,
+		lineFor,
 		NOTHING,
 		REMOTE_CHECK_PATHS,
+		shownFor,
 		syncFromHere,
 		type Resume
 	} from './resume.ts';
+	import { resumeState } from './resume-state.svelte.ts';
 
 	let { pathname }: { pathname: string } = $props();
 
 	let found = $state.raw<Resume>(NOTHING);
-	/** The remote offer belongs to its screen: it never follows the owner to another tab. */
+	/** What it found, for this line and for a screen that claims the workout in progress. */
+	function settle(next: Resume) {
+		found = next;
+		resumeState.found = next;
+	}
+	/**
+	 * The remote offer belongs to its screen: it never follows the owner to another tab. A screen
+	 * that claims the workout in progress draws it itself.
+	 */
 	const resume = $derived(
-		found.type === 'remote' && !REMOTE_CHECK_PATHS.includes(pathname) ? NOTHING : found
+		shownFor(
+			found.type === 'remote' && !REMOTE_CHECK_PATHS.includes(pathname) ? NOTHING : found,
+			resumeState.claimed,
+			pathname
+		)
 	);
+	const line = $derived(lineFor(resume, resumeState.failed));
 
 	/** The screen it last looked for, once it has: what the specs wait for. */
 	let looked = $state<string | null>(null);
 	async function look(path: string) {
 		const next = await findResume(path);
 		if (path !== pathname) return;
-		found = next;
+		settle(next);
 		deviceWorkout.active =
 			next.type === 'active'
 				? {
@@ -88,6 +108,9 @@
 		// It is gone from the shell (the workout screen sits outside it): a session finished or
 		// discarded there must not read Resume when the shell comes back before it looks again.
 		deviceWorkout.active = null;
+		resumeState.found = NOTHING;
+		resumeState.continuing = false;
+		resumeState.failed = false;
 	});
 
 	const SAVED: OutboxStatus = { state: 'synced' };
@@ -105,21 +128,23 @@
 
 	// ---- Continue here --------------------------------------------------------------------------
 
-	let continuing = $state(false);
-	let failed = $state(false);
 	async function adopt(workoutId: string, kind: Parameters<typeof workoutPath>[0]) {
-		if (continuing) return;
-		continuing = true;
-		failed = false;
-		const outcome = await continueHere(workoutId);
-		continuing = false;
-		if (outcome === 'opened') await goto(resolve(workoutPath(kind)));
-		else if (outcome === 'gone') found = NOTHING;
-		else failed = true;
+		const href = resolve(workoutPath(kind));
+		const outcome = await continueHereFlow(workoutId, href, { goto, flags: resumeState });
+		if (outcome === 'gone') settle(NOTHING);
 	}
-
-	const plural = (n: number) => (n === 1 ? 'change' : 'changes');
 </script>
+
+{#snippet words()}
+	<span class="text" data-danger={line.danger || undefined}
+		>{line.before}{#if line.title !== null}<span data-testid="resume-title">{line.title}</span
+			>{line.after}{/if}</span
+	>
+{/snippet}
+
+{#snippet chevron()}
+	<span class="chevron"><Icon name="chevron-right" size={14} /></span>
+{/snippet}
 
 <div class="resume-slot" data-looked={looked} data-testid="resume-slot">
 	{#if resume.type !== 'none'}
@@ -130,54 +155,30 @@
 					workout.stopwatch.startedAt === null
 						? startStopwatch(Date.parse(workout.startedAt))
 						: workout.stopwatch}
-				<a
-					class="main link"
-					href={resolve(workoutPath(workout.kind))}
-					aria-label={`Resume workout: ${workout.title}`}
-					data-testid="resume-link"
+				<a class="main link" href={resolve(workoutPath(workout.kind))} data-testid="resume-link"
+					>{@render words()}</a
 				>
-					<span class="lead"><Icon name="play" size={18} /></span>
-					<span class="text">
-						<strong>Resume workout</strong>
-						<span class="detail" data-testid="resume-title">{workout.title}</span>
-					</span>
-				</a>
 				<!-- Beside the link, not in it: the link's name holds all of its visible text. -->
 				<Stopwatch {stopwatch} />
 				<SyncPill {status} />
+				{@render chevron()}
 			{:else if resume.type === 'waiting'}
 				<a
 					class="main link"
 					href={resolve('/(app)/progress/workouts/[[id]]', {})}
-					data-testid="resume-link"
+					data-testid="resume-link">{@render words()}</a
 				>
-					<span class="lead"><Icon name="refresh" size={18} /></span>
-					<span class="text">
-						<strong>{resume.pending} {plural(resume.pending)} waiting to sync</strong>
-						<span class="detail">History</span>
-					</span>
-				</a>
 				<SyncPill {status} />
+				{@render chevron()}
 			{:else}
 				{@const workout = resume.workout}
-				<div class="main" role="status">
-					<span class="lead"><Icon name="device" size={18} /></span>
-					<span class="text">
-						{#if failed}
-							<strong>Couldn’t continue it here</strong>
-							<span class="detail">Check your connection, then try again</span>
-						{:else}
-							<strong>In progress on another device</strong>
-							<span class="detail" data-testid="resume-title">{workout.title}</span>
-						{/if}
-					</span>
-				</div>
+				<div class="main" role="status">{@render words()}</div>
 				<Button
+					variant="ghost"
 					size="sm"
-					icon="arrow-right"
-					loading={continuing}
+					loading={resumeState.continuing}
 					onclick={() => adopt(workout.id, workout.kind)}
-					data-testid="continue-here">{failed ? 'Try again' : 'Continue here'}</Button
+					data-testid="continue-here">{resumeState.failed ? 'Try again' : 'Continue here'}</Button
 				>
 			{/if}
 		</div>
@@ -190,33 +191,36 @@
 	}
 
 	/*
-	 * The bar's room: its height and the gap above the tab bar (or the window's bottom edge). The
-	 * shell's --nav-inset-bottom grows by it (tokens.css), and the bar sits under that growth.
+	 * The line's room, which is its height: 44 px and the 12 px below it (Paper's 24 px line with
+	 * 32 below, widened to a touch target). The shell's --nav-inset-bottom grows by it (tokens.css),
+	 * and the line sits in that growth, on the tab bar's hairline (from 1024 px, on the home
+	 * indicator's room).
 	 */
 	:global(:root:has(.resume-bar)) {
-		--resume-inset: calc(3.75rem + var(--space-2));
+		--resume-inset: calc(var(--touch-target) + var(--space-3));
 	}
 
 	.resume-bar {
+		container: resume-bar / inline-size;
 		position: fixed;
 		z-index: var(--z-sticky);
-		bottom: calc(var(--nav-inset-bottom) - var(--resume-inset) + var(--space-2));
+		bottom: calc(var(--nav-inset-bottom) - var(--resume-inset));
 		left: calc(50% + var(--nav-inset-left) / 2);
 		transform: translateX(-50%);
 		display: flex;
 		align-items: center;
-		gap: var(--space-2);
-		width: min(calc(100% - var(--nav-inset-left) - 2 * var(--gutter)), var(--content-column));
-		height: 3.75rem;
-		padding: 0 var(--space-3) 0 var(--space-1);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-lg);
-		background: var(--color-surface-2);
-		box-shadow: var(--elevation-2);
+		gap: var(--space-3);
+		/* As wide as the shell's column (<main>), so its words start with the screen's. */
+		width: min(calc(100% - var(--nav-inset-left)), var(--content-column));
+		height: var(--resume-inset);
+		padding: 0 max(var(--gutter), var(--safe-right)) var(--space-3)
+			max(var(--gutter), var(--safe-left));
+		/* No fill in Paper; the canvas, as the tab bar's, so content scrolls under it unseen. */
+		background: var(--color-canvas);
 		animation: var(--duration-base) var(--ease-out) both rise;
 	}
 
-	/* It rises by less than its gap to the window's edge, so it never touches that edge. */
+	/* It rises 4 px into place: below 1024 px from under the tab bar, which is drawn over it. */
 	@keyframes rise {
 		from {
 			opacity: 0;
@@ -224,77 +228,96 @@
 		}
 	}
 
+	/*
+	 * The words come first: never narrower than 120 px ("Resume" and the title's first letters,
+	 * then an ellipsis), and all the room the time, the pill and the chevron leave. 120 px still
+	 * fits a 320 px phone beside a four-digit time, where the pill gives way instead.
+	 */
 	.main {
 		display: flex;
-		flex: 1;
+		flex: 1 0 7.5rem;
 		align-items: center;
-		gap: var(--space-3);
 		min-width: 0;
-		min-height: 2.75rem;
-		padding: var(--space-1) var(--space-2);
-		border-radius: var(--radius-md);
+		min-height: var(--touch-target);
 		color: var(--color-text);
 		text-decoration: none;
 	}
 
-	.lead {
-		display: grid;
-		flex: none;
-		place-items: center;
-		width: 2.25rem;
-		height: 2.25rem;
-		border-radius: var(--radius-full);
-		background: var(--color-accent);
-		color: var(--color-on-accent);
-	}
-
-	[data-type='waiting'] .lead,
-	[data-type='remote'] .lead {
-		background: var(--color-surface-3);
-		color: var(--color-text);
+	/* The whole row is the link: the time, the pill and the chevron too. */
+	.link::after {
+		content: '';
+		position: absolute;
+		inset: 0;
 	}
 
 	.text {
-		display: grid;
 		flex: 1;
 		min-width: 0;
-		line-height: var(--leading-tight);
-	}
-
-	.text strong {
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
-	}
-
-	.text > * {
+		font: var(--type-row);
+		line-height: 1.4118; /* 17/24, Paper */
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
-	.detail {
-		font-size: var(--text-xs);
-		color: var(--color-text-secondary);
+	.text[data-danger] {
+		color: var(--color-danger);
+	}
+
+	.chevron {
+		display: flex;
+		flex: none;
+		color: var(--color-text-tertiary);
 	}
 
 	.resume-bar :global(.clock) {
 		flex: none;
-		font-size: var(--text-sm);
+		font: var(--type-secondary);
 		color: var(--color-text-secondary);
 	}
 
+	/*
+	 * Here the pill is its icon alone: its words stay in the accessibility tree (it is a status),
+	 * and the workout header and History show them in full. Beside the time and the chevron, even
+	 * the shortest words would leave the line's own words too little room on a phone, and on a
+	 * 320 px phone (a content box under 17rem) the pill gives way altogether.
+	 */
 	.resume-bar :global(.sync) {
-		flex: none;
+		flex: 0 1 auto;
+		min-width: 0;
 		margin-left: 0;
+		overflow: hidden;
+	}
+
+	.resume-bar :global(.pill) {
+		min-width: 0;
+		justify-items: stretch;
+	}
+
+	.resume-bar :global(.pill)::before,
+	.resume-bar :global(.pill)::after {
+		content: none;
+	}
+
+	.resume-bar :global(.pill .words) {
+		gap: 0;
+		font-size: 0;
+	}
+
+	@container resume-bar (width < 17rem) {
+		.resume-bar :global(.sync) {
+			display: none;
+		}
 	}
 
 	@media (hover: hover) and (pointer: fine) {
-		.link:hover {
-			background: var(--color-surface-3);
+		.link:hover .text {
+			color: var(--color-text-secondary);
 		}
 	}
 
 	.link:focus-visible {
-		outline-offset: -2px;
+		outline-offset: 2px;
+		border-radius: var(--radius-sm);
 	}
 </style>

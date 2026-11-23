@@ -201,6 +201,11 @@ milestones.md.
   (`.back-link`), and Profile has one to Today. The page gutter is 28 px everywhere but the
   workout, which keeps 20 px until `v2/10`. The resume line, the rail's look and the desktop column
   and sheets are `v2/03b` and `v2/03c`.
+- **Instrument v2 resume line (`v2/03b`).** The floating resume bar is one plain 44 px line on the
+  canvas, on the tab bar's hairline (at the foot of the column beside the rail from 1024 px), with
+  a chevron: changes waiting to sync, Resume {title}, or a workout in progress on another device
+  with Continue here on Today. `resume-state.svelte.ts` lets a screen claim the in-progress state;
+  nothing claims it until Today's hero in `v2/06`. Phone layouts and the e2e run are CI's to prove.
 - **Instrument v2 legacy components (`v2/02d`), which completes `v2/02`.** Cards, chips, badges,
   segmented controls, stat tiles, tabs and section headings lose their pills, fills, tint and amber
   and keep their padding and sizes, so no screen moves. A card keeps a hairline outline until its

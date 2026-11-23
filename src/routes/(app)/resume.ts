@@ -1,10 +1,12 @@
 /**
- * What the resume bar (ResumeBar.svelte) offers, decided in plain .ts so it is unit-tested:
- * - active: the workout in progress on this device (the probe), 'Resume workout'
+ * What the resume line (ResumeBar.svelte) offers, and its words (lineFor), decided in plain .ts so
+ * they are unit-tested:
+ * - active: the workout in progress on this device (the probe), 'Resume {title}'
  * - waiting: no workout in progress, but changes of a finished one still to sync,
  *   'N changes waiting to sync'
  * - remote: on Today only, online, with nothing held on this device: the newest workout in
- *   progress on another device (GET /api/workouts/active), 'Continue here'
+ *   progress on another device (GET /api/workouts/active), '{title} is in progress on another
+ *   device' and 'Continue here'
  * - none: nothing to offer
  * The probe never creates 'pc-offline', so a device that never started a workout keeps none.
  * Everything else here (the store, reconcile, the sync engine) loads only when it is needed: the
@@ -116,6 +118,87 @@ export async function continueHere(
 		return 'failed';
 	}
 }
+
+/** Where 'Continue here' stands: on the way, or failed (the line says so and offers Try again). */
+export interface Continuing {
+	continuing: boolean;
+	failed: boolean;
+}
+
+/**
+ * The 'Continue here' button, for the line and for Today's hero (v2/06): builds the workout here,
+ * then opens `href` (its kind's page); `flags` follow it. Resolves to the outcome, or null when
+ * one was already on its way.
+ */
+export async function continueHereFlow(
+	workoutId: string,
+	href: string,
+	{
+		goto,
+		flags,
+		adopt = continueHere
+	}: { goto: (href: string) => Promise<unknown>; flags: Continuing; adopt?: typeof continueHere }
+): Promise<ContinueOutcome | null> {
+	if (flags.continuing) return null;
+	flags.continuing = true;
+	flags.failed = false;
+	const outcome = await adopt(workoutId);
+	flags.continuing = false;
+	if (outcome === 'opened') await goto(href);
+	else if (outcome === 'failed') flags.failed = true;
+	return outcome;
+}
+
+/**
+ * The resume line's words, in three parts: the workout's title, where the line names one, sits
+ * between `before` and `after`. The line draws the title from its position, never by searching
+ * for it, so a title that repeats words of the line (a workout named "Resume") lands where it is.
+ */
+export interface ResumeLine {
+	/** The words before the title; all of the line where it names no workout. */
+	before: string;
+	/** The workout's title, where the line names one. */
+	title: string | null;
+	/** The words after the title. */
+	after: string;
+	/** The line is the one red on the screen: 'Continue here' failed. */
+	danger: boolean;
+}
+
+/** What the line says for `resume` (none: nothing); `failed` after a failed 'Continue here'. */
+export function lineFor(resume: Resume, failed = false): ResumeLine {
+	switch (resume.type) {
+		case 'active':
+			return { before: 'Resume ', title: resume.workout.title, after: '', danger: false };
+		case 'waiting': {
+			const changes = resume.pending === 1 ? 'change' : 'changes';
+			return {
+				before: `${resume.pending} ${changes} waiting to sync`,
+				title: null,
+				after: '',
+				danger: false
+			};
+		}
+		case 'remote':
+			return failed
+				? { before: 'Couldn’t continue it here', title: null, after: '', danger: true }
+				: {
+						before: '',
+						title: resume.workout.title,
+						after: ' is in progress on another device',
+						danger: false
+					};
+		default:
+			return { before: '', title: null, after: '', danger: false };
+	}
+}
+
+/**
+ * What the line shows on `pathname`: a screen that claims the workout in progress (Today's hero,
+ * v2/06) draws it itself, so there the line keeps only changes waiting to sync.
+ */
+export const shownFor = (resume: Resume, claimed: string | null, pathname: string): Resume =>
+	claimed === pathname && resume.type !== 'waiting' ? NOTHING : resume;
 
 /**
  * Starts this screen's sync engine (online.ts), so changes waiting sync from whichever tab the
