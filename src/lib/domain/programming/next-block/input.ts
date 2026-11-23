@@ -115,20 +115,18 @@ const latest = <T>(list: readonly T[], on: (t: T) => IsoDate | null, value: (t: 
 	[...list].sort((a, b) => compareText(on(b) ?? '', on(a) ?? '') || value(b) - value(a))[0] ?? null;
 
 /**
- * `base` (buildProgrammingInput on today's profile) overlaid with `snapshot` and the directives'
- * keep and rotate, `overrides` held to the directives' bounds. The same arguments give the same
- * result, whatever the order of the snapshot's lists.
+ * `base` (buildProgrammingInput on today's profile) overlaid with what the training actually
+ * showed (`snapshot`): each baseline lift's latest e1RM and, when running is trained, the actual
+ * mileage, last long run, easy pace and best efforts, each change recorded. nextBlockInput applies
+ * it before the directives; a re-plan applies it alone, with no cycle review (M7 replan-preview).
  */
-export function nextBlockInput(
+export function actualsOverlay(
 	base: ProgrammingInput,
-	snapshot: ResultsSnapshot,
-	directives: CycleDirectives,
-	overrides: Partial<NextCycleSubset> = {}
-): NextBlockInput {
+	snapshot: ResultsSnapshot
+): Pick<NextBlockInput, 'input' | 'assumptions'> {
 	const assumptions: OverlayAssumption[] = [];
 	const note = (rule: OverlayRule, field: string, value: number | string | null, why: string) =>
 		assumptions.push({ rule, field, value, why });
-
 	// Baselines: the latest e1RM, unless a measured 1RM is newer.
 	const baselines = { ...base.baselines };
 	for (const lift of BASELINE_LIFTS) {
@@ -156,7 +154,6 @@ export function nextBlockInput(
 	}
 
 	// Running, when it is trained: what the block showed, else the profile's.
-	const { subset, clamps } = clampOverrides(overrides, directives);
 	const trainsRunning = base.disciplines.some((d) => RUNNING_DISCIPLINES.includes(d));
 	const actual = snapshot.running;
 	let running: InputRunning | null = base.running;
@@ -241,6 +238,32 @@ export function nextBlockInput(
 		const told = Object.values(next).some((v) => v !== null && (!Array.isArray(v) || v.length));
 		running = told ? next : base.running;
 	}
+	// A running default the actual distance replaced no longer applies.
+	const assumed = base.assumptions.filter(
+		(a) => !(a.field === 'running.weeklyMetres' && running?.weeklyMetres != null)
+	);
+	return { input: { ...base, baselines, running, assumptions: assumed }, assumptions };
+}
+
+/**
+ * `base` (buildProgrammingInput on today's profile) overlaid with `snapshot` (actualsOverlay) and
+ * the directives' keep and rotate, `overrides` held to the directives' bounds. The same arguments
+ * give the same result, whatever the order of the snapshot's lists.
+ */
+export function nextBlockInput(
+	base: ProgrammingInput,
+	snapshot: ResultsSnapshot,
+	directives: CycleDirectives,
+	overrides: Partial<NextCycleSubset> = {}
+): NextBlockInput {
+	const actual = actualsOverlay(base, snapshot);
+	const assumptions = actual.assumptions;
+	const note = (rule: OverlayRule, field: string, value: number | string | null, why: string) =>
+		assumptions.push({ rule, field, value, why });
+	const { subset, clamps } = clampOverrides(overrides, directives);
+	const trainsRunning = base.disciplines.some((d) => RUNNING_DISCIPLINES.includes(d));
+	const { baselines } = actual.input;
+	let { running } = actual.input;
 	if (trainsRunning && running && overrides.running !== undefined && subset.running) {
 		const { weeklyMetres, longRunMetres } = subset.running;
 		if (weeklyMetres !== null) running = { ...running, weeklyMetres };

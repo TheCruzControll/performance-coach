@@ -33,8 +33,8 @@ import { taperWeeks } from './taper';
 
 const inputOf = (profile: TrainingProfile) =>
 	buildProgrammingInput(profile, { catalogue: CATALOGUE });
-const generate = (profile: TrainingProfile) =>
-	generateProgram(inputOf(profile), { startsOn: SCENARIO_START, firstPlannedDay: SCENARIO_START });
+const generate = (profile: TrainingProfile, firstPlannedDay: IsoDate = SCENARIO_START) =>
+	generateProgram(inputOf(profile), { startsOn: SCENARIO_START, firstPlannedDay });
 const RESULTS = { results: [], unit: 'kg' as const };
 
 type Options = Omit<ReplanOptions, 'baseVersionNumber' | 'directive'> & {
@@ -92,6 +92,9 @@ const PRIORITIES: ReplanDirective = { kind: 'priorities', cause: 'reorder' };
 const HYBRID = SCENARIOS.hybrid();
 const CURRENT = generate(HYBRID);
 const MARATHON_ON = HYBRID.goals.find((g) => g.kind === 'event')!.eventDate!;
+/** A part-week program's first planned day: week 1 starts on this Wednesday, not its Monday. */
+const MID_WEEK = addDays(SCENARIO_START, 2);
+const PART_WEEK = generate(HYBRID, MID_WEEK);
 
 describe('replanStart', () => {
 	it('is the next Monday, today on a Monday, past any week with something logged or skipped', () => {
@@ -371,6 +374,24 @@ describe('in place: a deload', () => {
 		const r = replan(ten, deload(), { today: week, from: week, current: CURRENT });
 		expect(weekOn(r.plan, week).kind).toBe('deload');
 	});
+
+	it('re-planned from a later Monday, starts from its own week and changes only that week', () => {
+		const nextMonday = addDays(week, 7);
+		const o = { today: week, from: nextMonday, current: CURRENT };
+		expect(skeleton(inputOf(HYBRID), deload(), o)).toMatchObject({
+			mechanism: 'in_place',
+			from: week
+		});
+		const r = replan(HYBRID, deload(), o);
+		expect(r.decisions[0]).toMatchObject({ evidence: { from: week } });
+		const before = weekOn(CURRENT, week).sessions;
+		const after = weekOn(r.plan, week);
+		expect(after.kind).toBe('deload');
+		expect(after.sessions.map(identity)).toEqual(before.map(identity));
+		after.sessions.forEach((s, i) => expect(s).not.toEqual(before[i]));
+		const others = (p: ProgramPlan) => weeksOf(p).filter((w) => w.startsOn !== week);
+		expect(others(r.plan)).toEqual(others(CURRENT));
+	});
 });
 
 describe('splice: a taper', () => {
@@ -527,6 +548,63 @@ describe('splice: a taper', () => {
 		expect(refusal(tuesday, full(marathon), { today: at, from: at, current: before5 })).toBe(
 			'too_close'
 		);
+	});
+});
+
+describe('a part-week program: week 1 starts on its Wednesday', () => {
+	/** The plan starts mid-week, and no session of week 1 falls before its first planned day. */
+	const fromMidWeek = (plan: ProgramPlan) => {
+		expect(plan.firstPlannedDay).toBe(MID_WEEK);
+		const week1 = weekOn(plan, SCENARIO_START);
+		expect(week1.sessions.length).toBeGreaterThan(0);
+		expect(week1.sessions.filter((s) => s.date < MID_WEEK)).toEqual([]);
+	};
+
+	it('a block re-planned from the start keeps the part week', () => {
+		const block: ReplanDirective = { kind: 'block', phase: 'maintenance', weeks: 4 };
+		const o = { today: SCENARIO_START, from: SCENARIO_START, current: PART_WEEK };
+		const r = replan(HYBRID, block, o);
+		fromMidWeek(r.plan);
+		expect(r.plan.blocks[0]).toMatchObject({ phase: 'maintenance', startsOn: SCENARIO_START });
+	});
+
+	it('new priorities re-planned from the start keep the part week', () => {
+		const o = { today: SCENARIO_START, from: SCENARIO_START, current: PART_WEEK };
+		const r = replan(M7_SCENARIOS.hybridSwap(), PRIORITIES, o);
+		fromMidWeek(r.plan);
+		expect(r.plan.blocks[0]!.startsOn).toBe(SCENARIO_START);
+	});
+
+	it('a deload of week 1 changes its sessions in place, every date kept', () => {
+		const deloadWeek1: ReplanDirective = {
+			kind: 'deload',
+			week: SCENARIO_START,
+			trigger: 'owner',
+			reasons: []
+		};
+		const o = { today: SCENARIO_START, from: SCENARIO_START, current: PART_WEEK };
+		const r = replan(HYBRID, deloadWeek1, o);
+		fromMidWeek(r.plan);
+		const before = weekOn(PART_WEEK, SCENARIO_START).sessions;
+		const after = weekOn(r.plan, SCENARIO_START);
+		expect(after.kind).toBe('deload');
+		expect(after.sessions.map((s) => s.date)).toEqual(before.map((s) => s.date));
+		expect(after.sessions.map(identity)).toEqual(before.map(identity));
+		after.sessions.forEach((s, i) => expect(s).not.toEqual(before[i]));
+	});
+
+	it('a full taper whose first week is week 1 is spliced from mid-week, every day kept', () => {
+		const s5 = M7_SCENARIOS.marathonTaper();
+		const goalRef = goalId(s5, /marathon/i);
+		const raceOn = s5.goals.find((g) => g.id === goalRef)!.eventDate!;
+		expect(taperWeeks('marathon', 'primary', raceOn).weeks[0]!.startsOn).toBe(SCENARIO_START);
+		const current = generate(paused(s5, /marathon/i), MID_WEEK);
+		const taper: ReplanDirective = { kind: 'taper', goalRef, form: 'full' };
+		const r = replan(s5, taper, { today: SCENARIO_START, from: SCENARIO_START, current });
+		fromMidWeek(r.plan);
+		expect(r.plan.blocks[0]).toMatchObject({ phase: 'marathon_taper', startsOn: SCENARIO_START });
+		const before = weekOn(current, SCENARIO_START).sessions;
+		expect(weekOn(r.plan, SCENARIO_START).sessions.map(identity)).toEqual(before.map(identity));
 	});
 });
 

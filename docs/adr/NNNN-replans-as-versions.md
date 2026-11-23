@@ -27,8 +27,12 @@
     cut into the event-aligned one; every block after the event is kept.
   - _in place_ (deload): the week's sessions still ahead get `deloadSessions`' values and the week
     becomes a deload. Nothing else changes. A light week in it or the two after keeps M6's path.
-- **One new version each**, validated whole with the version schema (`programVersionSchema`, as in ADR 0017), under M5's proposal
-  lifecycle; version _N_ and every logged workout stay as they were. Event dates never move.
+- **One new version each**, validated whole with `programPlanSchema`, the schema `generateReplan`
+  checks its plan with. Its 12-block cap is the plan budget's ceiling (`PLAN_BUDGET`: the engine
+  refuses with `too_many_blocks` at 10), so unlike M6's next block (ADR 0017,
+  `programVersionSchema`) a re-plan never stores more blocks than a first plan can hold. It runs
+  under M5's proposal lifecycle; version _N_ and every logged workout stay as they were. Event
+  dates never move.
 - **Two hashes.** The fingerprint covers today's profile input, the directive, the base version
   and `from`, never the actuals, so a logged set never makes a proposal stale. The shape digest
   covers phases, week kinds and dates and the sessions' days, types and titles, never loads.
