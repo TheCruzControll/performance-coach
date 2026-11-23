@@ -299,7 +299,8 @@ workout's sets of an exercise, on the owner's day it started.
   (`isHardSet`) and M3's `hardSets` credit per muscle and group, the week in progress last.
 - `muscleGroupWeeks(weeks, targets)` → each week's groups, in M3's order, with hard sets or a
   target: `below`, `within` (both ends included), `above` or `no_target`, against the week's
-  `[lo, hi]` range (targets come from `services/analytics/targets.ts`).
+  `[lo, hi]` range (targets come from `services/analytics/targets.ts`, through
+  `programming/planned-targets.ts` for M7 weeks).
 - `rpeSummary(facts)` → the mean RPE of working sets that have one, how many sets and how many
   rated, and the share; `weeklyRpe(facts, timeZone, window)` → that mean per week, a gap (null)
   for a week with no rated set.
@@ -586,6 +587,15 @@ in one place (an open question in the M6 plan). The decision kinds M6 writes (`r
 `fatigue_managed`, `deload_scheduled`, `review_applied`, `next_block_planned`, `exercise_kept`,
 `exercise_rotated`) have their words in `decisions/templates/results.ts`.
 
+### Planned targets (`programming/planned-targets.ts`)
+
+The hard-set band each week of an M7 block was planned to, worked out through the generator's own
+functions (`prepare`, `chooseSplit`, `strengthMode`, `heldBand`), so a plan and its review cannot
+disagree. `blockBands(origin, block)` → the block's held band and its full-volume ranges, or
+`undefined` for a block M6's rule judges (a generator in `PRE_M7_GENERATORS`, or no season) and
+`null` with no strength split; `weekBand(targets, bands)` → a week's `range`, `scale`, `source` and
+words. `services/analytics/targets.ts` reads both.
+
 ### Review contract (`programming/review/snapshot.ts`, `brief.ts`, `digest.ts`)
 
 What a stored review is, defined once before anything composes or stores one.
@@ -623,7 +633,8 @@ with their statuses and kind; next week's state and kind; the facts of the week 
   'Nothing logged this week' when nothing was.
 - `verdicts`: `classifyTrend` per key lift's weekly best e1RM, tonnage, mileage and load over the
   9 weeks; a `baseline` week has only 'Baseline established'.
-- `rpe`: the average, and each lift's deviation with `consistency` over its last 3 sessions.
+- `rpe`: the average, judged by `avgRpeCall`: against the week's own RPE cap when its plan sets the
+  main lifts, otherwise 6–8.5; and each lift's deviation with `consistency` over its last 3 sessions.
 - `volume`: tonnage, the mean % of each lift's best e1RM, and hard sets per group against the
   block's band × the week's volume factor (`scaledTargets`: a deload at 0.6 makes 10–20 into
   6–12), with the planned line.
@@ -705,7 +716,8 @@ outline block (or null). Sections:
 - `verdicts`: strength progression (each main lift, and how many progressed) and endurance
   progression (weekly distance, `classifyTrend` over the block's weeks).
 - `volume`: per week and group, `planned` (M3's `plannedHardSets`, through the targets),
-  `achieved` (M3's `hardSets`) and the range (`scaledTargets`); the block's average RPE.
+  `achieved` (M3's `hardSets`) and the range (`scaledTargets`); the block's average RPE
+  (`avgRpeCall`, against every week's cap).
 - `fatigue` and `recovery`: the load trend, the ACWR with its caveat, the last week's monotony,
   the largest `rpeCreep`, soreness and sleep over the last `FATIGUE_WEEKS` (2) weeks, and
   `fatigueLevel`'s level; `deloadPlanned` when the next block opens with a light week

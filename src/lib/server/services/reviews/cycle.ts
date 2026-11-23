@@ -102,7 +102,7 @@ import {
 	type ReviewDeps,
 	type StoredCycleReview
 } from './store';
-import { allDone, digestOf, plannedMetres, volumeTargetsOf } from './weekly';
+import { allDone, digestOf, planCapOf, plannedMetres, volumeTargetsOf } from './weekly';
 
 /** The next_cycle proposal's title, as M5's card and inbox show it. */
 export const NEXT_CYCLE_TITLE = 'Your next block, from your cycle review';
@@ -256,7 +256,8 @@ async function readBlock(
 			weeks: block.weeks.map((w, i) => ({
 				startsOn: w.startsOn,
 				kind: w.kind,
-				targets: volumeTargetsOf(targets[i]!)
+				targets: volumeTargetsOf(targets[i]!),
+				rpeCap: planCapOf(w)
 			}))
 		},
 		today,

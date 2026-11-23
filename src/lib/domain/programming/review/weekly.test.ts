@@ -21,7 +21,13 @@ import { SUMMARY_MAX } from './brief';
 import type { ReviewEvaluation } from './evaluation';
 import type { Finding } from './brief';
 import { readSnapshot, SNAPSHOT_VERSION, weeklyReviewSnapshotSchema } from './snapshot';
-import { composeWeeklyReview, performedSessions, scaledTargets, TRAILING_WEEKS } from './weekly';
+import {
+	avgRpeCall,
+	composeWeeklyReview,
+	performedSessions,
+	scaledTargets,
+	TRAILING_WEEKS
+} from './weekly';
 import type {
 	PrescribedExercise,
 	ReviewExercise,
@@ -511,6 +517,37 @@ describe('composeWeeklyReview', () => {
 		});
 		// The same 13 sets in a normal week are within 10–20.
 		expect(deload(1).verdict).toEqual({ level: 'good', words: 'Within the target range: 10–20' });
+	});
+
+	it("judges the average RPE by the plan's own cap where the plan sets the main lifts (m7r/06)", () => {
+		const ask = (from: number, to: number) => `what the plan asks: an average of RPE ${from}–${to}`;
+		// No cap, or one inside 7–8.5: M6's 6–8.5, in M6's words.
+		expect(avgRpeCall(8.8, [])).toEqual({
+			level: 'watch',
+			words: 'Close to your limit on most sets'
+		});
+		expect(avgRpeCall(8.8, [8])).toEqual(avgRpeCall(8.8, []));
+		expect(avgRpeCall(5.5, [])).toEqual({ level: 'low', words: 'Mostly easy sets' });
+		expect(avgRpeCall(null, [9.5])).toBeNull();
+		// A peak week planned to RPE 9.5, and a deload planned to 6.
+		expect(avgRpeCall(8.8, [9.5])).toEqual({ level: 'good', words: `Within ${ask(6, 9.5)}` });
+		expect(avgRpeCall(9.7, [9.5])).toEqual({ level: 'watch', words: `Above ${ask(6, 9.5)}` });
+		expect(avgRpeCall(5.5, [6])).toEqual({ level: 'good', words: `Within ${ask(5, 8.5)}` });
+		expect(avgRpeCall(4.5, [6])).toEqual({ level: 'low', words: `Below ${ask(5, 8.5)}` });
+		// A block's weeks: from its lowest cap to its highest.
+		expect(avgRpeCall(9, [6, 7.5, 9.5])).toEqual({ level: 'good', words: `Within ${ask(5, 9.5)}` });
+
+		const w = history();
+		const average = (rpeCap?: number | null) =>
+			find(
+				composeWeeklyReview(
+					input(w, { week: { kind: 'accumulation', sessions: w.planned, rpeCap } })
+				).findings,
+				'rpe:average'
+			)!;
+		expect(average(null)).toEqual(average(undefined));
+		expect(average(8)).toEqual(average(undefined));
+		expect(average(10).verdict.words).toContain(ask(6, 10));
 	});
 
 	it('shows a planned group with nothing done and no stored band', () => {

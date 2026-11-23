@@ -301,6 +301,10 @@ async function weekFacts(
 	return { facts, queue, sets, sessions, recovery, weight, digest };
 }
 
+/** The RPE cap the reviews judge a week's average by: its own where its plan sets the main lifts. */
+export const planCapOf = (week: StoredWeek | null | undefined) =>
+	week?.targets.mainLifts ? week.targets.rpeCap : null;
+
 /** A week's targets as the reviews read them: the band unscaled by the week's volume factor. */
 export function volumeTargetsOf(target: WeekTarget): VolumeTargets {
 	const factor = target.volumeFactor;
@@ -376,7 +380,7 @@ async function readWeek(db: Executor, ownerId: string, monday: IsoDate, today: I
 		timeZone,
 		unit: profile.weightUnit,
 		distanceUnit: profile.distanceUnit,
-		week: { kind: reviewed?.kind ?? null, sessions: weekSessions },
+		week: { kind: reviewed?.kind ?? null, sessions: weekSessions, rpeCap: planCapOf(reviewed) },
 		next: nextStateOf(plan, monday),
 		completedLineages: planned.completed,
 		workouts: sessions,

@@ -1306,6 +1306,16 @@ week's passed clash, a clean week and outline weeks.
 `e2e/periodisation-support.ts` (`weekEvaluation(weekStart, today)`: the SQL-side oracle that runs
 domain `evaluateWeek` over the stored week with the service's open dates).
 
+m7r/06 periodised-targets: `src/lib/domain/programming/planned-targets.test.ts`: hypertrophy
+weeks by their own setsPerGroup, unscaled, and the deload by the first range × 0.6; a maintenance
+block and a fight camp by the dose (cut on a cut); a secondary strength goal by the lower half of
+its band, from the goals as prepare ranked them; a fight-only camp shows no target; M3's
+generators and a plan with no season keep M6's rule. `rules/registry/targets.test.ts`.
+`tests/integration/analytics/targets.test.ts` (M7 weeks through the service, with
+`fixtures/m7-programs.ts`), `reviews/cycle.test.ts` (a hypertrophy block's ramp weeks and its
+average RPE against the block's caps) and `reviews/weekly.test.ts` (a maintenance week against
+its dose). `review/weekly.test.ts`: `avgRpeCall`.
+
 ## The LLM in tests
 
 ## Coach (M5)

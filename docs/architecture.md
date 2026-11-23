@@ -677,7 +677,13 @@ last 12 weeks'). Both are the M6 plan's defaults and still open questions for th
   for M3's first blocks, the planning version for later ones), through volume.ts's
   `hardSetBand`, scaled by the week's volume factor. Changing today's goals or nutrition phase
   never rewrites a past week. A program with no stored input shows its planned line only
-  (`NO_STORED_TARGET`).
+  (`NO_STORED_TARGET`). A block an M7 generator planned (`domain/programming/planned-targets.ts`)
+  is judged by the band the generator balanced each week to: a full-volume week by its own
+  `setsPerGroup`, unscaled; a lighter week by the block's first range × its volume factor; a block
+  with no range by the volume stage's `heldBand` for the strength goal's mode, from the goals as
+  `prepare` ranked them. Blocks from the generators in `PRE_M7_GENERATORS`, or with no season,
+  keep the rule above. `blockInputs` returns each block's first generator and week 1 Monday with
+  its input.
 - **Services**: `getProgressOverview` (verdicts per discipline, KPI tiles, headline series, and
   when each insight appears), `getStrengthDashboard`, `getRunningDashboard`,
   `getGeneralDashboard`, `getExerciseAnalytics`, `getStrengthRecords`, `getMuscleTargets`,

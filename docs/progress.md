@@ -3,7 +3,7 @@
 What is built, what is in flight, and what is next. Acceptance criteria and evidence stay in
 [milestones.md](milestones.md). Update this file in the change that moves a line.
 
-Last updated: 2026-11-23, from `main` at the merge of #605.
+Last updated: 2026-11-23, from `main` at the merge of #606.
 
 ## Milestones
 
@@ -31,6 +31,10 @@ runs the criteria and updates milestones.md.
 
 ## Recently merged
 
+- Progress and the reviews judge an M7 week by the targets its own plan set: a hypertrophy week by
+  its own sets per muscle group, a maintenance or fight-camp week by its dose, a secondary strength
+  goal by the lower half of its band, and the average RPE by the week's own cap. M3's programs read
+  as before.
 - Hypertrophy weeks are built to their own sets per muscle group, rising week on week until the
   deload, and each week keeps the exercises of the week before. A strength goal that trains
   alongside the leader gets the lower half of its band (8–11 hard sets a group), and one held at
@@ -96,7 +100,8 @@ runs the criteria and updates milestones.md.
   week keeps is recorded as explained (a priority trade-off or a schedule_kept decision). m7r/04 is
   built too: each week's main lifts follow its block's phase. m7r/05 too: hypertrophy weeks get
   their own sets per muscle group, and a secondary strength goal the lower half of its band. m7r/06
-  to m7r/10, m7/58 and m7/59 build on both. The old M7 pull requests stay open until their rows merge.
+  too: Progress and the reviews judge M7 weeks by their own targets. m7r/07 to m7r/10, m7/58 and
+  m7/59 build on both. The old M7 pull requests stay open until their rows merge.
 - **Instrument v2 tokens (`v2/01a`).** The colours, surfaces, borders, spacing, radii and the theme
   colour follow Instrument v2 in `src/lib/ui/styles/tokens.css`, in dark and
   light; `docs/design-system.md` and `/design` show them. The 28 px gutter moves with the shell in `v2/03`: at 28 px the workout's

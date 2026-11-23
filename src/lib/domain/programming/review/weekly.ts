@@ -11,9 +11,10 @@ import type { IsoDate } from '../../calendar.ts';
 import { localDay } from '../../dates.ts';
 import { weekAdherence } from '../../analytics/adherence.ts';
 import type { PlannedSession, WeekAdherence } from '../../analytics/adherence.ts';
-import { METRICS } from '../../analytics/metrics.ts';
+import { GOOD, METRICS } from '../../analytics/metrics.ts';
 import type { MetricId } from '../../analytics/metrics.ts';
 import { formatCanonical, goodness } from '../../analytics/overview.ts';
+import type { Goodness } from '../../analytics/overview.ts';
 import type { Format } from '../../analytics/overview.ts';
 import {
 	CONSISTENCY,
@@ -139,7 +140,12 @@ export interface WeeklyReviewInput {
 	/** The owner's weight unit (prescribed loads were shown in it) and distance unit. */
 	unit: WeightUnit;
 	distanceUnit: 'km' | 'mi';
-	week: { kind: v.WeekKind | null; sessions: readonly ReviewPlannedSession[] };
+	week: {
+		kind: v.WeekKind | null;
+		sessions: readonly ReviewPlannedSession[];
+		/** The week's RPE cap where its plan sets the main lifts (M7's mainLifts); else null. */
+		rpeCap?: number | null;
+	};
 	next: { state: NextWeekState; kind: v.WeekKind | null };
 	/** Facts of the reviewed week and the TRAILING_WEEKS before it. */
 	completedLineages: ReadonlySet<string>;
@@ -179,6 +185,22 @@ export const clip = (text: string, max: number) =>
 	text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * The average RPE against the plan's own caps (m7r/06): with weeks whose plan sets the main lifts,
+ * good runs from min(6, lowest cap − 1) to max(8.5, highest cap), so a peak week planned near its
+ * limit and a deload planned easy read as planned. With no cap, or one inside 7–8.5, M6's call.
+ */
+export function avgRpeCall(mean: number | null, caps: readonly number[]): Goodness | null {
+	const call = goodness('avg_rpe', mean);
+	if (call === null || mean === null || !caps.length) return call;
+	const from = Math.min(GOOD.avgRpe.from, Math.min(...caps) - 1);
+	const to = Math.max(GOOD.avgRpe.to, Math.max(...caps));
+	if (from === GOOD.avgRpe.from && to === GOOD.avgRpe.to) return call;
+	const level = mean < from ? 'low' : mean > to ? 'watch' : 'good';
+	const way = { good: 'Within', watch: 'Above', low: 'Below' }[level];
+	return { level, words: `${way} what the plan asks: an average of RPE ${from}–${to}` };
+}
 
 /** The block's band scaled by the week's volume factor: a deload at 0.6 makes 10–20 into 6–12. */
 export function scaledTargets(band: GroupTargets, factor: number): GroupTargets {
@@ -535,7 +557,8 @@ export function composeWeeklyReview(input: WeeklyReviewInput): WeeklyReview {
 
 	// RPE: the week's average, and each lift against its target over its last sessions.
 	const rpe = strength.rpeSummary(weekSets);
-	const avg = goodness('avg_rpe', rpe.mean) ?? {
+	const caps = input.week.rpeCap == null ? [] : [input.week.rpeCap];
+	const avg = avgRpeCall(rpe.mean, caps) ?? {
 		level: 'not_enough_data',
 		words: 'No RPEs logged'
 	};

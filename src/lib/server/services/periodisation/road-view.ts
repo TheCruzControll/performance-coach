@@ -215,9 +215,9 @@ export async function getRoadView(
 		const derived = rows.length === 0;
 
 		// An outline block was drawn by the version that planned the block before it.
-		let input = parseInput(planned.values().next().value);
+		let input = parseInput(planned.values().next().value?.input);
 		const road = blocks.map((block) => {
-			input = parseInput(planned.get(block.lineageId)) ?? input;
+			input = parseInput(planned.get(block.lineageId)?.input) ?? input;
 			return { block, input };
 		});
 		const roadBlocks = road
