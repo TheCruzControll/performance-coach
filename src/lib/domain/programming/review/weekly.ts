@@ -272,29 +272,35 @@ function adherenceWords(a: WeekAdherence, logged: number, onPlan: string | undef
 /**
  * The 'goals' finding (PR 10): the trend on the reviewed Sunday and its change since the Sunday
  * before, judged against the goal on that Sunday (goalStatus). A goal that starts after the week is
- * no goal for it. `goal` says whether there is one, which is when the summary names the weight.
+ * no goal for it. With no weigh-ins up to the Sunday and no goal for the week there is nothing to
+ * read, so there is no finding (null). A trend whose last weigh-in is more than a week before the
+ * Sunday is stale: no change is read and the call says so, the trend keeps its last value. `goal`
+ * says whether there is one, and `summary` is the part the review's summary names it by.
  */
 function bodyWeightReading(bw: BodyWeightInput, sunday: IsoDate) {
 	const { unit } = bw;
-	const series = dailyTrend(
-		bw.entries.filter((entry) => entry.measuredOn <= sunday),
-		unit
-	);
-	const onSunday = trendOn(series, sunday)?.trend ?? null;
-	const before = trendOn(series, addDays(sunday, -7))?.trend ?? null;
-	const change = onSunday === null || before === null ? null : onSunday - before;
+	const entries = bw.entries.filter((entry) => entry.measuredOn <= sunday);
 	const goal = bw.goal && bw.goal.startOn <= sunday ? bw.goal : null;
-	const status = goal ? goalStatus(goal, series, sunday, unit, bw.milestones) : null;
-	// Words: a weight in one decimal; a change or rate signed, with the minus sign the words use.
+	if (entries.length === 0 && goal === null) return null;
+	const series = dailyTrend(entries, unit);
+	const reading = trendOn(series, sunday);
+	const onSunday = reading?.trend ?? null;
+	const stale = reading?.stale ?? false;
+	const before = trendOn(series, addDays(sunday, -7))?.trend ?? null;
+	const change = stale || onSunday === null || before === null ? null : onSunday - before;
+	const status = goal && !stale ? goalStatus(goal, series, sunday, unit, bw.milestones) : null;
+	// Words: a weight in one decimal; a change or rate signed, with the sign the words use.
 	const weight = (x: number) => `${cleanFloat(x, 1) + 0} ${unit}`;
 	const signed = (x: number) => {
 		const v = cleanFloat(x, 1) + 0;
-		return `${v < 0 ? '−' : ''}${Math.abs(v)} ${unit}`;
+		const sign = v < 0 ? '−' : v > 0 ? '+' : '';
+		return `${sign}${Math.abs(v)} ${unit}`;
 	};
 	const moved = change === null ? 'No change measured' : `${signed(change)} this week`;
 	const needs = (rate: number | null) => (rate === null ? '' : ` · needs ${signed(rate)}/week`);
 	let call: Call;
-	if (onSunday === null) call = ['not_enough_data', 'No weigh-ins yet'];
+	if (stale) call = ['not_enough_data', 'No weigh-in in the last 7 days'];
+	else if (onSunday === null) call = ['not_enough_data', 'No weigh-ins yet'];
 	else if (status === null) call = ['neutral', `${moved} · no goal set`];
 	else if (status.verdict === 'no_data')
 		call = ['not_enough_data', 'No weigh-in near the start of the goal'];
@@ -302,6 +308,11 @@ function bodyWeightReading(bw: BodyWeightInput, sunday: IsoDate) {
 	else if (status.verdict === 'ahead')
 		call = ['good', `${weight(status.gap)} ahead${needs(status.requiredRate)}`];
 	else call = ['watch', `${weight(status.gap)} behind${needs(status.requiredRate)}`];
+	// The summary names the weight by its verdict; on track says so beside the change.
+	const summary =
+		status?.verdict === 'on_track'
+			? `${change === null ? '' : `${moved}, `}on track`
+			: call[1].split(' · ')[0]!;
 	// Figures in canonical kg (brief.ts), the words in the owner's unit.
 	const kg = (x: number | null) =>
 		x === null ? null : cleanFloat(convertWeight(x, unit, 'kg'), 2) + 0;
@@ -321,7 +332,7 @@ function bodyWeightReading(bw: BodyWeightInput, sunday: IsoDate) {
 			words: change === null ? 'No data' : signed(change)
 		}
 	];
-	return { figures, call, goal: goal !== null };
+	return { figures, call, goal: goal !== null, summary };
 }
 
 const GROUP_LEVEL = { below: 'low', within: 'good', above: 'watch', no_target: 'neutral' } as const;
@@ -825,7 +836,7 @@ export function composeWeeklyReview(input: WeeklyReviewInput): WeeklyReview {
 		...(baseline ? ['Baseline established'] : []),
 		...(fatigue.level === 'none' ? [] : [`Fatigue: ${fatigue.level}`]),
 		...(conflicts.length ? [plural(conflicts.length, 'conflict')] : []),
-		...(body?.goal ? [`Weight: ${body.call[1].split(' · ')[0]!}`] : []),
+		...(body?.goal ? [`Weight: ${body.summary}`] : []),
 		...(prs.length ? [plural(prs.length, 'PR')] : []),
 		...(state === 'outline' || state === 'new_block' ? ['Next week: your cycle review'] : [])
 	];

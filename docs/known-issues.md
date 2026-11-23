@@ -116,6 +116,8 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   the active goal when it is computed, not the goal in force on its Sunday. Closes when the digest
   covers every weigh-in up to the Sunday and the review reads the goal in force then.
 
+- **A weekly review with no body-weight finding does not go stale when a weigh-in is back-dated into its window.** Such a review was digested without weigh-ins, so the view judges it without them, which keeps reviews stored before the finding from going stale on deploy (migration 0036 stamped every weigh-in's `updated_at`). A weigh-in logged into its window later is therefore not shown as a change, and the view offers no refresh; a refresh still computes the finding. Closes when the digest of such a review covers the weigh-ins in its window too, without making reviews stored before the deploy stale.
+
 ## Working on this repo
 
 - **The repo needs Node 22 and refuses anything else.** `.npmrc` sets `engine-strict`, so a pnpm

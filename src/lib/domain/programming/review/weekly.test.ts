@@ -697,6 +697,73 @@ describe('composeWeeklyReview with body weight (the goals finding)', () => {
 		expect(review.summary).not.toContain('Weight');
 	});
 
+	it('has no finding with no weigh-ins and no goal, so the review is as it was', () => {
+		const review = composeWeeklyReview(weighed([], null));
+		expect(bodyFinding(review)).toBeUndefined();
+		expect(review.summary).not.toContain('Weight');
+		expect(fnv1a64(JSON.stringify(review))).toBe(BEFORE_BODY_WEIGHT);
+	});
+
+	it('names the weight on track in the summary, beside its change', () => {
+		const review = composeWeeklyReview(weighed(weighIns(82, '2026-10-01', day(6))));
+		expect(review.summary).toContain('Weight: 0 kg this week, on track');
+	});
+
+	it('reads no change, and says the weight is not measured, when the last weigh-in is 8 days before the Sunday', () => {
+		const review = composeWeeklyReview(weighed(weighIns(82, '2026-10-01', addDays(day(6), -8))));
+		expect(bodyFinding(review)).toMatchObject({
+			verdict: { level: 'not_enough_data', words: 'No weigh-in in the last 7 days' },
+			figures: [
+				{ label: 'Trend', value: 82, words: '82 kg' },
+				{ label: 'Change', value: null, words: 'No data' }
+			]
+		});
+		expect(review.summary).toContain('Weight: No weigh-in in the last 7 days');
+	});
+
+	it('still measures the weight when the last weigh-in is 7 days before the Sunday', () => {
+		const review = composeWeeklyReview(weighed(weighIns(82, '2026-10-01', addDays(day(6), -7))));
+		expect(bodyFinding(review)).toMatchObject({
+			verdict: { level: 'good', words: '0 kg this week · on track' },
+			figures: [
+				{ label: 'Trend', value: 82, words: '82 kg' },
+				{ label: 'Change', value: 0, words: '0 kg' }
+			]
+		});
+	});
+
+	it('signs a gain with a plus, as it signs a loss with a minus', () => {
+		// The trend rises from 80 kg to about 81 kg over the week: a gain of about 1 kg.
+		const entries = [...weighIns(80, '2026-10-01', day(-1)), ...weighIns(82, day(0), day(6))];
+		const finding = bodyFinding(composeWeeklyReview(weighed(entries)));
+		expect(finding?.figures[1]).toMatchObject({ label: 'Change', words: '+1 kg' });
+	});
+
+	it('reads a pound owner in pounds, with the figures in kilograms', () => {
+		// The goal is 190 lb on 1 October to 170 lb by 31 January: 183.8 lb on the line on the Sunday.
+		const LB_GOAL: WeightGoal = {
+			unit: 'lb',
+			startOn: '2026-10-01',
+			startWeight: 190,
+			targetOn: '2027-01-31',
+			targetWeight: 170
+		};
+		const entries = weighIns(184, '2026-10-01', day(6)).map((e) => ({ ...e, unit: 'lb' as const }));
+		const review = composeWeeklyReview(
+			input(history(), { bodyWeight: { entries, goal: LB_GOAL, milestones: [], unit: 'lb' } })
+		);
+		const finding = bodyFinding(review);
+		expect(finding).toMatchObject({
+			verdict: { level: 'good', words: '0 lb this week · on track' },
+			figures: [
+				{ label: 'Trend', value: 83.46, unit: 'kg', words: '184 lb' },
+				{ label: 'Change', value: 0, unit: 'kg', words: '0 lb' }
+			]
+		});
+		expect(finding?.verdict.words).not.toContain('kg');
+		expect(review.summary).toContain('Weight: 0 lb this week, on track');
+	});
+
 	it('leaves a review without body weight as it was, byte for byte', () => {
 		const review = composeWeeklyReview(input(history()));
 		expect(fnv1a64(JSON.stringify(review))).toBe(BEFORE_BODY_WEIGHT);

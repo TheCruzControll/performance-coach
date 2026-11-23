@@ -42,7 +42,7 @@ import {
 	WeeklyReviewRefreshError
 } from '../../../src/lib/server/services/reviews';
 import type { WeeklyReviewDeps } from '../../../src/lib/server/services/reviews/weekly';
-import { editWeight, logWeight } from '../../../src/lib/server/services/weight';
+import { editWeight, logWeight, setWeightGoal } from '../../../src/lib/server/services/weight';
 import {
 	editSet,
 	finishWorkout,
@@ -597,6 +597,52 @@ describe('refreshing a weekly review', () => {
 				{ value: 80.1, unit: 'kg', measuredOn: addDays(REVIEWED, 7) },
 				{ db, now: later }
 			);
+			expect((await getWeeklyReviewView(owner, REVIEWED, deps)).stale).toBe(false);
+		});
+	});
+
+	it('is not made stale by a weigh-in back-dated into its window, when it has no body-weight finding', async () => {
+		await withRollback(async (db) => {
+			const { owner, deps } = await seed(db, 'week-complete');
+			await review(owner, deps);
+			const view = await getWeeklyReviewView(owner, REVIEWED, deps);
+			expect(view.sections.flatMap((s) => s.findings.map((f) => f.id))).not.toContain(
+				'goals:body_weight'
+			);
+			// Logged after the review was stored, dated inside its window: no weigh-in was read then.
+			const later = () => new Date(NOW.getTime() + 60_000);
+			await logWeight(
+				owner,
+				{ value: 80.1, unit: 'kg', measuredOn: addDays(REVIEWED, 3) },
+				{ db, now: later }
+			);
+			const after = await getWeeklyReviewView(owner, REVIEWED, deps);
+			expect(after.stale).toBe(false);
+			expect(after.laterChanges).toBe(0);
+		});
+	});
+
+	it('is not made stale by a goal that starts after the reviewed week', async () => {
+		await withRollback(async (db) => {
+			const { owner, deps } = await seed(db, 'week-complete');
+			await logWeight(
+				owner,
+				{ value: 82.4, unit: 'kg', measuredOn: addDays(REVIEWED, 3) },
+				{ db, now }
+			);
+			await review(owner, deps);
+			const view = await getWeeklyReviewView(owner, REVIEWED, deps);
+			expect(view.sections.flatMap((s) => s.findings.map((f) => f.id))).toContain(
+				'goals:body_weight'
+			);
+			// A goal set today starts after the reviewed Sunday, so it is no goal for that week.
+			const later = () => new Date(NOW.getTime() + 60_000);
+			const { goal } = await setWeightGoal(
+				owner,
+				{ targetWeight: 78, targetOn: '2027-01-31' },
+				{ db, now: later }
+			);
+			expect(goal.startOn).toBe(TODAY);
 			expect((await getWeeklyReviewView(owner, REVIEWED, deps)).stale).toBe(false);
 		});
 	});

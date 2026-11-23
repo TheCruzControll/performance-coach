@@ -243,11 +243,14 @@ const windowFrom = (monday: IsoDate) => addDays(monday, -7 * TRAILING_WEEKS);
  * The body weight a review of `monday` reads (PR 10): every weigh-in up to its Sunday, since the
  * trend on that Sunday runs over the whole history (`entries`), the active goal with its milestones,
  * and what the digest needs of them: the weigh-ins of the window and the goal's id and last change.
- * An edit to a weigh-in before the window moves that trend a little without making the review stale.
+ * The goal is a fact only when it starts by the reviewed Sunday: a goal set later is no goal for
+ * the week, so setting one does not make a past review stale. An edit to a weigh-in before the
+ * window moves that trend a little without making the review stale.
  */
 async function weightOf(db: Executor, ownerId: string, monday: IsoDate) {
 	const repo = createWeightRepository(db);
-	const rows = await repo.listRange(ownerId, null, addDays(monday, 6));
+	const sunday = addDays(monday, 6);
+	const rows = await repo.listRange(ownerId, null, sunday);
 	const goal = await repo.getActiveGoal(ownerId);
 	const milestones = goal ? await repo.listMilestones(ownerId, goal.id) : [];
 	const from = windowFrom(monday);
@@ -264,12 +267,23 @@ async function weightOf(db: Executor, ownerId: string, monday: IsoDate) {
 			targetWeight: goal.targetWeight
 		},
 		milestones: milestones.map(({ onDate, weight }) => ({ day: onDate, weight })),
-		goalFact: goal && { id: goal.id, updatedAt: goal.updatedAt }
+		goalFact: goal && goal.startOn <= sunday ? { id: goal.id, updatedAt: goal.updatedAt } : null
 	};
 }
 
-/** The facts of the weeks a review of `monday` reads, and their digest. */
-async function weekFacts(db: Executor, ownerId: string, monday: IsoDate, timeZone: string) {
+/**
+ * The facts of the weeks a review of `monday` reads, and their digest. `readsWeight` says whether
+ * the review's stored brief has the body-weight finding: a review without it is judged by the
+ * digest it was stored with, which has no body weight in it, so a weigh-in back-dated into its
+ * window does not make it stale (docs/known-issues.md). The weight is read either way.
+ */
+async function weekFacts(
+	db: Executor,
+	ownerId: string,
+	monday: IsoDate,
+	timeZone: string,
+	readsWeight = true
+) {
 	const queue = createQueue();
 	const facts = createFactsLoader(
 		db,
@@ -281,10 +295,9 @@ async function weekFacts(db: Executor, ownerId: string, monday: IsoDate, timeZon
 	const sessions = await facts.sessions();
 	const recovery = await facts.recovery();
 	const weight = await weightOf(db, ownerId, monday);
-	const digest = digestOf(sets, sessions, recovery, {
-		entries: weight.window,
-		goal: weight.goalFact
-	});
+	const digest = readsWeight
+		? digestOf(sets, sessions, recovery, { entries: weight.window, goal: weight.goalFact })
+		: digestOf(sets, sessions, recovery);
 	return { facts, queue, sets, sessions, recovery, weight, digest };
 }
 
@@ -949,18 +962,23 @@ export async function getWeeklyReviewView(
 	const head = await proposalHead(ownerId, review, { db });
 	const proposal = head ? await getProposalView(ownerId, head.id, { db }) : null;
 	const { timeZone } = await getAthleteProfile(ownerId, { db });
+	// A review stored before the body-weight finding, or one with no weigh-ins to read, did not
+	// digest the weigh-ins: it is judged without them, so its stored digest still matches.
+	const readsWeight =
+		!review.read.legacy &&
+		review.read.snapshot.brief.findings.some((f) => f.id === 'goals:body_weight');
 	const { sets, sessions, recovery, weight, digest } = await weekFacts(
 		db,
 		ownerId,
 		weekStartsOn,
-		timeZone
+		timeZone,
+		readsWeight
 	);
 	const changed = [
 		...sets,
 		...sessions,
 		...recovery,
-		...weight.window,
-		...(weight.goalFact ? [weight.goalFact] : [])
+		...(readsWeight ? [...weight.window, ...(weight.goalFact ? [weight.goalFact] : [])] : [])
 	].filter((f) => f.updatedAt > review.createdAt).length;
 	const isStale = stale(review, inputsDigest(digest));
 	const snapshot = review.read.legacy ? null : review.read.snapshot;

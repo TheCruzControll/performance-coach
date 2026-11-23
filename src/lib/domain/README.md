@@ -638,8 +638,9 @@ with their statuses and kind; next week's state and kind; the facts of the week 
   the planned session it completed.
 - `goals`: with `input.bodyWeight` only, the trend on the reviewed Sunday and its change since the
   Sunday before (`dailyTrend`, `trendOn`), judged on that Sunday by `goalStatus`: on track or ahead
-  good, behind watch, neutral with no goal, not enough data with no weigh-ins. A goal that starts
-  after the week is no goal for it.
+  good, behind watch, neutral with no goal, not enough data with no weigh-ins or with a last
+  weigh-in more than 7 days before the Sunday (then no change is read). A goal that starts after the
+  week is no goal for it, and with no weigh-ins and no goal there is no finding at all.
 - `prs`, then `next`: next week's kind, or the boundary the cycle review takes over.
 
 The summary (at most `SUMMARY_MAX`) leads with adherence, then fatigue, conflicts, the weight with a
