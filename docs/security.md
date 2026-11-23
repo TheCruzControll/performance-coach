@@ -506,12 +506,13 @@ endpoint `POST /api/reviews/narrate` (`src/routes/api/reviews/narrate/+server.ts
 services and the coach turn behind them.
 
 - **Test-only route.** `POST /api/test-support/analytics` seeds one analytics fixture for the
-  signed-in owner, through the real services. It answers 404 unless `ENABLE_TEST_ROUTES` is on and
-  `testRoutesEnabled()` agrees (see "Test-only routes" above). The fixture name must be one of the
+  signed-in owner, through the real services. It answers 404 unless `testRoutesEnabled()`
+  (`ENABLE_TEST_ROUTES` on, and allowed on this deployment); see "Test-only routes" above. The
+  fixture name must be one of the
   fixture list, and the time zone must pass the profile's validation. It answers 409 when the owner
   already has a program, workouts or recovery notes, and writes nothing then.
-- **Owner and CSRF checks.** Every review action reads the owner from the session (`ownerId`) and
-  passes the request's origin to its service, which records any failure under that origin. The
+- **Owner and CSRF checks.** Every review action reads the owner from the session (`ownerId`), and
+  create, refresh and propose-again record a failure with the request's id, method and path. The
   write-up endpoint is owner-only and Origin-checked by the guard, as every state-changing request
   is (the CSRF section, layer 1). Without a session it answers 401, and a recovery session gets 403.
 - **Review guards.** The write-up endpoint answers 400 for a body that is not a weekly or cycle

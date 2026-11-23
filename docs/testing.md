@@ -1456,8 +1456,9 @@ test on `main`; the numbers in docs/performance.md come from the runs it names.
 - `src/lib/domain/analytics/*.test.ts` (13 files): the periods and windows, the metric catalogue,
   the strength, running, adherence, workload, prescribed-versus-actual and weight figures, the
   weight goal, the strength-week rollups, and the trend classifier. Trend verdicts are tested on
-  synthetic series: 12 weeks around 100 with uniform ±3 % noise, and a flat series with normal
-  noise, which is not called a trend.
+  synthetic 12-week series over 200 seeds: a flat series around 100 with uniform ±3 % noise is
+  called normal variation, and a series rising 1 % a week with normal noise of SD 1 % is found to
+  be a real trend, up and good, in at least 95 % of the seeds.
 - `scripts/analytics-client-imports.test.ts`: only the client-safe modules of the analytics domain
   reach the browser. It walks the runtime imports with `scripts/import-graph.ts`.
 - `scripts/chart-body-imports.test.ts`: a chart body is imported only by the SSR-guarded registry
@@ -1494,7 +1495,7 @@ test on `main`; the numbers in docs/performance.md come from the runs it names.
   coach inbox.
 - The Progress views: `progress.serial`, `progress-strength`, `progress-running`,
   `progress-general`, `progress-exercise` and `exercise-trends-link`. The figures are checked
-  against the SQL oracles in `e2e/oracles/strength.ts`, and axe is clean in both themes on each
+  against the SQL oracles in `e2e/oracles/`, and axe is clean in both themes on each
   view. `offline.e2e.ts` checks Progress's designed offline state.
 - The reviews: `reviews`, `reviews-sections`, `review-entry`, `review-next-week`,
   `review-narrative`, `review-proposal-origin`, `cycle-review`, `next-cycle` and

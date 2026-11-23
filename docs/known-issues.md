@@ -68,9 +68,9 @@ Last reviewed: 2026-11-23, against `main` at the merge of #618.
 ## Stale documentation
 
 - **milestones.md lists M7 to M9 as Planned.** M6's row and criteria are updated. The git history
-  holds merged slices for M7 (17) and M9 (19), and 25 M7 pull requests are open. No evidence is
-  recorded against those milestones' criteria. Closes when each milestone's criteria are run and the
-  table is updated.
+  holds merged slices for M7 and M9, and some M7 pull requests are open; the current counts are in
+  [progress.md](progress.md). No evidence is recorded against those milestones' criteria. Closes
+  when each milestone's criteria are run and the table is updated.
 - **The README status block stops at Milestone 6.** It says nothing of the periodisation work (M7)
   that has merged. Closes when the README status is rewritten from [progress.md](progress.md).
 - **The README repository map marks the coach as "(M5)" and the offline store as "(M4)"**, as if
@@ -161,19 +161,14 @@ Last reviewed: 2026-11-23, against `main` at the merge of #618.
   main-thread, Lighthouse or chart-body budget on `main`.** m6/59 would have put those screens in
   the main-thread guard and Lighthouse, and added the chart-body check to `pnpm budgets`. It was
   closed on 2026-11-22, after the owner decided not to test performance in CI. Found reading the M6
-  plan against `main` and `scripts/check-budgets.ts`. Closes when those screens are measured with
-  `E2E_GROUP=alone pnpm test:e2e` and `pnpm lighthouse`, and the numbers are recorded in
+  plan against `main` and `scripts/check-budgets.ts`. Closes when perf specs for the Progress and
+  review screens exist (or m6/59's are revived), are run locally, and the numbers are recorded in
   docs/performance.md ("M6 (analytics and reviews)").
 
 - **The `/progress` overview at 'all' misses its 150 ms page-load target.** Its median is 192.0 ms
   (p95 204.9 ms) on the explain run 45220282661, which is under the 300 ms gate. Found by that run,
   recorded in docs/performance.md ("M6 (analytics and reviews)"). Closes when a measured head puts
   the median under 150 ms, or the owner changes the target.
-
-- **The M6 query-plan and page-load numbers were not measured on `main`'s head.** Pushes to `main`
-  skip the query-plan job as light runs, so the figures in docs/performance.md come from the merge
-  commit `57526c1` (`main` at `4fd47ba7` with `3b74a2a1` on top). Closes when a run on the current
-  `main` head records the M6 section of the explain report, and docs/performance.md names it.
 
 - **Chart chunk sizes are not measured.** `pnpm budgets` reports each route's totals and not its
   chart chunks, so no chart's gzip size is recorded. Closes when the budget output or
