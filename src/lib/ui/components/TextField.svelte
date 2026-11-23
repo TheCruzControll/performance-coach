@@ -136,13 +136,11 @@
 	.mono {
 		font-family: var(--font-numeric);
 		font-variant-numeric: tabular-nums;
-		letter-spacing: 0.08em;
 		text-transform: uppercase;
 	}
 
 	.mono::placeholder {
 		text-transform: none;
-		letter-spacing: normal;
 	}
 
 	.invalid .input {

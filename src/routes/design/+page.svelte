@@ -42,18 +42,19 @@
 		['positive', 'warning', 'danger', 'info']
 	];
 	const typeScale = [
+		'7xl',
 		'6xl',
 		'5xl',
+		'pace',
 		'4xl',
 		'3xl',
 		'2xl',
 		'xl',
 		'lg',
 		'base',
-		'ui',
 		'sm',
-		'meta',
-		'xs'
+		'xs',
+		'2xs'
 	];
 </script>
 
@@ -89,14 +90,82 @@
 					<span class={step.match(/xl|[3-6]xl/) ? 'display' : ''}>142.5 kg Squat</span>
 				</p>
 			{/each}
-			<!-- Geist Mono carries every number, time and unit; labels are lowercase by style. -->
+			<!-- The roles (docs/design-system.md#typography): one font shorthand each, from tokens.css. -->
 			<p class="type-row">
-				<span class="type-step">mono</span>
-				<span class="mono">82,620 kg · 1/4</span>
+				<span class="type-step">display</span>
+				<span style="font: var(--type-display); letter-spacing: var(--tracking-display-lg)"
+					>Full body</span
+				>
 			</p>
 			<p class="type-row">
-				<span class="type-step">label</span>
-				<span class="eyebrow">up next · section label</span>
+				<span class="type-step">title</span>
+				<span style="font: var(--type-title); letter-spacing: var(--tracking-display)"
+					>This week</span
+				>
+			</p>
+			<p class="type-row">
+				<span class="type-step">statement</span>
+				<span style="font: var(--type-statement); letter-spacing: var(--tracking-statement)"
+					>Your squat is up 7.5 kg</span
+				>
+			</p>
+			<p class="type-row">
+				<span class="type-step">sheet-title</span>
+				<span style="font: var(--type-sheet-title); letter-spacing: var(--tracking-tight)"
+					>Finish here?</span
+				>
+			</p>
+			<p class="type-row">
+				<span class="type-step">body</span>
+				<span style="font: var(--type-body)">Warm up, then three working sets.</span>
+			</p>
+			<p class="type-row">
+				<span class="type-step">row</span>
+				<span style="font: var(--type-row)">Strength · 4 of 5</span>
+			</p>
+			<p class="type-row">
+				<span class="type-step">button</span>
+				<span style="font: var(--type-button)">Start</span>
+			</p>
+			<p class="type-row">
+				<span class="type-step">secondary</span>
+				<span style="font: var(--type-secondary)">Wednesday 18 November</span>
+			</p>
+			<p class="type-row">
+				<span class="type-step">caption</span>
+				<span style="font: var(--type-caption)">95 kg in September</span>
+			</p>
+			<p class="type-row">
+				<span class="type-step">tab</span>
+				<span style="font: var(--type-tab)">Today</span>
+			</p>
+			<p class="type-row">
+				<span class="type-step">numeral-xl</span>
+				<span
+					class="tabular"
+					style="font: var(--type-numeral-xl); letter-spacing: var(--tracking-hero); font-variant-numeric: lining-nums tabular-nums"
+					>100</span
+				>
+			</p>
+			<p class="type-row">
+				<span class="type-step">numeral-l</span>
+				<span style="font: var(--type-numeral-l); letter-spacing: var(--tracking-hero)">81:12</span>
+			</p>
+			<p class="type-row">
+				<span class="type-step">numeral-m</span>
+				<span style="font: var(--type-numeral-m); letter-spacing: var(--tracking-display-lg)"
+					>× 5</span
+				>
+			</p>
+			<p class="type-row">
+				<span class="type-step">numeral-pace</span>
+				<span style="font: var(--type-numeral-pace); letter-spacing: var(--tracking-display)"
+					>3:45 to 4:00</span
+				>
+			</p>
+			<p class="type-row">
+				<span class="type-step">unit</span>
+				<span style="font: var(--type-unit)">kg</span>
 			</p>
 		</Surface>
 	</section>
@@ -270,7 +339,8 @@
 	/* Specimens wrap at large steps instead of widening the page on a phone. */
 	.type-row {
 		display: grid;
-		grid-template-columns: 2.5rem minmax(0, 1fr);
+		/* Wide enough for the role names ("numeral-pace") on one line. */
+		grid-template-columns: 6rem minmax(0, 1fr);
 		align-items: baseline;
 		gap: var(--space-3);
 		line-height: 1.1;
@@ -285,15 +355,8 @@
 
 	.display {
 		font-family: var(--font-display);
-		font-weight: var(--weight-medium);
+		font-weight: var(--weight-semibold);
 		letter-spacing: var(--tracking-display);
-		font-variant-numeric: tabular-nums;
-	}
-
-	.mono {
-		font-family: var(--font-mono);
-		font-size: var(--text-2xl);
-		font-weight: var(--weight-medium);
 	}
 
 	.grid {

@@ -80,8 +80,8 @@ h2,
 h3,
 h4 {
 	font-family: var(--font-display);
-	font-weight: var(--weight-medium);
-	letter-spacing: var(--tracking-tight);
+	font-weight: var(--weight-semibold);
+	letter-spacing: var(--tracking-statement);
 	line-height: var(--leading-snug);
 	text-wrap: balance;
 }
@@ -131,9 +131,9 @@ p {
 }
 
 /*
- * Numerals. Every number, time, unit and stat is Geist Mono (`--font-numeric`). `.numeric` =
- * the standalone value (weights, scores, hero numerals). `.tabular` = anything that updates in
- * place or aligns in columns (timers, set tables); a monospace face is tabular by nature.
+ * Numerals. Every numeral is Mona Sans (`--font-numeric`), never Hubot. `.numeric` is a standalone
+ * value; `.tabular` is anything that updates in place or lines up in columns. Mona Sans is
+ * proportional, so `.tabular` must set `tabular-nums`.
  */
 .numeric {
 	font-family: var(--font-numeric);
@@ -146,15 +146,10 @@ p {
 }
 
 /*
- * The label style (docs/design-system.md#labels). Authored in lowercase and kept lowercase: the
- * text-transform lowercases any copy, so no string changes. Variants: accent, secondary.
+ * The line above a title (docs/design-system.md#labels): a plain secondary line, never mono,
+ * never transformed. v2 screen rows remove most of them ("no small label above a heading").
  */
 .eyebrow {
-	font-family: var(--font-mono);
-	font-size: var(--text-xs);
-	line-height: 16px;
-	font-weight: var(--weight-regular);
-	letter-spacing: var(--tracking-label);
-	text-transform: lowercase;
-	color: var(--color-text-tertiary);
+	font: var(--type-secondary);
+	color: var(--color-text-secondary);
 }

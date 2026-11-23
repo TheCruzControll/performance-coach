@@ -1,18 +1,18 @@
 /*
  * Self-hosted variable fonts (from @fontsource-variable, latin subset, woff2).
- *   Geist      — all UI text, titles and buttons (docs/design-system.md#typography)
- *   Geist Mono — labels, the tab bar, and every number, time, unit and stat
- * Geist latin and Geist Mono latin are preloaded (src/lib/ui/fonts.ts). Both swap in, and
- * metric-matched fallbacks keep layout shift near zero while they load.
+ *   Mona Sans  — all UI text, body and every numeral (docs/design-system.md#typography)
+ *   Hubot Sans — the one display line on a screen (Mona's sibling)
+ * Mona Sans latin is preloaded (src/lib/ui/fonts.ts); Hubot Sans loads once a display line uses
+ * it. Both swap in, and metric-matched fallbacks keep layout shift near zero while they load.
  * Latin-ext is declared but only fetched when needed.
  */
 
 @font-face {
-	font-family: 'Geist';
+	font-family: 'Mona Sans';
 	font-style: normal;
 	font-display: swap;
-	font-weight: 100 900;
-	src: url('@fontsource-variable/geist/files/geist-latin-wght-normal.woff2')
+	font-weight: 200 900;
+	src: url('@fontsource-variable/mona-sans/files/mona-sans-latin-wght-normal.woff2')
 		format('woff2-variations');
 	unicode-range:
 		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
@@ -20,11 +20,11 @@
 }
 
 @font-face {
-	font-family: 'Geist';
+	font-family: 'Mona Sans';
 	font-style: normal;
 	font-display: swap;
-	font-weight: 100 900;
-	src: url('@fontsource-variable/geist/files/geist-latin-ext-wght-normal.woff2')
+	font-weight: 200 900;
+	src: url('@fontsource-variable/mona-sans/files/mona-sans-latin-ext-wght-normal.woff2')
 		format('woff2-variations');
 	unicode-range:
 		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
@@ -33,11 +33,11 @@
 }
 
 @font-face {
-	font-family: 'Geist Mono';
+	font-family: 'Hubot Sans';
 	font-style: normal;
 	font-display: swap;
-	font-weight: 100 900;
-	src: url('@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2')
+	font-weight: 200 900;
+	src: url('@fontsource-variable/hubot-sans/files/hubot-sans-latin-wght-normal.woff2')
 		format('woff2-variations');
 	unicode-range:
 		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
@@ -45,11 +45,11 @@
 }
 
 @font-face {
-	font-family: 'Geist Mono';
+	font-family: 'Hubot Sans';
 	font-style: normal;
 	font-display: swap;
-	font-weight: 100 900;
-	src: url('@fontsource-variable/geist-mono/files/geist-mono-latin-ext-wght-normal.woff2')
+	font-weight: 200 900;
+	src: url('@fontsource-variable/hubot-sans/files/hubot-sans-latin-ext-wght-normal.woff2')
 		format('woff2-variations');
 	unicode-range:
 		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
@@ -57,24 +57,22 @@
 		U+A720-A7FF;
 }
 
-/*
- * Metric-matched fallbacks (computed from the font files with fontTools, at weight 400, against
- * the local fonts they fall back to; see docs/design-system.md#fonts-loading-strategy).
- */
+/* Metric-matched fallbacks (computed from the font files with fontTools at weight 400; see
+   docs/design-system.md#fonts-loading-strategy). */
 @font-face {
-	font-family: 'Geist Fallback';
+	font-family: 'Mona Sans Fallback';
 	src: local('Arial'), local('Helvetica Neue'), local('Helvetica');
 	size-adjust: 105%;
-	ascent-override: 95.7%;
-	descent-override: 28.1%;
+	ascent-override: 103.8%;
+	descent-override: 30.5%;
 	line-gap-override: 0%;
 }
 
 @font-face {
-	font-family: 'Geist Mono Fallback';
-	src: local('Menlo'), local('Courier New');
-	size-adjust: 99.7%;
-	ascent-override: 100.8%;
-	descent-override: 29.6%;
+	font-family: 'Hubot Sans Fallback';
+	src: local('Arial'), local('Helvetica Neue'), local('Helvetica');
+	size-adjust: 102%;
+	ascent-override: 106.9%;
+	descent-override: 31.4%;
 	line-gap-override: 0%;
 }

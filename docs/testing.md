@@ -254,8 +254,8 @@ Specs:
   Every spec in the file ends by unrouting (`page.unrouteAll({ behavior: 'ignoreErrors' })`), so
   a script still loading at its end cannot fail it with `Response has been disposed`.
 - `platform.e2e.ts` — `/api/health` reports `db: up` (and the Profile screen shows it);
-  `Server-Timing`, request id and security headers; exactly two preloaded fonts (Geist and
-  Geist Mono latin); manifest + icons;
+  `Server-Timing`, request id and security headers; exactly one preloaded font (Mona Sans
+  latin); manifest + icons;
   CSP header contents and enforcement (an injected inline script is refused); service worker
   activates and precaches the shell (not the icons); `POST /api/vitals` stores a row (verified in
   Postgres) and rejects invalid metrics; real browser RUM beacons arrive; vitals are attributed to

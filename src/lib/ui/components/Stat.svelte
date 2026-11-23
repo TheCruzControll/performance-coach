@@ -153,7 +153,5 @@
 	.caption {
 		font-size: var(--text-2xs);
 		color: var(--color-text-tertiary);
-		letter-spacing: var(--tracking-caps);
-		text-transform: uppercase;
 	}
 </style>

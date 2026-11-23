@@ -61,17 +61,13 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   brand mark (`static/brand/mark-arc.svg`, `--color-accent`) is amber, so it no longer matches the
   lime icons either. Closes when an icons row regenerates them with `pnpm icons` and the mark is
   decided.
-- **Components still set uppercase.** Badge, Stat, TextField and 19 other files still set
-  `text-transform: uppercase`, so their labels render in capitals, not the lowercase
-  label style of the Instrument design (docs/design-system.md, Labels). Closes when ui/02 rebuilds
-  them on the label style.
 
 ## Verification gaps
 
 - The Add session sheet has no e2e or verify-coach coverage yet.
 
-- **The new fonts' CLS is not re-measured.** Geist and Geist Mono, with their metric-matched
-  fallbacks, replace Mona Sans and Hubot Sans. The CLS of the audited routes has not been measured
+- **The new fonts' CLS is not re-measured.** Mona Sans and Hubot Sans, with their metric-matched
+  fallbacks, replace Geist and Geist Mono. The CLS of the audited routes has not been measured
   on them, so the expected value of about 0 is unproven. Closes when the routes in
   docs/performance.md are measured again.
 - **M4 is not signed off.** The owner's screenshot review is pending and the real-device
