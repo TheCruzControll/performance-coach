@@ -3,7 +3,7 @@
 What is built, what is in flight, and what is next. Acceptance criteria and evidence stay in
 [milestones.md](milestones.md). Update this file in the change that moves a line.
 
-Last updated: 2026-11-23, from `main` at the merge of #622.
+Last updated: 2026-11-23, from `main` at the merge of #625.
 
 ## Milestones
 
@@ -38,6 +38,14 @@ updates milestones.md.
   onboarding, and a run session shows each segment's zone in beats per minute ('Zone 2 · 134–148 bpm',
   or 'Zone 2' with none told). A plan built with a heart rate records the zones and the method
   (threshold, then heart-rate reserve, then max); a plan without one is unchanged.
+- Muay Thai follows the fight camp: each camp week plans Muay Thai up to its sessions with the
+  classes counted, hard sparring up to its target with each hard class counted and none in the
+  last 7 days before the fight, conditioning in 3-minute rounds when the week asks for rounds, and a
+  fight week of technique and light pads before the fight. When the week runs short, the camp takes
+  strength sessions of goals held at maintenance down to their dose, and only while each major
+  muscle group keeps its weekly sets, never a run. Sparring and
+  conditioning share what is left by turns, and a session no day holds is left out with a decision
+  that says so. A Muay Thai goal that does not lead keeps technique and pads, with no sparring.
 - Marathon and half blocks are built to their race plan: the long run takes its planned length and
   grows at most 1.5 km a week, a cutback week holds at most 80 % of the biggest week, the race week
   has no long run, and each week's quality sessions are its phase's race work up to its hooks' count
@@ -130,9 +138,10 @@ updates milestones.md.
   too: Progress and the reviews judge M7 weeks by their own targets. m7r/07 too: runs are paced from
   the VDOT of the best recent race or the told easy pace, and a marathon block's long run closes at
   marathon pace. m7r/08 too: marathon and half blocks follow their race plan's long runs, cutbacks
-  and race work, and a running goal that does not lead holds its dose. m7r/10 too: heart rate on
-  Profile, and run sessions in bpm. m7r/09, m7/58 and m7/59 build on them. The old M7 pull requests
-  stay open until their rows merge.
+  and race work, and a running goal that does not lead holds its dose. m7r/10 and m7r/09 too: heart
+  rate on Profile and run sessions in bpm, and Muay Thai that follows the fight camp's sessions,
+  sparring cap, conditioning rounds and fight week. m7/58 and m7/59 build on them. The old M7 pull
+  requests stay open until their rows merge.
 - **Instrument v2 tokens (`v2/01a`).** The colours, surfaces, borders, spacing, radii and the theme
   colour follow Instrument v2 in `src/lib/ui/styles/tokens.css`, in dark and
   light; `docs/design-system.md` and `/design` show them. The 28 px gutter moves with the shell in `v2/03`: at 28 px the workout's

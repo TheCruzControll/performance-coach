@@ -227,15 +227,35 @@ describe('placement', () => {
 		p.muayThai = { sessionsPerWeek: 3, sparringPerWeek: 1, fights: 0, notes: null, updatedAt };
 		const plan = generate(p);
 		const combat = weeksOf(plan).map((w) => w.sessions.filter((s) => demandOf(s).hardCombat));
-		expect(combat.map((sessions) => sessions.length)).toEqual([1, 2, 2, 2, 1]);
+		// generator-combat: the camp's sparring and conditioning in its building weeks, and a fight
+		// week of technique and light pads.
+		expect(combat.map((sessions) => sessions.length)).toEqual([2, 2, 2, 2, 0]);
 		expect(avoidIn(plan)).toEqual([]);
 		for (const week of weeksOf(plan)) {
 			expect(week.sessions.filter((s) => s.kind === 'strength')).toHaveLength(3);
 		}
 		expect(plan.decisions.filter((d) => d.ruleKey.startsWith('placement.'))).toEqual([
 			expect.objectContaining({
-				ruleKey: 'placement.priority',
-				summary: 'Fight over Keep strength'
+				ruleKey: 'placement.heavy_lower_before_hard',
+				summary: 'Fight conditioning kept clear of Full body A'
+			}),
+			...[1, 2].map(() =>
+				expect.objectContaining({
+					ruleKey: 'placement.priority',
+					summary: 'Fight over Keep strength'
+				})
+			),
+			// Conditioning counts as hard Muay Thai, and every day left clashes with a lift.
+			...[1, 2].map(() =>
+				expect.objectContaining({
+					ruleKey: 'placement.every_day_clashes',
+					evidence: expect.objectContaining({ session: 'Fight conditioning' })
+				})
+			),
+			// The fight week's third Muay Thai session has no day left before the Saturday fight.
+			expect.objectContaining({
+				ruleKey: 'placement.no_room',
+				evidence: expect.objectContaining({ session: 'Muay Thai technique' })
 			})
 		]);
 	});

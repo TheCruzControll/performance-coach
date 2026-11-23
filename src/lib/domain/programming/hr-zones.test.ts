@@ -28,20 +28,21 @@ function runnerWith(heartRate: Partial<HeartRate>): TrainingProfile {
 }
 
 /**
- * Each M7 scenario's plan from SCENARIO_START, hashed on main before m7r/10 (perfo-programming/7):
+ * Each M7 scenario's plan from SCENARIO_START (perfo-programming/8; m7r/09's camp moved multiGoal
+ * and longSeason):
  * none has a heart rate, so none may change. To re-pin, hash each key's planOf(M7_SCENARIOS[key]())
  * with fnv1a64(JSON.stringify(plan)) and copy the hashes here.
  * M3's scenarios are pinned the same way by generate.test.ts's GOLDEN_SEASON, which this slice
  * leaves as it was.
  */
 const BEFORE: Record<M7ScenarioKey, string> = {
-	multiGoal: 'a96d940af83b1c36',
+	multiGoal: 'f4370f482d5fe3ad',
 	hybridSwap: '63ce7fc2297dfaa5',
 	marathonTaper: '0ac3ba5bf47e5388',
 	hypertrophyBlock: '63aea257046b74af',
 	meetPrep: '09ffad7e8c05d4f6',
 	runnerLifter: '140001ac09d767c3',
-	longSeason: 'a2bcd81b9e0a349d',
+	longSeason: '2bc1602a57db69e9',
 	offSeason: 'f5213695bfbbe5e0',
 	allPaused: '0e9ae04c90af6ebc',
 	journeyHybrid: 'e8266682a46071d0'

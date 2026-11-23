@@ -891,10 +891,23 @@ Commitments, running, interference rules and placement across disciplines. Unit 
   phases store `HALF_HOOKS`; a cutback week holds at most 80 % of the biggest week before it;
   multiGoal's secondary marathon holds its dose; journey's time-based secondary marathon keeps M3's
   week.
+- **Fight camps** (`src/lib/domain/programming/generate-combat.test.ts`): journey's and multiGoal's
+  camps hold hard sparring, classes counted, to the week's target and at most 2, none in the last 7
+  days; conditioning comes in 3-minute rounds only in the weeks that ask for rounds, or a
+  `generator.camp_left_out` decision cites the week; the fight week is technique and light pads, or
+  a decision says it had no room for them; classes stay as told; the evaluator finds no
+  `sparring_cap` or `event_protection`; the camp takes only strength held at maintenance, keeping
+  its dose, its weekly sets (every major group at the week's `setsPerGroup` minimum in each full
+  week) and every long run; journey and multiGoal keep both strength sessions and say which camp
+  sessions, journey's sparring among them, they left out; a held goal with a third lift to spare
+  (a synthetic week, since no scenario has one) gives the camp that lift with a `generator.camp_room`
+  decision and keeps every major group at its minimum; the camp spars as the season does, so an
+  owner who said 0 gets no sparring in the targets or the plan; a Muay Thai goal that does not lead
+  gets no sparring; longSeason stays within `PLAN_BUDGET`.
 - **Other sessions** (`other.test.ts`): a custom-discipline goal gets sessions titled with its name
   at RPE 6 for the session length, with a `default_assumed` decision citing them; Muay Thai is
   technique at RPE 6 with no class or profile, alternates technique and pad work when the profile is
-  told, and spars only in building weeks, under each week's RPE cap; free days no goal asks for get
+  told, and spars only in building weeks and only when its goal leads, under each week's RPE cap; free days no goal asks for get
   30-minute mobility sessions within the session length; every scenario's run segments and metrics
   pass `runSegmentsSchema`, `customMetricsSchema` and `otherDetailsSchema`, and the mixed scenarios
   are required to have some.

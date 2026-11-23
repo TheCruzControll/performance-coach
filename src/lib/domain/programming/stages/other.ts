@@ -8,5 +8,12 @@ import type { Stage } from '../stage.ts';
 
 export const other: Stage = (draft, { input, options, log }) => ({
 	...draft,
-	blocks: planOther(draft.blocks, demandIn(draft), input, options, log)
+	blocks: planOther(
+		draft.blocks,
+		demandIn(draft),
+		input,
+		options,
+		log,
+		draft.periodisation?.dosesByWeek
+	)
 });
