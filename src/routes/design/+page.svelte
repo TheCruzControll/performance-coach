@@ -405,7 +405,7 @@
 	/*
 	 * A desktop window: the gallery widens to --content-wide and its groups pair up, each at about
 	 * the phone column's width, so no specimen is stretched: Color beside Type, Components beside
-	 * Cards & tones, Charts beside Workout. The header and the icon grid span both columns, and the
+	 * Legacy: cards, Charts beside Workout. The header and the icon grid span both columns, and the
 	 * grids get larger cells.
 	 */
 	@media (width >= 64rem) {

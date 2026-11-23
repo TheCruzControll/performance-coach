@@ -13,6 +13,7 @@ type Theme = 'dark' | 'light';
 const COLOUR: Record<
 	Theme,
 	{
+		text: string;
 		surface2: string;
 		inverse: string;
 		onInverse: string;
@@ -23,6 +24,7 @@ const COLOUR: Record<
 	}
 > = {
 	dark: {
+		text: 'rgb(242, 242, 238)',
 		surface2: 'rgb(25, 25, 28)',
 		inverse: 'rgb(242, 242, 238)',
 		onInverse: 'rgb(17, 17, 19)',
@@ -32,6 +34,7 @@ const COLOUR: Record<
 		hairline: 'rgba(255, 255, 255, 0.07)'
 	},
 	light: {
+		text: 'rgb(17, 17, 19)',
 		surface2: 'rgb(236, 236, 231)',
 		inverse: 'rgb(17, 17, 19)',
 		onInverse: 'rgb(242, 242, 238)',
@@ -62,14 +65,16 @@ for (const theme of ['dark', 'light'] as const) {
 			await openDesign(page, theme, 'Data');
 		});
 
-		test('the legacy note says these are kept until their screen rows remove them', async ({
-			page
-		}) => {
-			await expect(page.getByText('Legacy in v2:')).toBeVisible();
+		test('the tab indicator is the text colour, never amber', async ({ page }) => {
+			await expect(page.getByRole('tablist').locator('.indicator')).toHaveCSS(
+				'background-color',
+				c.text
+			);
 		});
 
 		test('a stat tile loses its fill and keeps its padding and value weight', async ({ page }) => {
-			const stat = page.locator('.stat[data-level="1"]').first();
+			const panel = page.getByRole('tabpanel');
+			const stat = panel.locator('.stat[data-level="1"]').first();
 			const css = await stat.evaluate((el) => {
 				const s = getComputedStyle(el);
 				return { background: s.backgroundColor, paddingTop: s.paddingTop, shadow: s.boxShadow };
@@ -79,19 +84,23 @@ for (const theme of ['dark', 'light'] as const) {
 			expect(css.shadow).toBe('none');
 			await expect(stat.locator('.value')).toHaveCSS('font-weight', '600');
 
-			const level2 = page.locator('.stat[data-level="2"]').first();
+			const level2 = panel.locator('.stat[data-level="2"]').first();
 			await expect(level2).toHaveCSS('background-color', TRANSPARENT);
 		});
 
 		test('a badge is a word on its line: no fill, no outline, and its 22 px line', async ({
 			page
 		}) => {
-			const badge = page.locator('[data-ui="badge"]').first();
+			const panel = page.getByRole('tabpanel');
+			const badge = panel.locator('[data-ui="badge"]').first();
 			await expect(badge).toHaveCSS('background-color', TRANSPARENT);
 			await expect(badge).toHaveCSS('box-shadow', 'none');
 			expect((await badge.boundingBox())!.height).toBe(22);
 
-			const positive = page.locator('[data-ui="badge"][data-tone="positive"]');
+			const soon = panel.locator('[data-ui="badge"][data-tone="neutral"]', { hasText: 'Soon' });
+			await expect(soon.first()).toHaveCSS('color', c.tertiary);
+
+			const positive = panel.locator('[data-ui="badge"][data-tone="positive"]');
 			await expect(positive).toHaveCSS('color', c.positive);
 			await expect(positive).toHaveCSS('background-color', TRANSPARENT);
 		});

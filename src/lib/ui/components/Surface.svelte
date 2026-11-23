@@ -93,15 +93,12 @@
 		cursor: pointer;
 	}
 
-	/* The tint reaches 8 px past the content (the box-shadow spread), so it never moves the layout. */
 	.interactive:active {
 		background: var(--color-surface-2);
-		box-shadow: 0 0 0 var(--space-2) var(--color-surface-2);
 	}
 	@media (hover: hover) and (pointer: fine) {
 		.interactive:hover {
 			background: var(--color-surface-2);
-			box-shadow: 0 0 0 var(--space-2) var(--color-surface-2);
 		}
 	}
 </style>

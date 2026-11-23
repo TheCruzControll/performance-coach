@@ -82,7 +82,7 @@
 	.title {
 		font: var(--type-row);
 		font-weight: var(--weight-semibold);
-		letter-spacing: var(--tracking-tight);
+		letter-spacing: var(--tracking-normal);
 		line-height: calc(var(--text-lg) * var(--leading-snug));
 	}
 

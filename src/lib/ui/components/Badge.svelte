@@ -2,8 +2,8 @@
   @component
   A status word on its line: "Soon", "First step", "Good". The words carry the meaning; colour
   only reinforces it (never the other way round). `neutral` is the default and the only tone for
-  "Soon"; `accent` marks the next step and is used sparingly. Legacy in v2: no pill, no tint, no
-  outline; screen rows remove it where their screen has none.
+  "Soon"; `accent` marks the next step and is used sparingly. Legacy in v2: no new use; no pill, no
+  tint, no outline; screen rows remove it where their screen has none.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';

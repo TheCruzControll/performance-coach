@@ -128,7 +128,6 @@
 		width: calc((100% - 2 * var(--pad)) / var(--count));
 		border-radius: var(--radius-full);
 		background: var(--color-surface-inverse);
-		box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
 		transform: translateX(calc(var(--index) * 100%));
 		transition: transform var(--duration-slow) var(--ease-spring);
 	}
