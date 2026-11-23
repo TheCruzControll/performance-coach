@@ -145,42 +145,31 @@ export function deloadReasons(reasons: readonly string[]): string[] {
 	return chosen.map((r) => (r.length <= length ? r : `${r.slice(0, length - 1).trimEnd()}…`));
 }
 
-interface ProposeDeloadBase {
+/** Who asks for a deload, as ReplanRequest has it: a weekly review names its review. */
+type DeloadOrigin = ReplanRequest extends infer R
+	? R extends unknown
+		? Omit<R, 'today' | 'directive'>
+		: never
+	: never;
+
+/** A deload's request: the week to deload (its Monday), the reasons, and who asks. */
+export type ProposeDeload = DeloadOrigin & {
 	today: IsoDate;
-	/** The Monday of the week to deload. */
 	week: IsoDate;
 	reasons: readonly string[];
-	/** coach: the conversation, run and tool call. */
-	coach?: ReplanRequest['coach'];
-}
-
-/**
- * A deload's request. ReplanRequest does not make `review` required for a weekly_review source
- * (propose.ts stores no provenance without it), so the rule is held here, where a deload is made:
- * a weekly review's deload names the review that made it.
- */
-export type ProposeDeload = ProposeDeloadBase &
-	(
-		| { source: 'weekly_review'; review: NonNullable<ReplanRequest['review']> }
-		| { source: Exclude<ReplanRequest['source'], 'weekly_review'>; review?: undefined }
-	);
+};
 
 /** Propose a deload of `week` with its reasons, through proposeReplan on deps.db. */
 export function proposeDeload(
 	ownerId: string,
-	{ today, source, week, reasons, review, coach }: ProposeDeload,
+	{ week, reasons, ...request }: ProposeDeload,
 	deps: ProposeDeps = {}
 ): Promise<ProposedReplan> {
-	const trigger = source === 'coach' || source === 'owner' ? source : 'reactive';
+	const trigger =
+		request.source === 'coach' || request.source === 'owner' ? request.source : 'reactive';
 	return proposeReplan(
 		ownerId,
-		{
-			today,
-			source,
-			directive: { kind: 'deload', week, trigger, reasons: deloadReasons(reasons) },
-			...(review && { review }),
-			...(coach && { coach })
-		},
+		{ ...request, directive: { kind: 'deload', week, trigger, reasons: deloadReasons(reasons) } },
 		deps
 	);
 }
