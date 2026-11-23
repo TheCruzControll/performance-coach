@@ -531,7 +531,7 @@ export type ScheduleData = z.output<typeof scheduleSchema>;
 
 // ---- body & nutrition ------------------------------------------------------------------------
 
-const BODY_WEIGHT_RANGE: Record<string, readonly [number, number]> = {
+export const BODY_WEIGHT_RANGE: Record<string, readonly [number, number]> = {
 	kg: [25, 350],
 	lb: [55, 770]
 };
