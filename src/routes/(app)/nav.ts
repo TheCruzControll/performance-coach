@@ -5,31 +5,41 @@
 import { resolve } from '$app/paths';
 import type { NavItem } from '#lib/ui/components/AppNav.svelte';
 
+/** The four tabs (Instrument v2): what the tab bar and the rail show. */
 export const APP_NAV: NavItem[] = [
 	{ href: resolve('/(app)/today'), label: 'Today', icon: 'today' },
 	{ href: resolve('/(app)/train'), label: 'Train', icon: 'train' },
 	{ href: resolve('/(app)/progress'), label: 'Progress', icon: 'progress' },
-	{ href: resolve('/(app)/coach/[[thread]]', {}), label: 'Coach', icon: 'coach' },
-	{ href: resolve('/(app)/profile'), label: 'Profile', icon: 'profile' }
+	{ href: resolve('/(app)/coach/[[thread]]', {}), label: 'Coach', icon: 'coach' }
 ];
+
+/** Profile: not a tab; opened from the avatar on Today and at the foot of the rail. */
+export const PROFILE: NavItem = {
+	href: resolve('/(app)/profile'),
+	label: 'Profile',
+	icon: 'profile'
+};
+
+/** Every screen of the shell with its own root: the tabs and Profile. */
+const APP_SCREENS: readonly NavItem[] = [...APP_NAV, PROFILE];
 
 const OFFLINE_PATH = resolve('/(app)/offline');
 
-/** The tab a URL belongs to: its own screen or one of its sub-screens. */
+/** The tab or Profile a URL belongs to: its own screen or one of its sub-screens. */
 export const tabFor = (pathname: string) =>
-	APP_NAV.find(({ href }) => pathname === href || pathname.startsWith(`${href}/`));
+	APP_SCREENS.find(({ href }) => pathname === href || pathname.startsWith(`${href}/`));
 
-/** True for URLs that belong to the app shell (tabs, their sub-screens, the offline screen). */
+/** True for URLs that belong to the app shell (tabs, Profile, their sub-screens, the offline screen). */
 export function isAppPath(pathname: string): boolean {
 	return pathname === OFFLINE_PATH || tabFor(pathname) !== undefined;
 }
 
-/** True for a tab's own screen, e.g. `/progress` (not `/progress/exercises/1`). */
+/** True for a tab's or Profile's own screen, e.g. `/progress` (not `/progress/exercises/1`). */
 export function isTabRoot(pathname: string): boolean {
-	return APP_NAV.some(({ href }) => href === pathname);
+	return APP_SCREENS.some(({ href }) => href === pathname);
 }
 
-/** The tab name for a URL, e.g. `/profile` → `Profile` (undefined outside the tabs). */
+/** The screen name for a URL, e.g. `/profile` → `Profile` (undefined outside the shell's screens). */
 export function screenName(pathname: string): string | undefined {
 	return tabFor(pathname)?.label;
 }

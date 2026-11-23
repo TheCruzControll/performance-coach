@@ -98,11 +98,11 @@
 	data-layout={ready && !ready.empty ? 'split' : undefined}
 >
 	<div class="top">
-		<a class="back to-progress" href={PROGRESS} data-testid="back-to-progress">
-			<Icon name="chevron-left" size={18} /> Progress
+		<a class="back-link to-progress" href={PROGRESS} data-testid="back-to-progress">
+			<Icon name="chevron-left" size={16} /> Progress
 		</a>
-		<a class="back to-list" href={LIST} data-testid="back-to-list">
-			<Icon name="chevron-left" size={18} /> All workouts
+		<a class="back-link to-list" href={LIST} data-testid="back-to-list">
+			<Icon name="chevron-left" size={16} /> All workouts
 		</a>
 		<PageHeader title="History" eyebrow="Workouts" />
 	</div>
@@ -243,25 +243,8 @@
 		}
 	}
 
-	.back {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1);
-		min-height: var(--touch-target);
-		margin-top: var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		color: var(--color-text-secondary);
-	}
-
-	.back:focus-visible {
+	.back-link:focus-visible {
 		outline: 2px solid var(--color-accent-ring);
 		outline-offset: 2px;
-	}
-
-	@media (hover: hover) and (pointer: fine) {
-		.back:hover {
-			color: var(--color-text);
-		}
 	}
 </style>

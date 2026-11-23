@@ -57,15 +57,15 @@
 
 <div class="reviews" class:selected={!!selected} data-layout="split">
 	<div class="top">
-		<a class="back to-progress" href={resolve('/(app)/progress')}>
-			<Icon name="chevron-left" size={18} /> Progress
+		<a class="back-link to-progress" href={resolve('/(app)/progress')}>
+			<Icon name="chevron-left" size={16} /> Progress
 		</a>
 		<a
-			class="back to-list"
+			class="back-link to-list"
 			href={resolve('/(app)/progress/reviews/[[key]]', {})}
 			data-testid="back-to-reviews"
 		>
-			<Icon name="chevron-left" size={18} /> All reviews
+			<Icon name="chevron-left" size={16} /> All reviews
 		</a>
 		<PageHeader title="Reviews" eyebrow="Progress" />
 	</div>
@@ -183,25 +183,8 @@
 		}
 	}
 
-	.back {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1);
-		min-height: var(--touch-target);
-		margin-top: var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		color: var(--color-text-secondary);
-	}
-
-	.back:focus-visible {
+	.back-link:focus-visible {
 		outline: 2px solid var(--color-accent-ring);
 		outline-offset: 2px;
-	}
-
-	@media (hover: hover) and (pointer: fine) {
-		.back:hover {
-			color: var(--color-text);
-		}
 	}
 </style>

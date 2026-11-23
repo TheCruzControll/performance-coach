@@ -178,8 +178,8 @@
 	<title>{session?.title ?? 'Session'} · Train · Performance Coach</title>
 </svelte:head>
 
-<a class="back" href={TRAIN} onclick={back} data-testid="back-to-train">
-	<Icon name="chevron-left" size={18} /> Train
+<a class="back-link" href={TRAIN} onclick={back} data-testid="back-to-train">
+	<Icon name="chevron-left" size={16} /> Train
 </a>
 
 {#if session}
@@ -371,23 +371,6 @@
 {/if}
 
 <style>
-	.back {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1);
-		min-height: var(--touch-target);
-		margin-top: var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		color: var(--color-text-secondary);
-	}
-
-	@media (hover: hover) and (pointer: fine) {
-		.back:hover {
-			color: var(--color-text);
-		}
-	}
-
 	.stack {
 		display: grid;
 		gap: var(--space-6);

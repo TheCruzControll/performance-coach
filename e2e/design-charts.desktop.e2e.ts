@@ -74,7 +74,7 @@ test.describe('/design → Charts on a desktop', () => {
 				await tokenPx(page, '--content-readable')
 			);
 			expect(section.width, 'about a phone column').toBeGreaterThanOrEqual(
-				(await tokenPx(page, '--content-max')) - 40
+				(await tokenPx(page, '--content-max')) - 2 * (await tokenPx(page, '--gutter'))
 			);
 			expect(await auditCharts(page)).toEqual([]);
 			await fixtureFrame(page).scrollIntoViewIfNeeded();

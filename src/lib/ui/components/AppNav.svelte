@@ -1,10 +1,12 @@
 <!--
   @component
   Primary navigation, one element at every width (docs/design-system.md, Responsive layout →
-  Shell). Below 1024 px a glass tab bar fixed to the bottom, clear of the home indicator; from
-  1024 px a solid rail at the left, under the brand mark that layout.css draws. Each item is a
-  real link (works without JS) with aria-current on the active tab, so the destinations, their
-  order and the current one are the same in both. A pressed tab is marked current on pointerdown.
+  Shell). Below 1024 px a canvas tab bar fixed to the bottom, with a hairline above it and clear
+  of the home indicator: the four tabs, 24 px icons and 12 px labels, the current one in text
+  colour and 600 with no pill. From 1024 px a rail at the left, with Profile's avatar link at its
+  foot (the avatar is hidden below 1024 px: Today opens Profile there). Each item is a real link
+  (works without JS) with aria-current on the active screen, so the destinations, their order and
+  the current one are the same in both. A pressed link is marked current on pointerdown.
 -->
 <script lang="ts" module>
 	import type { IconName } from '../icons/icons';
@@ -21,17 +23,19 @@
 
 	interface Props {
 		items: NavItem[];
+		/** Profile: the avatar link at the foot of the rail (not a tab). */
+		profile: NavItem;
 		/** Current pathname; the item whose href prefixes it is active. */
 		pathname: string;
 	}
 
-	let { items, pathname }: Props = $props();
+	let { items, profile, pathname }: Props = $props();
 
 	/**
-	 * The tab under a finger or a pressed mouse button, marked current at once, as a native tab
+	 * The link under a finger or a pressed mouse button, marked current at once, as a native tab
 	 * bar does on touch: the navigation (and with it the pathname) starts only on click. Kept for
 	 * a moment after the release, until the navigation has begun; let go at once when the press
-	 * is cancelled or a mouse leaves the tab, which never clicks.
+	 * is cancelled or a mouse leaves the link, which never clicks.
 	 */
 	let pressed = $state<string | null>(null);
 	let release: ReturnType<typeof setTimeout> | undefined;
@@ -51,6 +55,7 @@
 
 	const current = $derived(pressed ?? pathname);
 	const isActive = (href: string) => current === href || current.startsWith(`${href}/`);
+	const profileActive = $derived(isActive(profile.href));
 </script>
 
 <nav class="app-nav" aria-label="Primary">
@@ -70,13 +75,30 @@
 						if (event.pointerType === 'mouse') letGo();
 					}}
 				>
-					<span class="glyph">
-						<Icon name={item.icon} size={24} strokeWidth={active ? 2 : 1.75} />
-					</span>
+					<Icon name={item.icon} size={24} strokeWidth={1.75} />
 					<span class="label">{item.label}</span>
 				</a>
 			</li>
 		{/each}
+		<li class="profile">
+			<a
+				href={profile.href}
+				class="avatar-link"
+				aria-label={profile.label}
+				aria-current={profileActive ? 'page' : undefined}
+				data-sveltekit-preload-data="tap"
+				data-testid="rail-avatar"
+				onpointerdown={(event) => press(event, profile.href)}
+				onpointerup={() => letGo(RELEASE_MS)}
+				onpointercancel={() => letGo()}
+				onpointerleave={(event) => {
+					if (event.pointerType === 'mouse') letGo();
+				}}
+			>
+				<Icon name={profile.icon} size={16} />
+				<span class="visually-hidden">{profile.label}</span>
+			</a>
+		</li>
 	</ul>
 </nav>
 
@@ -87,16 +109,15 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		padding: 0 max(var(--space-2), var(--safe-right)) var(--safe-bottom)
-			max(var(--space-2), var(--safe-left));
-		background: var(--color-glass);
-		backdrop-filter: saturate(180%) blur(32px);
+		padding: var(--space-3) max(var(--space-7), var(--safe-right))
+			max(var(--space-3), var(--safe-bottom)) max(var(--space-7), var(--safe-left));
+		background: var(--color-canvas);
 		border-top: 1px solid var(--color-hairline);
 	}
 
 	ul {
-		display: grid;
-		grid-template-columns: repeat(5, minmax(0, 1fr));
+		display: flex;
+		justify-content: space-between;
 		max-width: var(--content-max);
 		margin: 0 auto;
 		padding: 0;
@@ -104,64 +125,48 @@
 	}
 
 	.item {
-		position: relative;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		gap: 3px;
-		height: var(--nav-height);
+		gap: var(--space-1-5);
+		width: 4rem;
+		height: 2.875rem;
+		font: var(--type-tab);
 		color: var(--color-text-tertiary);
 		transition: color var(--duration-fast) var(--ease-standard);
 	}
 
-	.glyph {
-		display: grid;
-		place-items: center;
-		width: 3.25rem;
-		height: 1.875rem;
-		border-radius: var(--radius-full);
-		transition:
-			background-color var(--duration-base) var(--ease-standard),
-			transform var(--duration-fast) var(--ease-out);
-	}
-
-	.label {
-		font-size: var(--text-2xs);
-		font-weight: var(--weight-semibold);
-		letter-spacing: 0.01em;
-	}
-
 	.item[aria-current='page'] {
 		color: var(--color-text);
+		font-weight: var(--weight-semibold);
 	}
 
-	.item[aria-current='page'] .glyph {
-		background: var(--color-accent-subtle);
-		color: var(--color-accent-text);
-	}
-
-	.item:active .glyph {
+	.item:active :global(.icon) {
 		transform: scale(0.9);
 		transition-duration: var(--duration-instant);
 	}
 
 	.item:focus-visible {
-		outline-offset: -4px;
-		border-radius: var(--radius-md);
+		outline-offset: -2px;
+		border-radius: var(--radius-sm);
 	}
 
 	@media (hover: hover) and (pointer: fine) {
 		.item:not([aria-current]):hover {
 			color: var(--color-text-secondary);
 		}
-
-		.item:not([aria-current]):hover .glyph {
-			background: var(--color-surface-2);
-		}
 	}
 
-	/* The rail: solid, full height, items stacked under the brand mark (layout.css). */
+	/* Profile is the rail's last link: below 1024 px Today opens it. */
+	.profile {
+		display: none;
+	}
+
+	/*
+	 * The rail (from 1024 px): solid, full height, the tabs stacked and the avatar at its foot.
+	 * The brand mark above the tabs is layout.css's, until v2/03c.
+	 */
 	@media (width >= 64rem) {
 		.app-nav {
 			top: 0;
@@ -170,21 +175,27 @@
 			padding: calc(var(--safe-top) + var(--rail-mark) + 2 * var(--space-6)) 0 var(--safe-bottom)
 				var(--safe-left);
 			background: var(--color-surface-1);
-			backdrop-filter: none;
 			border-top: 0;
 			border-right: 1px solid var(--color-hairline);
 		}
 
 		ul {
-			grid-template-columns: minmax(0, 1fr);
+			height: 100%;
+			flex-direction: column;
+			justify-content: flex-start;
 			gap: var(--space-1);
-			padding: 0 var(--space-1-5);
+			max-width: none;
 		}
 
 		.item {
 			height: auto;
 			min-height: 3.5rem;
 			gap: var(--space-1);
+		}
+
+		.profile {
+			display: block;
+			margin-top: auto;
 		}
 	}
 </style>

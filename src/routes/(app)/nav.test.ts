@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activePath, isTabRoot } from './nav';
+import { activePath, APP_NAV, isAppPath, isTabRoot, PROFILE, screenName, tabFor } from './nav';
 
 const at = (path: string) => new URL(path, 'https://coach.test');
 
@@ -24,5 +24,19 @@ describe('isTabRoot', () => {
 		expect(isTabRoot('/progress/exercises/1')).toBe(false);
 		expect(isTabRoot('/offline')).toBe(false);
 		expect(isTabRoot('/workout')).toBe(false);
+	});
+});
+
+describe('the tabs', () => {
+	it('are four, and Profile is not one of them', () => {
+		expect(APP_NAV.map((tab) => tab.label)).toEqual(['Today', 'Train', 'Progress', 'Coach']);
+		expect(PROFILE.href).toBe('/profile');
+	});
+	it('keep Profile and its sub-screens in the shell, under their own name', () => {
+		expect(isAppPath('/profile')).toBe(true);
+		expect(isAppPath('/profile/security')).toBe(true);
+		expect(screenName('/profile/goals')).toBe('Profile');
+		expect(isTabRoot('/profile')).toBe(true);
+		expect(tabFor('/profile/security')).toBe(PROFILE);
 	});
 });

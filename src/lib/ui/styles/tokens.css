@@ -250,7 +250,9 @@
 	--safe-right: env(safe-area-inset-right, 0px);
 	--safe-bottom: env(safe-area-inset-bottom, 0px);
 	--safe-left: env(safe-area-inset-left, 0px);
-	--gutter: 1.25rem; /* v2 boards pad 28px (--space-7); the gutter moves with the shell in v2/03 */
+	/* 28px: every v2 phone board pads its content this far. The workout keeps 20 px until v2/10
+	   (workout/Shell.svelte). */
+	--gutter: var(--space-7);
 	--content-max: 34rem;
 	--nav-height: 3.625rem;
 	--touch-target: 2.75rem; /* 44px minimum (Apple HIG) */

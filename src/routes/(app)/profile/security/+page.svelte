@@ -148,8 +148,8 @@
 	<title>Security · Performance Coach</title>
 </svelte:head>
 
-<a class="back" href={resolve('/(app)/profile')}>
-	<Icon name="chevron-left" size={18} /> Profile
+<a class="back-link" href={resolve('/(app)/profile')}>
+	<Icon name="chevron-left" size={16} /> Profile
 </a>
 <PageHeader title="Security" eyebrow="Passkeys & devices" />
 
@@ -387,17 +387,6 @@
 {/if}
 
 <style>
-	.back {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1);
-		min-height: var(--touch-target);
-		margin-top: var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		color: var(--color-text-secondary);
-	}
-
 	.stack {
 		display: grid;
 		gap: var(--space-6);

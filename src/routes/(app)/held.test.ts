@@ -13,6 +13,10 @@ describe('heldFor', () => {
 		});
 	});
 
+	it("shows Profile's skeleton from Today, as Profile is a screen of the shell", () => {
+		expect(heldFor(at('/today'), at('/profile'), none)).toEqual({ label: 'Profile', last: null });
+	});
+
 	it('shows the last screen a URL showed, from any screen, its own tab included', () => {
 		const kept = new Map([['/today', 'today screen']]);
 		const recall = (url: Where) => kept.get(url.pathname + url.search);

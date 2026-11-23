@@ -144,9 +144,10 @@ updates milestones.md.
   requests stay open until their rows merge.
 - **Instrument v2 tokens (`v2/01a`).** The colours, surfaces, borders, spacing, radii and the theme
   colour follow Instrument v2 in `src/lib/ui/styles/tokens.css`, in dark and
-  light; `docs/design-system.md` and `/design` show them. The 28 px gutter moves with the shell in `v2/03`: at 28 px the workout's
-  logger grew over the exercise header, so v2/03 re-measures it (the effort chips now keep one line). The rest of
-  the Instrument v2 rows are queued in `plan/queue.md` and wait on the tokens.
+  light; `docs/design-system.md` and `/design` show them. The 28 px gutter arrived with `v2/03a`;
+  the workout keeps 20 px until `v2/10`, since at 28 px its logger grew over the exercise header
+  (the effort chips now keep one line). The rest of the Instrument v2 rows are queued in
+  `plan/queue.md` and wait on the tokens.
 - **Instrument v2 type (`v2/01b`).** Mona Sans sets all text and every numeral, Hubot Sans the one
   display line on a screen, and the mono and uppercase labels are gone (`src/lib/ui/styles/tokens.css`,
   `base.css`, `fonts.css`). The fonts are self-hosted `@fontsource-variable/mona-sans` and
@@ -174,6 +175,12 @@ updates milestones.md.
   an inset), and a quiet ghost close.
   Toasts are a surface-2 line that stays at the top until `v2/03`. The `/design` Data and Feedback
   tabs and `docs/design-system.md` show them. Phone layouts and sheet heights are CI’s to prove.
+- **Instrument v2 shell, phone (`v2/03a`).** Four tabs (Today, Train, Progress, Coach) on a canvas
+  bar with a hairline, the current one in text colour and 600 with no pill. Profile is not a tab:
+  Today's avatar opens it, and the rail's foot does from 1024 px. Detail pages share one back link
+  (`.back-link`), and Profile has one to Today. The page gutter is 28 px everywhere but the
+  workout, which keeps 20 px until `v2/10`. The resume line, the rail's look and the desktop column
+  and sheets are `v2/03b` and `v2/03c`.
 - **Instrument v2 legacy components (`v2/02d`), which completes `v2/02`.** Cards, chips, badges,
   segmented controls, stat tiles, tabs and section headings lose their pills, fills, tint and amber
   and keep their padding and sizes, so no screen moves. A card keeps a hairline outline until its

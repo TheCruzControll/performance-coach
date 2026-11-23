@@ -68,6 +68,9 @@
 	<title>Profile · Performance Coach</title>
 </svelte:head>
 
+<a class="back-link" href={resolve('/(app)/today')} data-testid="back-to-today">
+	<Icon name="chevron-left" size={16} /> Today
+</a>
 <PageHeader title="Profile" eyebrow="Account" />
 
 <!-- Wide: from 1024 px the training profile sits beside who is signed in and this device's
@@ -254,6 +257,13 @@
 	.stack {
 		display: grid;
 		gap: var(--space-4);
+	}
+
+	/* From 1024 px the rail is the way back to Today, so the link goes. */
+	@media (width >= 64rem) {
+		.back-link {
+			display: none;
+		}
 	}
 
 	/* Two columns, read row by row as on a phone: the account beside the training profile, then
