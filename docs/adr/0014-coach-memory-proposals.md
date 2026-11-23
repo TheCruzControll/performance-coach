@@ -4,7 +4,8 @@
   coach-launch (#449); docs/agent-architecture.md describes the code. Two details moved during
   M5: the snapshot takes at most 18 queries (9 for the profile, 9 for the records, which read the
   reviews' decisions too), and a segment's summary is made right after the answer that fills it
-  when it can, so the next turn rolls over without a model call first.
+  when it can, so the next turn rolls over without a model call first. The weight plan later added
+  `log_body_weight`, a third direct write (see [decisions.md](../decisions.md), 2026-11-23).
 - **Context:** Context must persist across conversations from structured data, not a replayed
   chat (PRD §4). An explicit "I dislike this exercise" must persist, while a machine being taken
   must not become a preference (PRD §4, §6). Recommendations and committed changes are separate,
@@ -40,9 +41,10 @@
   decision with the coach's rationale. A stale base becomes `superseded` (`program_changed`);
   'Ask for changes' supersedes it with a revision (`revised`); a rejection keeps an optional note
   that memory shows the coach as untrusted text.
-- **Two direct writes only.** The coach may save its own workout analysis, and record an exercise
+- **Three direct writes only.** The coach may save its own workout analysis, record an exercise
   preference when this turn's owner message holds an explicit statement about that exercise
-  (source 'coach', with a decision note quoting the owner). A situational statement becomes a
+  (source 'coach', with a decision note quoting the owner), and log a body weight the owner states
+  in this turn (`log_body_weight`, source 'coach', with Undo). A situational statement becomes a
   session-scoped substitution proposal, never a preference.
 
 ## Alternatives considered

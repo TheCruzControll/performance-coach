@@ -385,8 +385,9 @@ Memory sits in a user-role preamble, never in a system message. No tool commits 
 workout change: each is a proposal the owner accepts. The two direct writes that the owner's
 statement gates, `update_exercise_preferences` and `log_body_weight`, each need an explicit
 statement in this turn's stored owner message: a preference about that exercise
-(`classifyExerciseStatement`), or a body weight with its day and unit (`parseWeightStatement`). A
-dislike that reached the coach through a stored note becomes a proposal
+(`classifyExerciseStatement`), or a body weight the owner states about themselves
+(`parseWeightStatement`), whose unit and day, when given, must match. A dislike that reached the
+coach through a stored note becomes a proposal
 (`tests/integration/coach/tools-preferences.test.ts`); a weight the model did not find in the
 owner's message is refused and writes nothing (`tests/integration/coach/weight-log.test.ts`).
 `log_body_weight` writes source `coach`, so Undo can take the entry back.

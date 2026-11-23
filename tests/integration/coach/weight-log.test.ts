@@ -8,7 +8,8 @@
  * - NOT_STATED (not said this turn, a question, a hypothetical, someone else's, a number the owner
  *   did not say), CONTRADICTS_OWNER (another unit) and BAD_DATE (a future day, or not the day named)
  *   each write nothing
- * - a replace keeps the earlier entry, so Undo with the run puts it back
+ * - a replace keeps the earlier entry, so Undo with the run puts it back, and a second write in
+ *   the same run still names that earlier entry as replaced
  */
 import { describe, expect, it } from 'vitest';
 import * as z from 'zod/mini';
@@ -45,9 +46,17 @@ interface Recorded {
 	undo: { entryId: number; runId: string };
 }
 
-/** One call of log_body_weight, as a turn runs it, for `text` the owner's message this turn. */
-async function log(db: Executor, owner: string, text: string, input: Logged) {
-	const runId = crypto.randomUUID();
+/**
+ * One call of log_body_weight, as a turn runs it, for `text` the owner's message this turn. A
+ * turn's calls share its run, so a test that makes two calls passes the same `runId` to both.
+ */
+async function log(
+	db: Executor,
+	owner: string,
+	text: string,
+	input: Logged,
+	runId = crypto.randomUUID()
+) {
 	const ctx = toolContext({
 		session: { ownerId: owner },
 		message: { threadId: crypto.randomUUID(), runId, text, entry: null },
@@ -178,6 +187,30 @@ describe('the coach records a weight the owner states', () => {
 			'yesterday I was 82.4 kg',
 			{ weight: 82.4, unit: 'kg', measuredOn: TODAY },
 			'BAD_DATE'
+		],
+		[
+			'yesterday, for a weight the owner gave with no day',
+			'I weighed 82.4 kg',
+			{ weight: 82.4, unit: 'kg', measuredOn: YESTERDAY },
+			'BAD_DATE'
+		],
+		[
+			'a weight from a year ago',
+			'I was 85 last year',
+			{ weight: 85, unit: 'kg', measuredOn: TODAY },
+			'NOT_STATED'
+		],
+		[
+			'a weight from last week',
+			'I weighed 82.4 last week',
+			{ weight: 82.4, unit: 'kg', measuredOn: TODAY },
+			'NOT_STATED'
+		],
+		[
+			"an owner's age, not a weight",
+			"I'm 30",
+			{ weight: 30, unit: 'kg', measuredOn: TODAY },
+			'NOT_STATED'
 		]
 	];
 
@@ -214,6 +247,56 @@ describe('the coach records a weight the owner states', () => {
 			expect(replacing!.replaced).toEqual({ value: 81, unit: 'kg', source: 'log' });
 
 			await undoCoachWeight(owner, output!.undo.entryId, runId, { db, now: NOW });
+			const [restored] = await weighIns(db, owner);
+			expect(restored).toMatchObject({
+				value: 81,
+				unit: 'kg',
+				source: 'log',
+				runId: null,
+				replaced: null
+			});
+		});
+	});
+
+	it('two writes in one run on a day: replaced names the owner’s entry, and Undo restores it', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			await logWeight(
+				owner,
+				{ value: 81, unit: 'kg', measuredOn: TODAY },
+				{ db, now: NOW, source: 'log' }
+			);
+			const runId = crypto.randomUUID();
+			const first = await log(
+				db,
+				owner,
+				'I weighed 82.4 this morning',
+				{ weight: 82.4, unit: 'kg', measuredOn: TODAY },
+				runId
+			);
+			const second = await log(
+				db,
+				owner,
+				'I weighed 82 this morning',
+				{ weight: 82, unit: 'kg', measuredOn: TODAY },
+				runId
+			);
+			expect(first.error).toBeNull();
+			expect(second.error).toBeNull();
+			expect(first.output).toMatchObject({ replaced: { value: 81, unit: 'kg', source: 'log' } });
+			// The second write replaced the coach's own 82.4, but Undo goes back past the whole run to
+			// the owner's 81, so that is what `replaced` names.
+			expect(second.output).toMatchObject({
+				entry: { value: 82 },
+				replaced: { value: 81, unit: 'kg', source: 'log' },
+				undo: { entryId: first.output!.undo.entryId, runId }
+			});
+
+			const [replacing] = await weighIns(db, owner);
+			expect(replacing).toMatchObject({ value: 82, source: 'coach', runId });
+			expect(replacing!.replaced).toEqual({ value: 81, unit: 'kg', source: 'log' });
+
+			await undoCoachWeight(owner, second.output!.undo.entryId, runId, { db, now: NOW });
 			const [restored] = await weighIns(db, owner);
 			expect(restored).toMatchObject({
 				value: 81,

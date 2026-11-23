@@ -9,9 +9,11 @@
  * explain_schedule_tradeoffs, and M7's three re-plan proposals, plan_block, schedule_deload and
  * plan_taper. Every get_* tool only reads, and so do the two engine reads. Nine tools only
  * propose: they store a coach_proposals row that changes nothing until the owner accepts it. The
- * three that write are the brief's only direct writes: the coach's own workout analysis, a
- * preference the owner stated explicitly in this turn, and a weigh-in the owner stated in this
- * turn. Three proposing tools draft their payload with a structured-output call, so their deadline
+ * three that write are the only direct writes: the coach's own workout analysis and a preference
+ * the owner stated explicitly in this turn (both named by the brief), and a weigh-in the owner
+ * stated in this turn, which the weight decisions add (docs/decisions.md, 2026-11-23) and the
+ * brief does not name.
+ * Three proposing tools draft their payload with a structured-output call, so their deadline
  * includes the draft's time.
  */
 

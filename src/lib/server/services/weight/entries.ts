@@ -105,12 +105,20 @@ function replacedOf(row: WeightEntryRow): WeightReplaced {
  * has one is replaced: the row keeps its id, and the entry it held comes back as `replaced`. A coach
  * write (source 'coach', with its runId) keeps that earlier entry so Undo can restore it. Any other
  * source clears run_id and replaced.
+ *
+ * `remembered` is what Undo puts back for a coach write: the entry the day held before the run, so
+ * a second write in the same run gives the run's first replaced entry, not the coach's own earlier
+ * write. It is null when Undo would empty the day, and always null for another source.
  */
 export async function logWeight(
 	ownerId: string,
 	input: unknown,
 	deps: WeightDeps = {}
-): Promise<{ entry: WeightEntryRow; replaced: WeightEntryRow | null }> {
+): Promise<{
+	entry: WeightEntryRow;
+	replaced: WeightEntryRow | null;
+	remembered: WeightReplaced | null;
+}> {
 	const { db, now, source, runId } = resolveWeightDeps(deps);
 	if (source === 'coach' && runId === null) {
 		throw new Error('A coach weigh-in needs the run that made it');
@@ -134,14 +142,16 @@ export async function logWeight(
 				},
 				at
 			);
-			if (previous === null || source !== 'coach') return { entry, replaced: previous };
+			if (previous === null || source !== 'coach') {
+				return { entry, replaced: previous, remembered: null };
+			}
 			// A second write in the same run keeps what the run first replaced (null when the day was
 			// empty before the run), so Undo goes back past the whole run, not just one write.
 			const sameRun = previous.source === 'coach' && previous.runId === runId;
 			const remembered = sameRun ? previous.replaced : replacedOf(previous);
 			// The previous row was read under the lock upsertForDay took, so this is what it held.
 			const updated = await repo.update(ownerId, entry.id, { replaced: remembered }, at);
-			return { entry: updated ?? entry, replaced: previous };
+			return { entry: updated ?? entry, replaced: previous, remembered };
 		})
 	);
 }

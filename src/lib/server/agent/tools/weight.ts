@@ -301,15 +301,16 @@ const logBodyWeightTool = defineTool({
 				'The owner gave that weight in another unit: nothing was stored',
 				{ ownerWords: untrusted(stated[0]!.quote) }
 			);
-		const named =
-			match.day === 'today' ? ctx.today : match.day === 'yesterday' ? dayBefore(ctx.today) : null;
-		if (measuredOn > ctx.today || (named !== null && measuredOn !== named))
+		// The day the owner named: yesterday when they said so, otherwise today (a weight with no day
+		// named is today's). Any other day, a future one included, is refused.
+		const named = match.day === 'yesterday' ? dayBefore(ctx.today) : ctx.today;
+		if (measuredOn !== named)
 			throw toolError(
 				'BAD_DATE',
-				'That day is after today, or not the day the owner named: nothing was stored',
+				'That day is not the day the owner named (today, or yesterday when they said so): nothing was stored',
 				{ ownerWords: untrusted(match.quote) }
 			);
-		const { entry, replaced } = await inTransaction(ctx.deps, (tx) =>
+		const { entry, remembered } = await inTransaction(ctx.deps, (tx) =>
 			logWeight(
 				ctx.ownerId,
 				{ value: weight, unit, measuredOn },
@@ -324,8 +325,9 @@ const logBodyWeightTool = defineTool({
 				value: entry.value,
 				unit: entry.unit
 			},
-			replaced: replaced
-				? { value: replaced.value, unit: replaced.unit, source: replaced.source }
+			// The entry Undo puts back: on a second write in this run, the one the run first replaced.
+			replaced: remembered
+				? { value: remembered.value, unit: remembered.unit, source: remembered.source }
 				: null,
 			undo: { entryId: entry.id, runId: ctx.runId }
 		};
