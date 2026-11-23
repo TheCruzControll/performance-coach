@@ -8,7 +8,7 @@
  *   movements they say to avoid, the schedule, and M4's pain reports from the last
  *   MEMORY_RECORD_DAYS days. Equipment and injuries cite a 'preference' ref with an `equipment.`
  *   or `injury.` id, as the coaching memory does.
- * - update_exercise_preferences: the one direct write the brief allows. classifyExerciseStatement
+ * - update_exercise_preferences: one of the direct writes the brief allows. classifyExerciseStatement
  *   reads this turn's stored owner message, never a tool result or stored text. An explicit like
  *   or dislike of that exercise is recorded at once through recordExercisePreference (source
  *   'coach', under the preference lock) with a coach_decision note quoting the owner, in one

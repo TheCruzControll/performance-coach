@@ -49,10 +49,18 @@ export type ExerciseMatcher<C> = (text: string, candidates: readonly C[]) => str
 /** The longest exercise name, in words, offered to the matcher. */
 export const MAX_NAME_WORDS = 6;
 
-const QUESTION = /\?\s*$/;
-const HYPOTHETICAL = /\b(?:if|unless|whether|suppose|supposing|imagine|what if|would you)\b/i;
-const SOMEONE_ELSE =
-	/\b(?:he|she|my (?:friend|partner|wife|husband|girlfriend|boyfriend|mate|brother|sister|coach|trainer|pt|dad|mum|mom)|someone|somebody|people|everyone|nobody|most people|a lot of people)(?: really| actually| just)? (?:hates?|loves?|likes?|dislikes?|enjoys?|can'?t stand|prefers?)\b/i;
+/** A sentence that ends in a question mark states nothing (weight.ts reads it the same way). */
+export const QUESTION = /\?\s*$/;
+export const HYPOTHETICAL =
+	/\b(?:if|unless|whether|suppose|supposing|imagine|what if|would you)\b/i;
+const OTHER_PERSON_SUBJECT =
+	'he|she|my (?:friend|partner|wife|husband|girlfriend|boyfriend|mate|brother|sister|coach|trainer|pt|dad|mum|mom)|someone|somebody|people|everyone|nobody|most people|a lot of people';
+/** Someone other than the owner, as the subject of a clause. */
+export const OTHER_PERSON = new RegExp(`\\b(?:${OTHER_PERSON_SUBJECT})\\b`, 'i');
+const SOMEONE_ELSE = new RegExp(
+	`\\b(?:${OTHER_PERSON_SUBJECT})(?: really| actually| just)? (?:hates?|loves?|likes?|dislikes?|enjoys?|can'?t stand|prefers?)\\b`,
+	'i'
+);
 const NEGATED_DISLIKE =
 	/\b(?:don'?t|do not|doesn'?t|didn'?t|never|not|wouldn'?t say i) (?:really |actually |even )?(?:hate|hated|dislike|disliked|mind|care about)\b/i;
 const NEGATED_LOVE =

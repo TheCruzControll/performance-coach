@@ -38,7 +38,7 @@ function registryIssues(files: readonly ToolGroupFile[]): string[] {
 
 describe('the registry is the catalogue', () => {
 	it('registers every catalogue tool by name, sorted as every request lists them', () => {
-		expect(TOOL_NAMES).toHaveLength(30);
+		expect(TOOL_NAMES).toHaveLength(31);
 		expect(COACH_TOOLS.map((tool) => tool.name)).toEqual(TOOL_NAMES);
 		const sorted = [...COACH_TOOLS].sort((a, b) => compareText(a.name, b.name));
 		expect(sorted).toEqual(COACH_TOOLS);

@@ -72,7 +72,10 @@ runs the criteria and updates milestones.md.
   wired to Progress's and Today's actions, and the coach's Undo of a weigh-in is
   `POST /api/coach/weights/[id]/undo`. The weekly review's `goals` finding reads the week's trend
   change and the goal's verdict (`src/lib/domain/programming/review/weekly.ts`), and an edited
-  weigh-in makes the review stale. The coach's writes and the screens come next.
+  weigh-in makes the review stale. The coach records a weight the owner states in their
+  message (`log_body_weight`, `src/lib/server/agent/tools/weight.ts`, with the check in
+  `src/lib/domain/coach/weight-statement.ts`) at once, with source `coach`; its answer says so and
+  mentions Undo. The Undo card is the next PR, and the screens come after it.
 - **M7, re-sliced.** On 2026-11-22 the parked M7 pull requests were re-sliced into 38 `m7r/`
   rows in `plan/m7-reslice.md`. By the end of that day every row that does not wait on m7r/03
   had merged, along with m7/47 to m7/51. That covers the generator's stages and season, Train's

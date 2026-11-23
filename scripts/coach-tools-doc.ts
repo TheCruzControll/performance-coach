@@ -45,7 +45,7 @@ const EFFECT_LABEL = {
 	read: 'read: changes nothing',
 	propose:
 		'propose: stores a coach_proposals row, which changes nothing until the owner accepts it',
-	write: 'write: one of the two direct writes'
+	write: 'write: one of the three direct writes'
 };
 
 /** Inline prose: one line, with nothing markdown would read as markup. */
