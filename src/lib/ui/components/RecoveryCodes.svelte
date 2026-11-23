@@ -141,7 +141,6 @@
 		font-size: var(--text-base);
 		font-weight: var(--weight-semibold);
 		font-variant-numeric: tabular-nums;
-		letter-spacing: 0.06em;
 		line-height: var(--leading-snug);
 		user-select: all;
 	}

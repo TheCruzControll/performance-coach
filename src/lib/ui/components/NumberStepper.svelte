@@ -247,8 +247,6 @@
 	.label {
 		font-size: var(--text-2xs);
 		font-weight: var(--weight-semibold);
-		letter-spacing: var(--tracking-caps);
-		text-transform: uppercase;
 		color: var(--color-text-tertiary);
 		text-align: center;
 	}
@@ -278,7 +276,7 @@
 		border-radius: var(--radius-sm);
 		color: var(--color-text);
 		font-family: var(--font-numeric);
-		font-variant-numeric: lining-nums proportional-nums;
+		font-variant-numeric: lining-nums tabular-nums;
 		font-size: var(--text-5xl);
 		font-weight: var(--weight-bold);
 		line-height: 1;

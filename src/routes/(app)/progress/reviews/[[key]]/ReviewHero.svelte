@@ -59,8 +59,6 @@
 	.eyebrow {
 		font-size: var(--text-xs);
 		font-weight: var(--weight-semibold);
-		letter-spacing: var(--tracking-caps);
-		text-transform: uppercase;
 		color: var(--color-text-tertiary);
 	}
 

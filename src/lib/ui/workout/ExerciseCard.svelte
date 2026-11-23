@@ -261,7 +261,7 @@
 		font-size: var(--text-3xl);
 		font-weight: var(--weight-bold);
 		color: var(--color-text);
-		font-variant-numeric: lining-nums proportional-nums;
+		font-variant-numeric: lining-nums tabular-nums;
 	}
 
 	.rest {

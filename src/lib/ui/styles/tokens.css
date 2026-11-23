@@ -94,46 +94,74 @@
 	--chart-band: light-dark(#f4f4f0, #19191c);
 
 	/* ---- Typography ---------------------------------------------------------------- */
-	/* Geist for all UI text and titles (titles are weight 500, not a second family). */
+	/*
+	 * Instrument v2 (docs/design-system.md#typography). Mona Sans sets all text and every numeral;
+	 * Hubot Sans sets the one display line on a screen (display, title, statement, sheet title).
+	 * There is no mono family and no uppercase label.
+	 */
 	--font-sans:
-		'Geist', 'Geist Fallback', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-	--font-display: var(--font-sans);
-	/* Geist Mono for labels, the tab bar and every number, time, unit and stat. */
-	--font-mono: 'Geist Mono', 'Geist Mono Fallback', ui-monospace, SFMono-Regular, Menlo, monospace;
-	--font-numeric: var(--font-mono);
+		'Mona Sans', 'Mona Sans Fallback', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+		sans-serif;
+	--font-display: 'Hubot Sans', 'Hubot Sans Fallback', var(--font-sans);
+	/* Every numeral is Mona Sans, never Hubot (v2: "Mona Sans for every large numeral"). */
+	--font-numeric: var(--font-sans);
 
-	--text-2xs: 0.6875rem; /* 11 — mono: day letters, units, axis ticks, legend */
-	--text-xs: 0.75rem; /* 12 — mono: section labels */
-	--text-meta: 0.8125rem; /* 13 — mono tab labels, back links, row indices, meta */
-	--text-sm: 0.875rem; /* 14 — sans subtitles and paragraphs */
-	--text-ui: 0.9375rem; /* 15 — sans rows and secondary buttons; mono inline values */
-	--text-base: 1rem; /* 16 — body; inputs never smaller (iOS zoom) */
-	--text-lg: 1.0625rem; /* 17 — the workout's primary action */
-	--text-xl: 1.25rem; /* 20 — section and card titles */
-	--text-2xl: 1.375rem; /* 22 — mono stat values */
-	--text-3xl: 2.125rem; /* 34 — page titles */
-	--text-4xl: 3rem; /* 48 — hero headline */
-	--text-5xl: 4rem; /* 64 — hero numerals */
-	--text-6xl: 4.5rem; /* 72 — unused */
+	/* Sizes, by role (docs/design-system.md#typography). The names are kept across components. */
+	--text-2xs: 0.75rem; /* 12: tab labels */
+	--text-xs: 0.8125rem; /* 13: captions, day letters, table heads */
+	--text-meta: 0.9375rem; /* 15: meta lines, back links */
+	--text-sm: 0.9375rem; /* 15: secondary lines, text links, field labels */
+	--text-ui: 1.0625rem; /* 17: rows, button labels */
+	--text-base: 1.0625rem; /* 17: body; inputs stay at 16 px or more (iOS zoom) */
+	--text-lg: 1.1875rem; /* 19: the workout's Done */
+	--text-xl: 1.5rem; /* 24: a unit beside a numeral */
+	--text-2xl: 1.625rem; /* 26: sheet title */
+	--text-3xl: 2rem; /* 32: statement */
+	--text-4xl: 2.5rem; /* 40: page title */
+	--text-5xl: 3.5rem; /* 56: display line, numeral M */
+	--text-6xl: 4rem; /* 64: numeral L */
+	--text-7xl: 7rem; /* 112: numeral XL (the set, the rest clock) */
+	--text-pace: 2.75rem; /* 44: a run segment's pace range */
 
 	--leading-none: 1;
-	--leading-tight: 1.12;
-	--leading-snug: 1.2;
-	--leading-normal: 1.45;
+	--leading-tight: 1.1; /* 40/44 page titles; display 56/60 and numerals use the role tokens */
+	--leading-snug: 1.1875; /* 32/38 statements */
+	--leading-normal: 1.53; /* 17/26 body */
 
 	--weight-regular: 400;
-	--weight-medium: 500;
-	--weight-semibold: 600;
-	--weight-bold: 700; /* unused */
+	--weight-medium: 500; /* numeral M and pace */
+	--weight-semibold: 600; /* display, titles, statements, sheet titles, button labels, numerals XL and L */
+	--weight-bold: 700; /* a few titles and numerals, until their v2 screen rows */
 	--weight-black: 800; /* unused */
 
-	--tracking-display: -0.03em;
-	--tracking-tight: -0.02em;
+	--tracking-hero: -0.04em; /* numerals XL and L */
+	--tracking-display-lg: -0.035em; /* the 56 px display line, numeral M */
+	--tracking-display: -0.03em; /* 40 px titles, pace */
+	--tracking-statement: -0.025em; /* 32 px statements */
+	--tracking-tight: -0.02em; /* 26 px sheet titles */
 	--tracking-normal: 0;
-	--tracking-hero: -0.04em;
-	--tracking-label: 0;
-	/* Retired: labels are lowercase, not tracked caps. Kept at 0 so existing uses still compile. */
-	--tracking-caps: 0;
+
+	/*
+	 * One font shorthand per role, so no screen re-derives a size. Set the tracking token from the
+	 * same role alongside it. The `font` shorthand resets font-variant-numeric, so set `.tabular`
+	 * after it.
+	 */
+	--type-display: var(--weight-semibold) var(--text-5xl) / 1.0714 var(--font-display); /* 56/60 */
+	--type-title: var(--weight-semibold) var(--text-4xl) / 1.1 var(--font-display); /* 40/44 */
+	--type-statement: var(--weight-semibold) var(--text-3xl) / 1.1875 var(--font-display); /* 32/38 */
+	--type-sheet-title: var(--weight-semibold) var(--text-2xl) / 1.2308 var(--font-display); /* 26/32 */
+	--type-body: var(--weight-regular) var(--text-base) / 1.5294 var(--font-sans); /* 17/26 */
+	--type-row: var(--weight-regular) var(--text-ui) / 1.2941 var(--font-sans); /* 17/22 */
+	--type-button: var(--weight-semibold) var(--text-ui) / 1.2941 var(--font-sans); /* 17/22 */
+	--type-button-lg: var(--weight-semibold) var(--text-lg) / 1.2632 var(--font-sans); /* 19/24 */
+	--type-secondary: var(--weight-regular) var(--text-sm) / 1.4667 var(--font-sans); /* 15/22 */
+	--type-caption: var(--weight-regular) var(--text-xs) / 1.3846 var(--font-sans); /* 13/18 */
+	--type-tab: var(--weight-regular) var(--text-2xs) / 1.3333 var(--font-sans); /* 12/16 */
+	--type-numeral-xl: var(--weight-semibold) var(--text-7xl) / 0.9286 var(--font-numeric); /* 112/104 */
+	--type-numeral-l: var(--weight-semibold) var(--text-6xl) / 1.0625 var(--font-numeric); /* 64/68 */
+	--type-numeral-m: var(--weight-medium) var(--text-5xl) / 1.1429 var(--font-numeric); /* 56/64 */
+	--type-numeral-pace: var(--weight-medium) var(--text-pace) / 1.2727 var(--font-numeric); /* 44/56 */
+	--type-unit: var(--weight-regular) var(--text-xl) / 1.3333 var(--font-sans); /* 24/32 */
 
 	/* ---- Spacing (4px grid, with the Instrument v2 steps between) ------------------- */
 	--space-0-5: 0.125rem;

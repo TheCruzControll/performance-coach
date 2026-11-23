@@ -101,21 +101,44 @@ test.describe('platform: health, PWA, observability', () => {
 		expect(outcome).toMatch(/^blocked:script-src/);
 	});
 
-	test('preloads two font files, the Geist and Geist Mono latin faces', async ({ page }) => {
-		// The latin-ext files wait for their unicode-range (src/lib/ui/fonts.ts).
+	test('preloads one font file, the Mona Sans latin face', async ({ page }) => {
+		// The latin-ext files and Hubot Sans wait for their unicode-range (src/lib/ui/fonts.ts).
 		for (const path of ['/', '/today']) {
 			await page.goto(path);
 			const fonts = page.locator('link[rel="preload"][as="font"]');
-			await expect(fonts, path).toHaveCount(2);
-			const hrefs = await fonts.evaluateAll((links) =>
-				links.map((link) => link.getAttribute('href') ?? '')
+			await expect(fonts, path).toHaveCount(1);
+			await expect(fonts, path).toHaveAttribute(
+				'href',
+				/mona-sans-latin-wght-normal\.[\w-]+\.woff2$/
 			);
-			expect(hrefs, path).toEqual(
-				expect.arrayContaining([
-					expect.stringMatching(/geist-latin-wght-normal\.[\w-]+\.woff2$/),
-					expect.stringMatching(/geist-mono-latin-wght-normal\.[\w-]+\.woff2$/)
-				])
-			);
+		}
+	});
+
+	test('sets the text in Mona Sans and the page title in Hubot Sans, with no mono type or uppercase', async ({
+		page
+	}) => {
+		for (const path of ['/today', '/progress']) {
+			await page.goto(path);
+			await expect(page.locator('h1').first(), path).toBeVisible();
+			const styles = await page.evaluate(() => ({
+				body: getComputedStyle(document.body).fontFamily,
+				title: getComputedStyle(document.querySelector('h1')!).fontFamily,
+				// Inputs are typed content: the recovery-code field keeps its uppercase on purpose.
+				stray: [...document.querySelectorAll('body *')]
+					.filter((el) => el.tagName !== 'INPUT')
+					.map((el) => {
+						const style = getComputedStyle(el);
+						return {
+							tag: el.tagName,
+							family: style.fontFamily,
+							transform: style.textTransform
+						};
+					})
+					.filter(({ family, transform }) => family.includes('Geist') || transform !== 'none')
+			}));
+			expect(styles.body, path).toMatch(/^"Mona Sans"/);
+			expect(styles.title, path).toMatch(/^"Hubot Sans"/);
+			expect(styles.stray, path).toEqual([]);
 		}
 	});
 

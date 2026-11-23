@@ -210,65 +210,110 @@ as data.
 
 ## Typography
 
-| Role                      | Family                    | Notes                                                                                                                |
-| ------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Titles, UI, body, buttons | **Geist** (variable)      | Titles at weight 500 (not a second family); body 400; primary button and selected segment 600                        |
-| Labels, tab bar, numbers  | **Geist Mono** (variable) | Every number, time, unit and stat; the label style (below); the tab bar                                              |
-| Numerals                  | **Geist Mono**            | `.numeric`: standalone values, hero numerals; `.tabular`: timers and columns that update in place (`--font-numeric`) |
+Mona Sans sets all text and every numeral. Hubot Sans sets the one display line on a screen (the
+display, title, statement and sheet-title roles below), and never a numeral. There is no mono type
+and no uppercase: no `text-transform` appears on the page, except the recovery-code input, which
+uppercases what is typed.
 
-Every number, time and unit is set in Geist Mono, so a value reads the same wherever it sits, and
-columns line up without a tabular toggle. Inter appears on one Paper board (Progress views) and is
-not shipped; Mona Sans and Hubot Sans, the previous families, are removed.
+| Role                          | Family     | Size / line-height (px)     | Weight           | Tracking |
+| ----------------------------- | ---------- | --------------------------- | ---------------- | -------- |
+| Display line (hero)           | Hubot Sans | 56 / 60                     | 600              | −0.035em |
+| Page title                    | Hubot Sans | 40 / 44                     | 600              | −0.03em  |
+| Statement (finding, question) | Hubot Sans | 32 / 38                     | 600              | −0.025em |
+| Sheet title                   | Hubot Sans | 26 / 32                     | 600              | −0.02em  |
+| Body / paragraph              | Mona Sans  | 17 / 26                     | 400              | 0        |
+| Row (list title and value)    | Mona Sans  | 17 / 22                     | 400              | 0        |
+| Button label                  | Mona Sans  | 17 / 22                     | 600              | 0        |
+| Secondary line / link         | Mona Sans  | 15 / 22                     | 400              | 0        |
+| Row label in a table          | Mona Sans  | 15 / 18                     | 400              | 0        |
+| Caption                       | Mona Sans  | 13 / 18                     | 400              | 0        |
+| Day letter                    | Mona Sans  | 13 / 16                     | 400 (600 today)  | 0        |
+| Tab label                     | Mona Sans  | 12 / 16                     | 400 (600 active) | 0        |
+| Numeral XL (set, rest clock)  | Mona Sans  | 112 / 104 (clock 112 / 112) | 600              | −0.04em  |
+| Numeral L                     | Mona Sans  | 64 / 68                     | 600              | −0.04em  |
+| Numeral M                     | Mona Sans  | 56 / 64                     | 500              | −0.035em |
+| Numeral pace                  | Mona Sans  | 44 / 56                     | 500              | −0.03em  |
+| Unit beside a numeral         | Mona Sans  | 24 / 32                     | 400              | 0        |
 
-Scale (`--text-*`): 2xs 11 · xs 12 · meta 13 · sm 14 · ui 15 · base 16 · lg 17 · xl 20 · 2xl 22 ·
-3xl 34 · 4xl 48 · 5xl 64 · 6xl 72 px. `--text-meta` (13) is mono tab labels, back links and row
-indices; `--text-ui` (15) is sans rows and secondary buttons. Inputs are never below 16 px (prevents
-iOS zoom). Line heights: `--leading-none 1` (hero numerals), `--leading-tight 1.12` (34 px titles),
-`--leading-snug 1.2` (20 px titles), `--leading-normal 1.45` (paragraphs).
+Two Mona Sans sizes sit beside the roles: a run segment's name ("Intervals") is 40 / 44, 600,
+−0.03em, and plate counts ("25 · 15") are 32 / 38, 600, −0.025em. The sign-in screen's display line
+is Mona Sans too, as drawn in Paper, not Hubot.
 
-Weights: `--weight-regular 400`, `medium 500` (titles, row titles, stat values, hero numerals),
-`semibold 600` (primary button, selected segment and day). `bold 700` and `black 800` are unused.
-Tracking: `--tracking-display -0.03em` (34 px titles), `--tracking-tight -0.02em` (20 px titles),
-`--tracking-hero -0.04em` (48 px headline, 64 px numerals), `--tracking-normal` and `--tracking-label` 0. `--tracking-caps` is retired (0): labels are lowercase, not tracked capitals.
+Numerals that update in place or line up in columns use `.tabular` (`tabular-nums`). Mona Sans is
+proportional by default, so `.numeric` (a standalone value) sets `proportional-nums`. Paper cannot
+set tabular numerals in these fonts without a slashed zero, so the design shows none.
+
+Scale (`--text-*`, px): 2xs 12 · xs 13 · meta 15 · sm 15 · ui 17 · base 17 · lg 19 · xl 24 · 2xl 26 ·
+3xl 32 · 4xl 40 · 5xl 56 · 6xl 64 · 7xl 112 · pace 44. Names are kept across components, so a name
+can carry a different size from the one it had: `--text-meta` and `--text-sm` are both 15, and
+`--text-ui` and `--text-base` are both 17. Inputs are never below 16 px (prevents iOS zoom).
+
+Line heights: `--leading-none 1`, `--leading-tight 1.1` (40 px titles), `--leading-snug 1.1875`
+(32 px statements), `--leading-normal 1.53` (17 px body). Display lines and numerals take their
+line height from their role token.
+
+Weights: `--weight-regular 400`, `--weight-medium 500` (numeral M and pace), `--weight-semibold 600`
+(every display, title, statement and sheet title; button labels; numerals XL and L; the active tab
+and today). `black 800` is unused. `bold 700` stays on a few titles and numerals (`PageHeader`,
+`WorkoutHeader`, `NumberStepper`, `ExerciseCard`) until their screen rows move them to 600.
+
+Tracking: `--tracking-hero -0.04em` (numerals XL and L), `--tracking-display-lg -0.035em` (the 56 px
+display line and numeral M), `--tracking-display -0.03em` (40 px titles and pace),
+`--tracking-statement -0.025em` (32 px statements), `--tracking-tight -0.02em` (26 px sheet titles),
+`--tracking-normal 0` everywhere else.
+
+### Role tokens
+
+Each role is one `font` shorthand in `src/lib/ui/styles/tokens.css`, so no screen re-derives a size:
+
+```css
+--type-display: var(--weight-semibold) var(--text-5xl) / 1.0714 var(--font-display);
+--type-title: var(--weight-semibold) var(--text-4xl) / 1.1 var(--font-display);
+--type-statement: var(--weight-semibold) var(--text-3xl) / 1.1875 var(--font-display);
+--type-sheet-title: var(--weight-semibold) var(--text-2xl) / 1.2308 var(--font-display);
+--type-body: var(--weight-regular) var(--text-base) / 1.5294 var(--font-sans);
+--type-row: var(--weight-regular) var(--text-ui) / 1.2941 var(--font-sans);
+--type-button: var(--weight-semibold) var(--text-ui) / 1.2941 var(--font-sans);
+--type-button-lg: var(--weight-semibold) var(--text-lg) / 1.2632 var(--font-sans);
+--type-secondary: var(--weight-regular) var(--text-sm) / 1.4667 var(--font-sans);
+--type-caption: var(--weight-regular) var(--text-xs) / 1.3846 var(--font-sans);
+--type-tab: var(--weight-regular) var(--text-2xs) / 1.3333 var(--font-sans);
+--type-numeral-xl: var(--weight-semibold) var(--text-7xl) / 0.9286 var(--font-numeric);
+--type-numeral-l: var(--weight-semibold) var(--text-6xl) / 1.0625 var(--font-numeric);
+--type-numeral-m: var(--weight-medium) var(--text-5xl) / 1.1429 var(--font-numeric);
+--type-numeral-pace: var(--weight-medium) var(--text-pace) / 1.2727 var(--font-numeric);
+--type-unit: var(--weight-regular) var(--text-xl) / 1.3333 var(--font-sans);
+```
+
+The `font` shorthand resets `font-variant-numeric`, and it also overrides a class set on the same
+element. So set `font-variant-numeric` (or `.tabular`) after `font`, and set the tracking token
+from the same role as `letter-spacing`.
 
 ### Labels
 
-A label is mono 12/16, weight 400, tertiary, and **lowercase**. It is the `.eyebrow` class
-(`src/lib/ui/styles/base.css`):
-
-```css
-.eyebrow {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  line-height: 16px;
-  font-weight: var(--weight-regular);
-  letter-spacing: var(--tracking-label);
-  text-transform: lowercase;
-  color: var(--color-text-tertiary);
-}
-```
-
-Copy is authored in lowercase and the transform guards it, so a label never needs a copy change.
-Variants the design uses (built with the components): accent ("proposed change", "block
-complete"), secondary (a key-figure label, "half steps"), and a 13 px secondary line for the date
-above a title. The `/design` page shows the base style.
+There is no label style. The small line above a title is a plain secondary line: `.eyebrow`
+(`src/lib/ui/styles/base.css`) is the `secondary` role in `--color-text-secondary`, Mona Sans 15 / 22,
+weight 400, with no transform and no tracking. v2 screens remove most of these ("no small label
+above a heading"). Field labels use the same secondary role; a table's column heads use the
+caption role in tertiary.
 
 ### Fonts: loading strategy
 
-- Self-hosted from `@fontsource-variable/{geist,geist-mono}` (5.3.0, OFL-1.1, devDependencies). Vite
-  emits the woff2 files that `src/lib/ui/styles/fonts.css` references. Only the **latin** `wght`
-  woff2 files are declared for the main ranges: Geist 29.4 KB, Geist Mono 23.1 KB. Their latin-ext
-  files (Geist 16.5 KB, Geist Mono 14.7 KB) sit behind a `unicode-range` and are fetched only when
-  needed. The weight axis is declared as `100 900`, though the design uses 400–600.
-- Both latin files are **preloaded** (52.5 KB together): every screen paints its text in Geist and
-  its labels and numbers in Geist Mono. The policy is in `src/lib/ui/fonts.ts` and applied in
-  `hooks.server.ts`; the budget is ≤ 2 preloaded files (`pnpm budgets`).
-- Metric-matched fallbacks: `Geist Fallback` → local Arial/Helvetica (`size-adjust` 105%,
-  `ascent-override` 95.7%, `descent-override` 28.1%, `line-gap-override` 0%), and `Geist Mono
-Fallback` → local Menlo/Courier New (`size-adjust` 99.7%, `ascent-override` 100.8%,
-  `descent-override` 29.6%, `line-gap-override` 0%). They are computed with fontTools at weight 400:
-  the average advance over an English sample, and the hhea ascent, descent and line gap. The new
-  faces are not yet re-measured for CLS: re-measure on the audited routes (docs/performance.md).
+- Self-hosted from `@fontsource-variable/{mona-sans,hubot-sans}` (5.3.0, OFL-1.1, devDependencies).
+  Vite emits the woff2 files that `src/lib/ui/styles/fonts.css` references. The latin `wght` files
+  are Mona Sans 39.8 KB and Hubot Sans 48.3 KB; their latin-ext files sit behind a `unicode-range`
+  and are fetched only when needed. The weight axis is declared as `200 900`.
+- Only the **Mona Sans latin** file is preloaded (one file, 39.8 KB): every screen paints its text
+  and its numerals in Mona Sans. Hubot Sans swaps in behind its metric-matched fallback. The policy
+  is in `src/lib/ui/fonts.ts` and applied in `hooks.server.ts`; the budget is ≤ 2 preloaded files
+  (`pnpm budgets`).
+- Metric-matched fallbacks: `Mona Sans Fallback` → local Arial/Helvetica (`size-adjust` 105%,
+  `ascent-override` 103.8%, `descent-override` 30.5%, `line-gap-override` 0%), and
+  `Hubot Sans Fallback` → local Arial/Helvetica (`size-adjust` 102%, `ascent-override` 106.9%,
+  `descent-override` 31.4%, `line-gap-override` 0%). They are computed with fontTools at weight 400:
+  the average advance over an English sample, and the hhea ascent, descent and line gap. The
+  Mona and Hubot faces are not yet re-measured for CLS: re-measure on the audited routes
+  (docs/performance.md).
 
 ## Space, shape, depth, motion
 
@@ -316,7 +361,7 @@ Fallback` → local Menlo/Courier New (`size-adjust` 99.7%, `ascent-override` 10
   landing CTAs are above the fold). `e2e/shell.e2e.ts` asserts all three.
 - Failure states keep the shell: offline and error screens render inside it with the screen's
   title (`src/routes/ErrorView.svelte`), and a connectivity notice appears while offline.
-- Large titles (`PageHeader`): eyebrow + 34 px display title, iOS-style.
+- Large titles (`PageHeader`): eyebrow + 32 px display title, iOS-style.
 - Toasts appear at the top (clear of the thumb zone and nav); sheets rise from the bottom, and
   open as centred dialogs from 1024 px (Responsive layout → Dialogs & toasts).
 
@@ -606,8 +651,8 @@ later-pass screen).
 | `Toaster` + `toast` | Polite live region; `neutral · positive · danger`; optional action; auto-dismiss. Screen chrome at the top, centred over the column (beside the rail from 1024 px), or in the window outside the shell.                                                                            |
 | `PageHeader`        | Eyebrow + large title + trailing slot; a `badge` sits on the eyebrow line, clear of the title.                                                                                                                                                                                     |
 | `BrandMark`         | The performance-gauge mark (also the PWA icon).                                                                                                                                                                                                                                    |
-| `Stat`              | The one metric tile: label, big value + inline unit, optional rating (word + dot), caption. `level 1` on the canvas (22 px value), `level 2` nested in a card (20 px). No value → a dash announced as "No data yet", never a made-up number.                                       |
-| `Badge`             | Uppercase status pill: `neutral` (default; the only tone for "Soon"), `accent` (the next step, sparingly), `positive · warning · danger`; optional icon. Words carry the meaning.                                                                                                  |
+| `Stat`              | The one metric tile: label, big value + inline unit, optional rating (word + dot), caption. `level 1` on the canvas (26 px value), `level 2` nested in a card (24 px). No value → a dash announced as "No data yet", never a made-up number.                                       |
+| `Badge`             | Status pill: `neutral` (default; the only tone for "Soon"), `accent` (the next step, sparingly), `positive · warning · danger`; optional icon. Words carry the meaning.                                                                                                            |
 | `Chip`              | Quiet outlined label (e.g. a discipline) with an optional discipline-colour dot; static, not a control.                                                                                                                                                                            |
 | `ListRow`           | Tool/destination row: tinted icon tile, title, subtitle, chevron or `trailing` snippet; renders a link (`href`), a button (`onclick`) or a dashed, non-interactive row (`disabled`, for "Soon").                                                                                   |
 | `Section`           | Titled group on a screen ("This week", "Tools"): one heading style and spacing everywhere, `aria-labelledby` wired.                                                                                                                                                                |
@@ -636,7 +681,7 @@ later-pass screen).
 | `Toggle`            | On/off row: a native checkbox with `role="switch"` covering the whole row (the hit area, ≥ 44 px), the title as its name and the description as `aria-describedby`; Space flips it; the thumb's side says on or off.                                                               |
 | `TagInput`          | Short free-text list: Add or Return adds the trimmed text, a repeat in any case is refused, `maxlength` and `max` hold; removable pills (44 px remove buttons), one-tap suggestions, every change and refusal announced politely.                                                  |
 | `Notice`            | Inline state message: `danger` (role `alert`) · `positive` · `warning` · `neutral` (role `status`); tinted, icon + words.                                                                                                                                                          |
-| `RecoveryCodes`     | One-time display of recovery codes: numbered monospace list (one per row on a phone, two columns when the container allows), copy and download, required acknowledgement checkbox.                                                                                                 |
+| `RecoveryCodes`     | One-time display of recovery codes: numbered list (one per row on a phone, two columns when the container allows), copy and download, required acknowledgement checkbox.                                                                                                           |
 | `ChartFrame`        | `ui/charts`. A chart's `<figure>`: title, context and summary server-rendered; the plot box reserved with a hairline grid; the body from a `CHART_BODIES` loader after hydration; a failed chunk: `Notice` and Retry; no JS: 'Chart needs JavaScript'; an `availability` slot.     |
 | `ChartTable`        | `ui/charts`. The table twin: `<details>` 'Show as table' (≥ 44 px), a keyboard-scrollable table with scoped headers, units, every value ('No data' when missing), the week in progress marked 'so far'.                                                                            |
 | `LineChart`         | `ui/charts/bodies`, `CHART_BODIES.line`. Up to 4 series: 2 px lines with gaps, legend from 2, end labels with leaders (numbers < 18rem); 8 px end dot, hollow ring (estimated), diamond (measured), dashed ring 'so far'; crosshair and tooltip by pointer, touch or ←/→/Home/End. |

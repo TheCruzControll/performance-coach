@@ -91,9 +91,14 @@ runs the criteria and updates milestones.md.
   build on both. The old M7 pull requests stay open until their rows merge.
 - **Instrument v2 tokens (`v2/01a`).** The colours, surfaces, borders, spacing, radii and the theme
   colour follow Instrument v2 in `src/lib/ui/styles/tokens.css`, in dark and
-  light; `docs/design-system.md` and `/design` show them. The type (`v2/01b`) is next. The 28 px gutter moves with the shell in `v2/03`: at 28 px the workout's
-  logger wraps its effort chips and grows over the exercise header, which `v2/10` redesigns. The rest of
+  light; `docs/design-system.md` and `/design` show them. The 28 px gutter moves with the shell in `v2/03`: at 28 px the workout's
+  logger grew over the exercise header, so v2/03 re-measures it (the effort chips now keep one line). The rest of
   the Instrument v2 rows are queued in `plan/queue.md` and wait on the tokens.
+- **Instrument v2 type (`v2/01b`).** Mona Sans sets all text and every numeral, Hubot Sans the one
+  display line on a screen, and the mono and uppercase labels are gone (`src/lib/ui/styles/tokens.css`,
+  `base.css`, `fonts.css`). The fonts are self-hosted `@fontsource-variable/mona-sans` and
+  `hubot-sans` (5.3.0), with only Mona Sans latin preloaded. `/design` shows the type scale and the
+  `--type-*` roles. The 390 px layouts still need the CI e2e run and a look in a browser.
 - **Adding a session to a program.** The builder, the storage
   (`src/lib/server/services/programs/add.ts`), Train's Add session sheet and the coach's proposal
   are built: `propose_program_adjustment` takes an `add_session` op, and accepting it is one new

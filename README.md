@@ -45,7 +45,7 @@ log every set and talk to the coach.
 | Database      | PostgreSQL — Neon Lakebase Postgres 18 in prod/preview, Postgres 18 in CI, local Postgres 16+ in dev                     |
 | Data access   | Drizzle ORM + committed SQL migrations · node-postgres `Pool` + `attachDatabasePool`                                     |
 | Config        | zod-validated environment (`src/lib/server/env.ts`) · `neon.ts` (Postgres only)                                          |
-| UI            | Hand-built design system (CSS custom properties, dark-first), Geist + Geist Mono (self-hosted)                           |
+| UI            | Hand-built design system (CSS custom properties, dark-first), Mona Sans + Hubot Sans (self-hosted)                       |
 | PWA           | Web manifest, generated icons, SvelteKit service worker (versioned precache, offline fallback)                           |
 | Observability | Server-Timing, JSON logs, `app_errors` (server + browser errors), RUM via web-vitals → `web_vitals`                      |
 | Tests         | Vitest (unit + integration on real Postgres), Playwright 1.63 (phone + desktop, axe in both themes), budgets, Lighthouse |

@@ -192,9 +192,7 @@
 		color: var(--color-text-secondary);
 		font-size: var(--text-2xs);
 		font-weight: var(--weight-semibold);
-		letter-spacing: var(--tracking-caps);
 		line-height: 1;
-		text-transform: uppercase;
 		white-space: nowrap;
 	}
 

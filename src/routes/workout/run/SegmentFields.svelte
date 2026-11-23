@@ -124,5 +124,6 @@
 		font-family: var(--font-numeric);
 		font-size: var(--text-2xl);
 		font-weight: var(--weight-bold);
+		font-variant-numeric: lining-nums tabular-nums;
 	}
 </style>
