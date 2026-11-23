@@ -255,3 +255,21 @@ describe('evaluateWeek: determinism', () => {
 		expect(findings).toEqual(before);
 	});
 });
+
+describe('evaluateWeek: an empty priorities list', () => {
+	// Heavy lower body in the morning, then hard Muay Thai in the evening: M3's wrong order.
+	const [lower, sparring] = PRD_WEEKS.squat_before_sparring();
+	const wrongOrder: EvaluatedSession[] = [
+		{ ...lower!, date: weekDay(0), timeOfDay: 'morning', orderInDay: 1 },
+		{ ...sparring!, date: weekDay(0), timeOfDay: 'evening', orderInDay: 2 }
+	];
+	const build = { kind: 'build' } as const;
+
+	it('is read as no priorities, so M3’s same_day_order still reports the wrong order', () => {
+		const none = evaluateWeek(wrongOrder, { context: { week: build } });
+		const empty = evaluateWeek(wrongOrder, { context: { priorities: [], week: build } });
+		expect(rules(none.findings)).toContain('placement.same_day_order');
+		expect(rules(empty.findings)).toContain('placement.same_day_order');
+		expect(empty).toEqual(none);
+	});
+});

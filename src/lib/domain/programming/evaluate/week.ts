@@ -268,19 +268,22 @@ export function evaluateWeek(
 	const hints = (options.hints ?? []).toSorted((a, b) =>
 		compareText(canonicalJson(a), canonicalJson(b))
 	);
-	const { traitsOf, openDates, context } = options;
+	const { traitsOf, openDates } = options;
+	// An empty priorities list ranks no goal, so it is read as none: the week is judged as without it.
+	const priorities = options.context?.priorities?.length ? options.context.priorities : undefined;
+	const context = options.context && { ...options.context, priorities };
 	const resolve = resolvers(
 		hints,
 		open.filter((date) => !taken.has(date)),
-		context?.priorities
+		priorities
 	);
-	const weight = weightFor(context?.priorities);
+	const weight = weightFor(priorities);
 	let drafts: Draft[] = checkWeek(happening, { traitsOf, openDates }).map((v) =>
 		draftOf(v, weight)
 	);
 	if (hasContext(context)) {
 		drafts = [
-			...drafts.filter((d) => !(context.priorities && d.rule === 'placement.same_day_order')),
+			...drafts.filter((d) => !(priorities && d.rule === 'placement.same_day_order')),
 			...checkConcurrent(happening, context, traitsOf).map((f) => ({
 				...f,
 				area: 'concurrent' as const
@@ -299,6 +302,6 @@ export function evaluateWeek(
 		),
 		grade: gradeOf(findings),
 		findings,
-		fingerprint: fnv1a64(canonicalJson(judged(happening, options)))
+		fingerprint: fnv1a64(canonicalJson(judged(happening, { ...options, context })))
 	};
 }

@@ -226,7 +226,9 @@ export function repairWeek<S extends EvaluatedSession>(
 	ctx: RepairContext
 ): RepairResult<S> {
 	const traitsOf = ctx.traitsOf ?? catalogueTraits;
-	const { today, keepOwnerMoves = true, priorities } = ctx;
+	const { today, keepOwnerMoves = true } = ctx;
+	// An empty priorities list ranks no goal, so it is read as none: the week is repaired as without it.
+	const priorities = ctx.priorities?.length ? ctx.priorities : undefined;
 	const open = new Set(ctx.open.filter((d) => today === undefined || d >= today));
 	const completed = new Set(ctx.completed ?? []);
 	const weight = weightFor(priorities);
