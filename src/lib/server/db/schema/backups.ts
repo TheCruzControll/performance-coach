@@ -38,7 +38,7 @@ export const backupRuns = pgTable(
 		index('backup_runs_status_started_idx').on(t.status, t.startedAt.desc()),
 		check('backup_runs_trigger_ck', inList('trigger', BACKUP_TRIGGERS)),
 		check('backup_runs_status_ck', inList('status', BACKUP_RUN_STATUSES)),
-		check('backup_runs_running_ck', sql`${t.status} <> 'running' or ${t.finishedAt} is null`),
+		check('backup_runs_running_ck', sql`(${t.status} = 'running') = (${t.finishedAt} is null)`),
 		check(
 			'backup_runs_error_code_ck',
 			sql`${t.errorCode} is null or ${t.errorCode} ~ '^[a-z_]{1,64}$'`

@@ -97,6 +97,23 @@ describe('backup_runs', () => {
 		await expect(insert('manual', 'skipped', at(2040), null)).resolves.toBeDefined();
 	});
 
+	it('a run is running exactly when it has no finish time', async () => {
+		// Refusals only: no row is written, so the table holds nothing the later tests did not open.
+		const insert = (status: string, finishedAt: Date | null) =>
+			owner.query(
+				'INSERT INTO backup_runs (trigger, status, started_at, finished_at) VALUES ($1, $2, $3, $4)',
+				['cron', status, at(2040, 40), finishedAt]
+			);
+		for (const status of ['succeeded', 'failed', 'skipped']) {
+			await expect(insert(status, null)).rejects.toMatchObject(
+				refused('23514', 'backup_runs_running_ck')
+			);
+		}
+		await expect(insert('running', at(2040, 41))).rejects.toMatchObject(
+			refused('23514', 'backup_runs_running_ck')
+		);
+	});
+
 	it('a finished run never changes, and is never deleted while young', async () => {
 		const id = await startRun(owner, { trigger: 'manual', appVersion: '1.0.0', now: at(2040, 0) });
 		expect(await finishRun(owner, id, SUCCESS, at(2040, 5))).toBe(true);

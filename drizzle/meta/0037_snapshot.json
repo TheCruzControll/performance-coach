@@ -1,5 +1,5 @@
 {
-  "id": "cbe92307-3b59-4b7c-8dcd-bd9136f2ffb6",
+  "id": "a9c28e8b-f851-4146-b98a-cb88376a488e",
   "prevId": "1d80f42c-4897-454e-8019-680335f6dfa2",
   "version": "7",
   "dialect": "postgresql",
@@ -9879,7 +9879,7 @@
         },
         "backup_runs_running_ck": {
           "name": "backup_runs_running_ck",
-          "value": "\"backup_runs\".\"status\" <> 'running' or \"backup_runs\".\"finished_at\" is null"
+          "value": "(\"backup_runs\".\"status\" = 'running') = (\"backup_runs\".\"finished_at\" is null)"
         },
         "backup_runs_error_code_ck": {
           "name": "backup_runs_error_code_ck",
