@@ -52,9 +52,13 @@ runs the criteria and updates milestones.md.
 
 ## In flight
 
-- **32 open pull requests**, counted on 2026-11-21. Twenty-five are M7 slices (periodisation,
-  re-plan proposals, reactive deloads, the season timeline). The rest are two M6, one M5, and
-  four others (CI, perf, one feature, one cloud-session branch).
+- **M7, re-sliced.** On 2026-11-22 the parked M7 pull requests were re-sliced into 36 `m7r/` rows
+  in `plan/m7-reslice.md`. By the end of that day 17 had merged. They cover the generator's
+  stages and season, the evaluation context and Train's week findings, move and review
+  evaluation, week kinds, the road view and season timeline, the coach's interference read, and
+  the re-plan rules and regenerate path. m7r/03 is parked for a redesign, and m7r/04 to m7r/10
+  wait on it. The taper and deload re-plan, the trade-offs read and the re-plan store are in
+  review. The old M7 pull requests stay open until their rows merge.
 - **Coach run trace and self-improving evals.** Planned, nothing built. The plan is eight PRs in
   `plan/trace-evals/plan.md`, written 738 commits ago, so its file pointers need re-checking
   against `main` before anyone builds from it. The owner must provide three secrets before the
