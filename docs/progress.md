@@ -134,6 +134,12 @@ runs the criteria and updates milestones.md.
   Inputs tab and `docs/design-system.md` show them. The logger and the set edit sheet keep their
   pre-v2 stepper text and 56 px controls until `v2/10` (known-issues). Phone layouts and the axe run
   are CI's to prove.
+- **Instrument v2 rows, sheets and toasts (`v2/02c`).** `ListRow` is the v2 list row: 60 px, a
+  hairline under each row but a list's last, an optional trailing `value`, a `danger` title, and
+  no icon tile (its `icon` and `tone` are accepted and not drawn). Sheets have a 36 × 4 handle, a
+  Hubot 26/32 title, a 44 px bottom with the home indicator inside it, and a quiet ghost close.
+  Toasts are a surface-2 line that stays at the top until `v2/03`. The `/design` Data and Feedback
+  tabs and `docs/design-system.md` show them. Phone layouts and sheet heights are CI’s to prove.
 - **Adding a session to a program.** The builder, the storage
   (`src/lib/server/services/programs/add.ts`), Train's Add session sheet and the coach's proposal
   are built: `propose_program_adjustment` takes an `add_session` op, and accepting it is one new
