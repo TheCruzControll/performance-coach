@@ -190,8 +190,14 @@ export class CoachTurn {
 			case 'recorded': {
 				// Its card sends the run that logged it, which run_started named.
 				const runId = this.runId;
-				if (runId === null || this.recorded.some((each) => each.id === event.id)) return;
-				this.recorded = [...this.recorded, { id: event.id, label: event.label, runId }];
+				if (runId === null) return;
+				// A second event for the same weigh-in replaces its label in place, as activity does.
+				const card = { id: event.id, label: event.label, runId };
+				const at = this.recorded.findIndex((each) => each.id === event.id);
+				this.recorded =
+					at < 0
+						? [...this.recorded, card]
+						: this.recorded.map((each, i) => (i === at ? card : each));
 				return;
 			}
 			case 'answer_completed':

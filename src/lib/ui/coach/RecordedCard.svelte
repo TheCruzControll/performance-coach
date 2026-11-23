@@ -6,11 +6,11 @@
   way the button is disabled and busy. Once it took the write back the card reads 'Undone'; when
   the weigh-in is gone, or no longer the coach's write, 'Nothing to undo'. A request that did not
   go through says so in place, and Try again sends it again, which is safe: the server takes the
-  write back once. Its words are in domain/coach/recorded.ts. The card wears the coach's draft-card
-  styles, so it reads as part of the conversation, not as an action of its own.
+  write back once. Its words are in domain/coach/recorded.ts. The card uses the proposal card's box,
+  so it reads as part of the conversation, not as an action of its own.
 -->
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { WeighInUndo } from '#lib/client/coach/weigh-in-undo.svelte.ts';
 	import { NOTHING_TO_UNDO, UNDO_FAILED, UNDONE } from '#lib/domain/coach/recorded.ts';
 	import Button from '../components/Button.svelte';
@@ -27,8 +27,27 @@
 
 	let { id, label, runId, 'data-testid': testId = 'recorded-card' }: Props = $props();
 
-	// One card per weigh-in: its id and run never change, so the card is made once from them.
+	// The parent keys each card by its weigh-in and run (weighInKey), so a card is only ever given
+	// one pair: it is made once from them.
 	const undo = untrack(() => new WeighInUndo(id, runId));
+
+	/** The outcome, which takes focus once Undo settles; Try again's wrap, for focus after a failure. */
+	let outcomeEl = $state<HTMLElement>();
+	let undoWrap = $state<HTMLElement>();
+
+	// The button that was pressed is busy and then gone, so focus would fall to the page's top: when
+	// Undo settles its outcome takes focus, and when it failed Try again does. Only the phase is
+	// tracked, so a busy change does not move it.
+	$effect(() => {
+		const phase = undo.phase;
+		untrack(() => {
+			if (phase !== 'undone' && phase !== 'nothing' && phase !== 'failed') return;
+			void tick().then(() => {
+				if (phase === 'failed') undoWrap?.querySelector('button')?.focus();
+				else outcomeEl?.focus();
+			});
+		});
+	});
 
 	/** The line the status region announces; the visible words are in the card itself. */
 	const announced = $derived(
@@ -52,20 +71,23 @@
 >
 	<p class="line">
 		{#if undo.settled}
-			<span data-testid="recorded-outcome"
+			<span data-testid="recorded-outcome" tabindex="-1" bind:this={outcomeEl}
 				>{undo.phase === 'undone' ? UNDONE : NOTHING_TO_UNDO}</span
 			>
 		{:else}
-			<span data-testid="recorded-label">{label}</span>
+			<span id="recorded-{id}-label" data-testid="recorded-label">{label}</span>
 			<span class="dot" aria-hidden="true">·</span>
-			<Button
-				variant="ghost"
-				size="sm"
-				loading={undo.posting}
-				disabled={undo.posting}
-				onclick={() => undo.undo()}
-				data-testid="recorded-undo">{undo.phase === 'failed' ? 'Try again' : 'Undo'}</Button
-			>
+			<span class="action" bind:this={undoWrap}>
+				<Button
+					variant="ghost"
+					size="sm"
+					loading={undo.posting}
+					disabled={undo.posting}
+					aria-describedby="recorded-{id}-label"
+					onclick={() => undo.undo()}
+					data-testid="recorded-undo">{undo.phase === 'failed' ? 'Try again' : 'Undo'}</Button
+				>
+			</span>
 		{/if}
 	</p>
 	{#if undo.phase === 'failed'}
@@ -99,6 +121,10 @@
 
 	.dot {
 		color: var(--color-text-tertiary);
+	}
+
+	.action {
+		display: inline-flex;
 	}
 
 	.failure {

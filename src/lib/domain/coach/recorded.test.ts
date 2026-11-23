@@ -26,8 +26,11 @@ describe('the Undo card’s label', () => {
 		expect(dayWords('2027-01-02', '2027-01-03')).toBe('yesterday');
 	});
 
-	it('is keyed by the weigh-in’s id', () => {
-		expect(weighInKey(41)).toBe('weigh-in:41');
-		expect(weighInKey(41)).not.toBe(weighInKey(14));
+	it('is keyed by the weigh-in’s id and the run that logged it', () => {
+		const run = '00000000-0000-4000-8000-0000000000b1';
+		const other = '00000000-0000-4000-8000-0000000000b2';
+		expect(weighInKey(41, run)).toBe(`weigh-in:41:${run}`);
+		expect(weighInKey(41, run)).not.toBe(weighInKey(14, run));
+		expect(weighInKey(41, run)).not.toBe(weighInKey(41, other));
 	});
 });

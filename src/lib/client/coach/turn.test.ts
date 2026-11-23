@@ -183,8 +183,29 @@ describe('CoachTurn.apply', () => {
 		expect(turn.recorded).toEqual([]);
 		turn.apply(started);
 		turn.apply(logged);
-		turn.apply(logged);
 		expect(turn.recorded).toEqual([{ id: 41, label: 'Logged 82.4 kg for today', runId: RUN }]);
+	});
+
+	it('a second event for the same weigh-in replaces its label in place, keeping its place', () => {
+		const turn = new CoachTurn(request(), { frame: () => {} });
+		turn.apply(started);
+		turn.apply({
+			type: 'recorded',
+			kind: 'body_weight',
+			id: 41,
+			label: 'Logged 82.4 kg for today'
+		});
+		turn.apply({
+			type: 'recorded',
+			kind: 'body_weight',
+			id: 7,
+			label: 'Logged 80 kg for yesterday'
+		});
+		turn.apply({ type: 'recorded', kind: 'body_weight', id: 41, label: 'Logged 81 kg for today' });
+		expect(turn.recorded).toEqual([
+			{ id: 41, label: 'Logged 81 kg for today', runId: RUN },
+			{ id: 7, label: 'Logged 80 kg for yesterday', runId: RUN }
+		]);
 	});
 
 	it('draws a block’s waiting words before the next block starts', () => {

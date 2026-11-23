@@ -33,6 +33,7 @@ import {
 	shownMessages,
 	whenWords,
 	type Prefill,
+	type RunWeighIn,
 	type ShownMessage,
 	type ThreadRowView
 } from './words';
@@ -95,13 +96,18 @@ export async function loadCoachScreen(
 			const cards = proposals.map(({ runId, proposal }) => ({ runId, card: cardOf(proposal) }));
 			// The Undo card of each weigh-in a run logged, in the owner's day (weighInLabel's words).
 			const logged = await listThreadWeightLogs(ownerId, runIds, { db });
-			const { timeZone } = await getAthleteProfile(ownerId, { db });
-			const today = localDay(now(), timeZone);
-			const weighIns = logged.map(({ id, runId, ...entry }) => ({
-				runId,
-				entryId: id,
-				label: weighInLabel(entry, today)
-			}));
+			const weighIns: RunWeighIn[] = [];
+			if (logged.length > 0) {
+				const { timeZone } = await getAthleteProfile(ownerId, { db });
+				const today = localDay(now(), timeZone);
+				weighIns.push(
+					...logged.map(({ id, runId, ...entry }) => ({
+						runId,
+						entryId: id,
+						label: weighInLabel(entry, today)
+					}))
+				);
+			}
 			return {
 				prefill,
 				failed: false,

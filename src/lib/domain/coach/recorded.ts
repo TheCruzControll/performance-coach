@@ -33,8 +33,11 @@ export function weighInLabel(entry: WeighInWords, today: IsoDate): string {
 	return `Logged ${entry.value} ${entry.unit} for ${dayWords(entry.measuredOn, today)}`;
 }
 
-/** The key a card is listed by, in a conversation and in a turn alike: its weigh-in's id. */
-export const weighInKey = (id: number): string => `weigh-in:${id}`;
+/**
+ * The key a card is listed by, in a conversation and in a turn alike: its weigh-in's id and the run
+ * that logged it, so a run that logs the same weigh-in again is a card of its own.
+ */
+export const weighInKey = (id: number, runId: string): string => `weigh-in:${id}:${runId}`;
 
 /** What the card reads once Undo took the write back. */
 export const UNDONE = 'Undone';

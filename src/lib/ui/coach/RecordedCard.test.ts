@@ -32,6 +32,15 @@ describe('the Undo card', () => {
 		expect(button).not.toContain('disabled');
 	});
 
+	it('names Undo by its label, whose id is the weigh-in’s', () => {
+		const markup = html();
+		expect(tagOf(markup, 'recorded-label')).toContain('id="recorded-41-label"');
+		expect(tagOf(markup, 'recorded-undo')).toContain('aria-describedby="recorded-41-label"');
+		const other = html({ id: 7 });
+		expect(tagOf(other, 'recorded-label')).toContain('id="recorded-7-label"');
+		expect(tagOf(other, 'recorded-undo')).toContain('aria-describedby="recorded-7-label"');
+	});
+
 	it('is in the words of the label, and says nothing yet about an outcome', () => {
 		const markup = html({ label: 'Logged 180 lb for yesterday' });
 		expect(markup).toContain('Logged 180 lb for yesterday');

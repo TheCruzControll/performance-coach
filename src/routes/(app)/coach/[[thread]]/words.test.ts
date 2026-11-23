@@ -192,7 +192,7 @@ describe('shownMessages', () => {
 			{ id: ask.id, from: 'owner', text: 'I weighed 82.4', clientId: null },
 			{ id: answer.id, from: 'coach', blocks: [block(0)], ended: null, retryable: false },
 			{
-				id: 'weigh-in:41',
+				id: `weigh-in:41:${runId}`,
 				from: 'recorded',
 				entryId: 41,
 				runId,

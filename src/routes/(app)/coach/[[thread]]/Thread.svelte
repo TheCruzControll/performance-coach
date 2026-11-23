@@ -129,7 +129,7 @@
 					owner,
 					turn.answered ? turn.answerMessageId : null,
 					...turn.proposals.map((p) => p.id),
-					...turn.recorded.map((r) => weighInKey(r.id))
+					...turn.recorded.map((r) => weighInKey(r.id, r.runId))
 				].filter((id) => id != null);
 			})
 		)
@@ -561,7 +561,7 @@
 							<div data-testid="proposal">{@render proposal(each.id, each.title)}</div>
 						{/each}
 						{@render footnotes(asked?.footnotes)}
-						{#each turn.recorded as each (each.id)}
+						{#each turn.recorded as each (weighInKey(each.id, each.runId))}
 							<div data-testid="recorded">
 								<RecordedCard id={each.id} label={each.label} runId={each.runId} />
 							</div>

@@ -181,7 +181,7 @@ export function shownMessages(
 			...shown,
 			...own.map(({ card }): ShownMessage => ({ id: card.id, from: 'proposal', card })),
 			...logged.map(({ runId, entryId, label }): ShownMessage => ({
-				id: weighInKey(entryId),
+				id: weighInKey(entryId, runId),
 				from: 'recorded',
 				entryId,
 				runId,

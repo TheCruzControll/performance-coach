@@ -300,7 +300,7 @@ describe('the Coach screen', () => {
 			expect(shown.map((message) => message.from)).toEqual(['owner', 'coach', 'recorded']);
 			// Sydney's today is 11 November, so the card says so.
 			expect(shown[2]).toEqual({
-				id: `weigh-in:${entry.id}`,
+				id: `weigh-in:${entry.id}:${RUN}`,
 				from: 'recorded',
 				entryId: entry.id,
 				runId: RUN,
