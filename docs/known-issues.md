@@ -47,12 +47,12 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
 - **environment.md has seven accepted gaps**, listed in `scripts/docs-known-gaps.json`: five
   variables without a row and two rows that are not schema keys. The docs tests stay lenient
   until these are closed.
-- **The app icons and favicon still use the old lime and canvas.** `static/favicon.svg`,
-  `static/icons/*.svg` and the PNGs in `static/icons/` carry the volt lime `#c8f031`.
-  `favicon.svg` and `icons/icon.svg` also keep the old canvas `#0a0a0b`, while the theme colour and
-  manifest now follow the new canvas `#0c0b09`. The in-app brand mark (`static/brand/mark-arc.svg`,
-  `--color-accent`) is amber, so it no longer matches them either. Closes when an icons row
-  regenerates them with `pnpm icons` and the mark is decided.
+- **The app icons and favicon still use the old lime.** `static/favicon.svg`,
+  `static/icons/*.svg` and the PNGs in `static/icons/` carry the volt lime `#c8f031`. Their canvas
+  `#0a0a0b` matches Instrument v2's canvas again, as the theme colour and manifest do. The in-app
+  brand mark (`static/brand/mark-arc.svg`, `--color-accent`) is amber, so it no longer matches the
+  lime icons either. Closes when an icons row regenerates them with `pnpm icons` and the mark is
+  decided.
 - **Components still set uppercase.** Badge, Stat, TextField and 19 other files still set
   `text-transform: uppercase`, so their labels render in capitals, not the lowercase
   label style of the Instrument design (docs/design-system.md, Labels). Closes when ui/02 rebuilds

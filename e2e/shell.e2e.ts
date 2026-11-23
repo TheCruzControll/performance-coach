@@ -404,7 +404,7 @@ test.describe('app shell on an iPhone viewport', () => {
 		await page.goto('/profile');
 		const canvas = () =>
 			page.evaluate(() => getComputedStyle(document.body).backgroundColor.replace(/\s/g, ''));
-		expect(await canvas()).toBe('rgb(12,11,9)'); // dark by default
+		expect(await canvas()).toBe('rgb(10,10,11)'); // dark by default
 
 		await page.getByTestId('theme-control').getByRole('radio', { name: 'Light' }).click();
 		await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
@@ -412,8 +412,8 @@ test.describe('app shell on an iPhone viewport', () => {
 		// After a reload the inline script (allowed by its CSP hash) applies it before paint.
 		await page.reload();
 		await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-		expect(await canvas()).toBe('rgb(245,242,234)');
-		await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#f5f2ea');
+		expect(await canvas()).toBe('rgb(244,244,240)');
+		await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#f4f4f0');
 		await expect(
 			page.locator('meta[name="apple-mobile-web-app-status-bar-style"]')
 		).toHaveAttribute('content', 'default');
@@ -428,17 +428,39 @@ test.describe('app shell on an iPhone viewport', () => {
 		const themeColor = page.locator('meta[name="theme-color"]');
 		await page.emulateMedia({ colorScheme: 'dark' });
 		await page.getByTestId('theme-control').getByRole('radio', { name: 'Auto' }).click();
-		await expect(themeColor).toHaveAttribute('content', '#0c0b09');
+		await expect(themeColor).toHaveAttribute('content', '#0a0a0b');
 		await page.emulateMedia({ colorScheme: 'light' });
-		await expect(themeColor).toHaveAttribute('content', '#f5f2ea');
-		expect(await canvas()).toBe('rgb(245,242,234)');
+		await expect(themeColor).toHaveAttribute('content', '#f4f4f0');
+		expect(await canvas()).toBe('rgb(244,244,240)');
 		await page.emulateMedia({ colorScheme: 'dark' });
-		await expect(themeColor).toHaveAttribute('content', '#0c0b09');
+		await expect(themeColor).toHaveAttribute('content', '#0a0a0b');
 		// Leaving Auto stops following the OS.
 		await page.getByTestId('theme-control').getByRole('radio', { name: 'Dark' }).click();
 		await page.emulateMedia({ colorScheme: 'light' });
-		await expect(themeColor).toHaveAttribute('content', '#0c0b09');
+		await expect(themeColor).toHaveAttribute('content', '#0a0a0b');
 		expect(errors).toEqual([]);
+	});
+
+	test('an open sheet is surface-1 in both themes, and the radii are the v2 scale', async ({
+		page
+	}) => {
+		const sheetBackground = async (theme: 'Light' | 'Dark') => {
+			await gotoHydrated(page, '/profile');
+			await page.getByTestId('theme-control').getByRole('radio', { name: theme }).click();
+			await gotoHydrated(page, '/train');
+			await page.getByTestId('open-plates').click();
+			const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
+			await expect(sheet).toBeVisible();
+			// The dialog is transparent; the panel inside it carries --color-surface-1.
+			return sheet.locator('.sheet').evaluate((el) => getComputedStyle(el).backgroundColor);
+		};
+		expect(await sheetBackground('Dark')).toBe('rgb(21, 21, 23)');
+		expect(await sheetBackground('Light')).toBe('rgb(255, 255, 255)');
+		expect(
+			await page.evaluate(() =>
+				getComputedStyle(document.documentElement).getPropertyValue('--radius-md').trim()
+			)
+		).toBe('16px');
 	});
 
 	test('no screen scrolls sideways', async ({ page }) => {

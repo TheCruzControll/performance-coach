@@ -37,8 +37,11 @@ import { precacheList } from '../src/lib/client/sw-precache.ts';
 export const BUDGETS = {
 	/** Initial JS per route (gzip), including the shared shell. */
 	routeJsKb: 62,
-	/** CSS a route renders with (gzip): render-blocking, so budgeted per route. */
-	routeCssKb: 14,
+	/**
+	 * CSS a route renders with (gzip): render-blocking, so budgeted per route. Raised from 14 for
+	 * Instrument v2's spacing and radius scale (docs/performance.md, CSS budget).
+	 */
+	routeCssKb: 14.5,
 	/** Font files preloaded on any route. */
 	preloadedFonts: 2,
 	/**

@@ -57,7 +57,7 @@ describe('tokens.css', () => {
 		}
 		expect(TOKENS.get(FURNITURE.surface)).toEqual({ ref: '--color-surface-1' });
 		expect(colourOf(TOKENS, FURNITURE.surface, 'light')).toBe('#ffffff');
-		expect(colourOf(TOKENS, FURNITURE.surface, 'dark')).toBe('#1b1814');
+		expect(colourOf(TOKENS, FURNITURE.surface, 'dark')).toBe('#151517');
 	});
 
 	it('keeps the light series on M1’s discipline values and steps the dark ones into the band', () => {
@@ -82,7 +82,7 @@ describe('tokens.css', () => {
 		expect(checkPalette(TOKENS).problems).toEqual([]);
 	});
 
-	it('matches the validator’s figures (re-run 2026-11-06)', () => {
+	it('matches the validator’s figures (re-run 2026-11-23, Instrument v2 surfaces)', () => {
 		const { light, dark } = checkPalette(TOKENS).measures;
 		// Series, adjacent in the stack order.
 		expect(round(dark.seriesAdjacentCvd)).toBe(11.1);
@@ -94,16 +94,16 @@ describe('tokens.css', () => {
 		expect(round(dark.poleNormal)).toBe(26.6);
 		expect(round(light.poleCvd)).toBe(19.9);
 		expect(round(dark.poleCvd)).toBe(17.3);
-		// The midpoint.
+		// The midpoint: dark is measured on the new, cooler surface-1 (it was the warm one before v2).
 		expect(round(light.midpointContrast, 2)).toBe(3.66);
-		expect(round(dark.midpointContrast, 2)).toBe(3.81);
+		expect(round(dark.midpointContrast, 2)).toBe(3.93);
 		// The closest a pole comes to a status or series colour.
-		// Light danger moved to #b3361c (from #bb2c28), so the nearest colour is now combat.
+		// Light danger is #bb2c28 (the pre-581 value), so the nearest colour is danger again.
 		expect(light.closestPole).toMatchObject({
 			pole: '--chart-diverge-warm',
-			token: '--chart-combat'
+			token: '--color-danger'
 		});
-		expect(round(light.closestPole.deltaE)).toBe(9);
+		expect(round(light.closestPole.deltaE)).toBe(8.6);
 		expect(dark.closestPole).toMatchObject({
 			pole: '--chart-diverge-warm',
 			token: '--chart-combat'
@@ -125,9 +125,24 @@ describe('the checks fail by name', () => {
 		);
 		const problems = checkPalette(m1Dark).problems;
 		expect(problems.filter((p) => p.check === 'series lightness band')).toHaveLength(5);
+		// Instrument v2's amber and danger keep every status ΔE ≥ 2 from M1's dark steps (warning
+		// is 2.25 from M1's strength), so the band is the only failure left.
+		expect(failing(m1Dark)).toEqual([at('series lightness band', 'dark')]);
+	});
+
+	it('on a danger that sits next to a dark discipline step', () => {
+		const m1Dark = withTokens({
+			...Object.fromEntries(
+				STACK_ORDER.map((tone) => {
+					const light = colourOf(TOKENS, `--color-${tone}`, 'light');
+					const dark = colourOf(TOKENS, `--color-${tone}`, 'dark');
+					return [SERIES_TOKEN[tone], `light-dark(${light}, ${dark})`];
+				})
+			),
+			'--color-danger': 'light-dark(#bb2c28, #ff6b57)'
+		});
 		expect(failing(m1Dark)).toEqual([
 			at('series lightness band', 'dark'),
-			// M1's dark strength is the warning colour within ΔE 0.7.
 			at('status vs series', 'dark')
 		]);
 	});
@@ -176,15 +191,10 @@ describe('the checks fail by name', () => {
 			at('chart furniture', 'light')
 		]);
 		expect(failing(withTokens({ [FURNITURE.surface]: 'var(--color-surface-2)' }))).toEqual([
-			// The dark grid is translucent (rgb 255 236 200 / 8%): over surface-2 it lifts above
-			// the axis, so the ordering holds on surface-1 (the chart surface) only.
-			at('chart furniture', 'dark'),
-			// The light context series drops to 2.89:1 on surface-2.
+			// The light context series drops to 2.89:1 on surface-2 (#ecece7).
 			at('chart furniture', 'light'),
 			at('chart surface', 'dark'),
 			at('chart surface', 'light'),
-			// Light surface-2 is warmer (#ebe6da): the light midpoint drops to 2.94:1.
-			at('diverging midpoint contrast', 'light'),
 			// Light conditioning is 2.95:1 on surface-2.
 			at('series mark contrast', 'light')
 		]);
