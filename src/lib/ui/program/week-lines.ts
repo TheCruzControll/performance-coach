@@ -4,7 +4,7 @@
  * opens its note. Words only, read from calendar strings and composed where the week is read
  * (Train's load, on the server), so the screen's initial JavaScript carries none of them.
  */
-import { daysBetween, mondayOf, type IsoDate } from '#lib/domain/calendar.ts';
+import { addDays, daysBetween, mondayOf, type IsoDate } from '#lib/domain/calendar.ts';
 import { WEEKDAY_INFO, type Weekday } from '#lib/domain/weekdays.ts';
 import type { SessionStatus } from '#lib/domain/training/vocabulary.ts';
 import { longDate } from './words.ts';
@@ -185,3 +185,52 @@ export function headsUps<T extends { label: string; headline: string; text: stri
 export function weekPosition(number: number, of: number | null, name: string | null): string {
 	return [of ? `Week ${number} of ${of}` : `Week ${number}`, name].filter(Boolean).join(' · ');
 }
+
+/** A phase of the whole plan as one line: 'Build', 'Weeks 3 to 8', done or now. */
+export interface PhaseLine {
+	key: IsoDate;
+	name: string;
+	weeks: string;
+	state: 'done' | 'now' | 'ahead';
+}
+/** A block as the plan's lines read it: a TimelineBlock fits. */
+export interface PhaseBlock {
+	key: IsoDate;
+	name: string;
+	current: boolean;
+	weeks: readonly { number: number }[];
+}
+
+/** The plan as one line per block: its weeks ('Weeks 3 to 8', 'Week 13'), and the blocks before
+ * the one holding today done. Before the plan starts none is done; past its end, all are. */
+export function phaseLines(blocks: readonly PhaseBlock[], ended: boolean): PhaseLine[] {
+	const now = blocks.findIndex((b) => b.current);
+	return blocks.map((b, i) => {
+		const first = b.weeks[0]!.number;
+		const last = b.weeks.at(-1)!.number;
+		return {
+			key: b.key,
+			name: b.name,
+			weeks: first === last ? `Week ${first}` : `Weeks ${first} to ${last}`,
+			state: ended || (now >= 0 && i < now) ? 'done' : i === now ? 'now' : 'ahead'
+		};
+	});
+}
+
+/** The plan's line under its title: '14 weeks, ending Sunday 7 February'. */
+export function planSpan(weeks: number, endsOn: IsoDate): string {
+	return `${weeks} ${weeks === 1 ? 'week' : 'weeks'}, ending ${longDate(endsOn)}`;
+}
+
+const MONTHS = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
+
+/** A change's day in the list: 'Today', 'Yesterday', else '12 Nov'. */
+export function changeDay(date: IsoDate, today: IsoDate): string {
+	if (date === today) return 'Today';
+	if (date === addDays(today, -1)) return 'Yesterday';
+	const [, month, day] = date.split('-').map(Number) as [number, number, number];
+	return `${day} ${MONTHS[month - 1]}`;
+}
+
+/** The changes' count under their title: 'Five since the plan began', 'None since the plan began'. */
+export const changesCount = (n: number) => `${capital(inWords(n))} since the plan began`;

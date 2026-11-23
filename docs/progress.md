@@ -232,6 +232,7 @@ milestones.md.
   `desktop="panel"` as a full-height 496 px panel at the right (no caller yet; `/design` →
   Feedback shows one). The workout keeps its 640 px column until `v2/10`. The e2e run is CI's to
   prove.
+- **Instrument v2 Train (`v2/07`) complete:** the whole plan and Changes (`v2/07b`); e2e is CI's.
 - **Instrument v2 Train More and week note (`v2/07a2`).** More and the week's one line open lazy
   sheets (`MoreSheet`, `WeekNoteSheet`; the right-hand panel from 1024 px) in place of 07a1's
   in-place disclosures, each tool opening over More; the e2e run is CI's to prove.

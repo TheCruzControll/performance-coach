@@ -5,39 +5,24 @@ import { ownerId } from '#lib/server/forms/read.ts';
 import { archiveProgram } from '#lib/server/services/programs/index.ts';
 import { addActions } from './add.server';
 import type { Actions, PageServerLoad } from './$types';
-import { loadTrainRoad } from './road.server';
 import { loadTrainWeek } from './week.server';
 
 /**
- * Train's week, server-rendered for the owner's today or for ?week=n (week.server.ts), and with a
- * program the season for the plan sheet, streamed after it (road.server.ts: null when its read
- * fails, which is recorded).
+ * Train's week, server-rendered for the owner's today or for ?week=n (week.server.ts). The whole
+ * plan is a page of its own (/train/plan), which posts End this plan here.
  */
-export const load: PageServerLoad = async ({ locals, request, route, url }) => {
-	const owner = ownerId(locals);
-	const origin = {
-		requestId: locals.requestId,
-		method: request.method,
-		path: url.pathname,
-		routeId: route.id,
-		appVersion: version
-	};
-	const week = await loadTrainWeek(owner, {
+export const load: PageServerLoad = ({ locals, request, route, url }) =>
+	loadTrainWeek(ownerId(locals), {
 		now: new Date(),
 		week: url.searchParams.get('week'),
-		origin
+		origin: {
+			requestId: locals.requestId,
+			method: request.method,
+			path: url.pathname,
+			routeId: route.id,
+			appVersion: version
+		}
 	});
-	return week.state === 'program'
-		? {
-				...week,
-				road: loadTrainRoad(owner, {
-					today: week.today,
-					firstPlannedDay: week.program.firstPlannedDay,
-					origin
-				})
-			}
-		: week;
-};
 
 const endPlan = programAction((owner) => archiveProgram(owner));
 
@@ -50,8 +35,9 @@ export const actions = {
 	addSession,
 	/**
 	 * End this plan: the program is archived (services/programs/archive.ts) and the owner lands on
-	 * Today, where Build my program starts the next one. A workout in progress is a 409
-	 * ('workout_in_progress') the plan sheet words; with no active program it lands on Today too.
+	 * Today, where Build my program starts the next one. Posted from the whole plan's End this plan
+	 * (/train/plan, EndPlanSheet). A workout in progress is a 409 ('workout_in_progress') the sheet
+	 * words; with no active program it lands on Today too.
 	 */
 	end: async (event) => {
 		const result = await endPlan(event);

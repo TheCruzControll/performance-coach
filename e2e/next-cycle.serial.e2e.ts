@@ -36,7 +36,7 @@ test.use({ timezoneId: ANALYTICS_TZ });
 test.describe.configure({ mode: 'serial' });
 
 const LIST = '/progress/reviews';
-const PLAN = '/train?tool=plan';
+const PLAN = '/train/plan';
 
 const card = (page: Page) => page.getByTestId('next-cycle');
 const start = (page: Page) => page.getByTestId('next-cycle-start-block');
@@ -103,7 +103,7 @@ test.describe('block-end', () => {
 		).not.toBeEmpty();
 
 		await start(page).click();
-		await expect(page).toHaveURL(new RegExp(`${PLAN.replace('?', '\\?')}$`));
+		await expect(page).toHaveURL(new RegExp(`${PLAN}$`));
 		await expect(toastWith(page, 'Next block planned · version 2')).toBeVisible();
 		const versions = await programVersions(seeded.programId!);
 		expect(versions.map((v) => [v.number, v.current, v.generator])).toEqual([
@@ -112,15 +112,13 @@ test.describe('block-end', () => {
 		]);
 		expect((await cycleReviews(lineageOf(seeded)))[0]!.nextVersionNumber).toBe(2);
 
-		// The plan overview: the new block planned, none of its weeks waiting on an outline.
-		const sheet = page.getByRole('dialog', { name: 'Your plan' });
-		await expect(sheet).toBeVisible();
-		const next = sheet.getByTestId('plan-block').nth(1);
-		await expect(next).not.toHaveAttribute('data-outline', '');
-		await expect(next).not.toContainText('Not planned yet');
-		await next.locator('a[data-testid="plan-week"]').first().click();
-		// Train on the new block's week 1, its days holding sessions.
-		await expect(page).toHaveURL(/\/train\?week=\d+$/);
+		// The whole plan: the block lived through now, the new one ahead of it.
+		const phases = page.getByTestId('plan-phases').getByRole('listitem');
+		await expect(phases.nth(0)).toHaveAttribute('data-state', 'now');
+		await expect(phases.nth(1)).toHaveAttribute('data-state', 'ahead');
+		// Train on the new block's week 1 (the phases are not links), its days holding sessions.
+		const begun = seeded.review.kind === 'cycle' ? seeded.review.blockStartsOn : '';
+		await gotoHydrated(page, `/train?week=${daysBetween(begun, addDays(end, 1)) / 7 + 1}`);
 		await expect(page.getByTestId('week-lines').getByTestId('session-card').first()).toBeVisible();
 
 		// History: version 1 read-only, with its outline block; the review links to version 2.
@@ -140,7 +138,7 @@ test.describe('block-end', () => {
 			.getByRole('checkbox', { name: /Keep Bench press/ });
 		await keep.check();
 		await start(page).click();
-		await expect(page).toHaveURL(/\/train\?tool=plan$/);
+		await expect(page).toHaveURL(/\/train\/plan$/);
 		const [row] = await query<{ dislikes: string[]; createdBy: string }>(
 			`select input_snapshot->'dislikes' as dislikes, created_by as "createdBy"
 			from program_versions where program_id = $1::uuid and number = 2`,
@@ -166,7 +164,7 @@ test.describe('block-end', () => {
 		expect(await programVersions(seeded.programId!)).toHaveLength(1);
 		await expect(start(page)).toHaveText('Try again');
 		await start(page).click();
-		await expect(page).toHaveURL(/\/train\?tool=plan$/);
+		await expect(page).toHaveURL(/\/train\/plan$/);
 		expect(await programVersions(seeded.programId!)).toHaveLength(2);
 	});
 
@@ -192,7 +190,7 @@ test.describe('block-end', () => {
 				.locator('form[action="?/startCycle"]')
 				.evaluate((form: HTMLFormElement) => form.requestSubmit());
 			release();
-			await expect(page).toHaveURL(/\/train\?tool=plan$/);
+			await expect(page).toHaveURL(/\/train\/plan$/);
 			expect(posts).toBe(1);
 			expect(await programVersions(seeded.programId!)).toHaveLength(2);
 		});
@@ -260,7 +258,7 @@ test.describe('block-end-late', () => {
 
 		await choice.getByRole('radio', { name: /This week/ }).check();
 		await start(page).click();
-		await expect(page).toHaveURL(/\/train\?tool=plan$/);
+		await expect(page).toHaveURL(/\/train\/plan$/);
 		const blocks = await blocksOf(seeded.programId!, 2);
 		expect(blocks.slice(1, 3)).toMatchObject([
 			{ phase: 'transition', startsOn: next, endsOn: addDays(thisMonday, -1) },

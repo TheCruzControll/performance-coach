@@ -1,5 +1,5 @@
 /**
- * One of Train's code-split sheets (the plate calculator, the plan): fetched on first intent
+ * One of Train's code-split sheets (More, the plate calculator): fetched on first intent
  * (pointerdown, hover), on open, or for its `?tool=` on arrival, so Train ships and hydrates
  * without it. A tap made before it arrives is kept: the sheet opens when it does. A failed fetch
  * is forgotten, so the next tap imports again.

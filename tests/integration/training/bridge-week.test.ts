@@ -1,7 +1,7 @@
 /**
  * A bridge week between blocks (M6 bridge-week-states) on real Postgres, from the bridge-week
  * fixture: three unplanned weeks after Base, this week the last, and Build from next Monday.
- * Train, its plan timeline, History and Today each show the bridge as a deliberate gap with the
+ * Train, the whole plan, History and Today each show the bridge as a deliberate gap with the
  * day the next block starts, never seven rest days, and Train lists what was logged in it as
  * off-plan. A Base week and Build's first week read as they always have.
  *
@@ -20,6 +20,7 @@ import { atLocal } from '../../../src/lib/server/test-support/analytics-fixtures
 import type { BridgeFixtureResult } from '../../../src/lib/server/test-support/analytics-fixtures/bridge-week';
 import { loadTodayPlan } from '../../../src/routes/(app)/today/plan.server';
 import { loadHistory } from '../../../src/routes/(app)/train/history/[[version]]/history.server';
+import { loadPlan } from '../../../src/routes/(app)/train/plan/plan.server';
 import { loadTrainWeek, type TrainWeekData } from '../../../src/routes/(app)/train/week.server';
 import { withCommitted, withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
@@ -119,34 +120,34 @@ describe('a bridge week', () => {
 		});
 	});
 
-	it('the plan timeline labels the bridge with its length', async () => {
+	it('the whole plan names the bridge with its length, as its current phase', async () => {
 		await withRollback(async (db) => {
 			const { owner, now } = await seeded(db, WEDNESDAY);
-			const { plan } = await train(db, owner, now);
-			expect(plan.map((b) => [b.name, b.span, b.bridge])).toEqual([
-				['Base', 'Mon 5 Oct – Sun 1 Nov · 4 weeks', false],
-				['Between blocks · 3 weeks', 'Mon 2 Nov – Sun 22 Nov · Nothing planned', true],
-				['Build', 'Mon 23 Nov – Sun 20 Dec · 4 weeks', false]
+			const plan = await loadPlan(owner, { now, origin: origin('/train/plan') }, { db });
+			if (plan.state !== 'plan') throw new Error(`expected the plan, got ${plan.state}`);
+			expect(plan.span).toBe('11 weeks, ending Sunday 20 December');
+			expect(plan.phases.map((p) => [p.name, p.weeks, p.state])).toEqual([
+				['Base', 'Weeks 1 to 4', 'done'],
+				['Between blocks · 3 weeks', 'Weeks 5 to 7', 'now'],
+				['Build', 'Weeks 8 to 11', 'ahead']
 			]);
-			expect(plan[1]).toMatchObject({ phase: null, current: true, outline: false });
 		});
 	});
 
-	it('History’s version shows the same state for the week', async () => {
+	// The bridge came with version 2, the late review's next block: the week before that change is
+	// version 1's, which had none. A later change in the bridge week would show it as Train does.
+	it('History’s change that made the bridge shows the week before it, with no bridge', async () => {
 		await withRollback(async (db) => {
 			const { owner, now } = await seeded(db, WEDNESDAY);
 			const data = await loadHistory(
 				owner,
-				{ version: '2', before: null, now, origin: origin('/train/history/2') },
+				{ version: '2', before: null, week: true, now, origin: origin('/train/history/2') },
 				{ db }
 			);
 			if (data.state !== 'version') throw new Error(`expected a version, got ${data.state}`);
-			expect(data.week.label).toBe('Between blocks · Week 7');
-			expect(data.week.bridge).toMatchObject({
-				id: 'history-bridge',
-				title: 'Unplanned week · between blocks'
-			});
-			expect(data.week.bridge!.description).toMatch(/^The next block starts Mon 23 Nov\./);
+			expect(data.week).toMatchObject({ version: 1, older: true });
+			expect(data.week!.bridge).toBeUndefined();
+			expect(data.week!.lines.length).toBeGreaterThanOrEqual(7);
 		});
 	});
 

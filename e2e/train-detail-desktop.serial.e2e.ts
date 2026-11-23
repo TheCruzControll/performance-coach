@@ -1,12 +1,13 @@
 /**
- * A session's detail and History in a desktop window (docs/design-system.md, Responsive layout →
- * Screens). The session is wide: its side column (the edits, the details, the baseline callout)
- * sits left of its main column (the exercises, the run, a class's metrics), and each edit sheet
- * opens as a centred dialog. History is split: the list beside the version picked, which stays in
- * the URL. The program components adapt to their column with container queries (ExerciseBlock,
- * RunSegments, SessionDetails, BaselineCallout). Every designed state keeps its frame: not found,
- * a failed load, offline, an older version, a tapped card loading, 'no changes yet' and a failed
- * 'Show older versions'. Serial: programs are the one owner's (e2e/program-support.ts).
+ * A session's detail and Changes (History) in a desktop window (docs/design-system.md, Responsive
+ * layout → Screens). The session is wide: its side column (the edits, the details, the baseline
+ * callout) sits left of its main column (the exercises, the run, a class's metrics), and each edit
+ * sheet opens as a centred dialog. Changes is split: the list in its column, the change picked
+ * beside it behind a hairline, which stays in the URL. The program components adapt to their
+ * column with container queries (ExerciseBlock, RunSegments, SessionDetails, BaselineCallout).
+ * Every designed state keeps its frame: not found, a failed load, offline, an older version, a
+ * tapped line loading, 'no changes yet' and a failed 'Show older changes'. Serial: programs are
+ * the one owner's (e2e/program-support.ts).
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
@@ -58,8 +59,9 @@ const exercise = (page: Page, name: string) =>
 	page.getByTestId('exercise').filter({ has: page.getByRole('heading', { name, exact: true }) });
 const list = (page: Page) => page.getByTestId('history-list');
 const versions = (page: Page) => page.getByTestId('version');
+/** A change's line, by its version: its name ends ', version n'. */
 const versionLink = (page: Page, n: number) =>
-	page.getByTestId('version-link').filter({ hasText: new RegExp(`^\\s*Version ${n}\\b`) });
+	page.locator(`[data-testid="version-link"][aria-label$=", version ${n}"]`);
 const save = (dialog: Locator) => dialog.getByTestId('edit-save');
 
 /**
@@ -117,6 +119,16 @@ async function expectRightOf(right: Locator, left: Locator) {
 async function expectBelow(below: Locator, above: Locator) {
 	const [a, b] = [await boxOf(above), await boxOf(below)];
 	expect(b.y, `${below} starts under ${above}`).toBeGreaterThanOrEqual(a.y + a.height - 1);
+}
+
+/** The change's column stands behind a 1 px hairline at its left, its words 56 px in (Paper). */
+async function expectHairlineColumn(page: Page) {
+	const detail = page.getByTestId('version-detail');
+	const style = await detail.evaluate((el) => {
+		const s = getComputedStyle(el);
+		return { width: s.borderLeftWidth, line: s.borderLeftStyle, inset: s.paddingLeft };
+	});
+	expect(style).toEqual({ width: '1px', line: 'solid', inset: '56px' });
 }
 
 /**
@@ -395,7 +407,8 @@ test.describe('a program that starts next week', () => {
 			await page.unrouteAll({ behavior: 'wait' });
 
 			await moveThroughAction(request, full.lineage, addDays(seeded.weekStart, 2), 1);
-			await gotoHydrated(page, '/train/history/1');
+			// The week as it was before version 2's move: version 1's, opening at version 1.
+			await gotoHydrated(page, '/train/history/2?week');
 			const card = cards(page).filter({ hasText: 'Full body' });
 			await expect(card).toHaveAttribute('href', `${open(full)}?v=1`);
 			release = await hold(page, '**/train/session/*/__data.json*');
@@ -449,30 +462,35 @@ test.describe('a program that starts next week', () => {
 		});
 	});
 
-	test.describe('History, changed twice', () => {
+	test.describe('Changes, changed twice', () => {
 		test.beforeEach(async ({ request }) => {
 			const full = titled('Full body').lineage;
 			await moveThroughAction(request, full, addDays(seeded.weekStart, 2), 1);
 			await moveThroughAction(request, full, addDays(seeded.weekStart, 4), 2);
 		});
 
-		test('the list sits beside the version picked, which stays in the URL', async ({
+		const MOVED = 'Moved Full body from Mon to Wed';
+		/** The change's title, by its version. */
+		const titleOf = (n: number) => (n === 1 ? 'Plan created' : MOVED);
+
+		test('the list sits in its column, the change picked beside it, which stays in the URL', async ({
 			page
 		}, testInfo) => {
 			const errors = trackConsoleErrors(page);
 			await gotoHydrated(page, '/train/history');
 			await expectMainCentred(page, await tokenPx(page, '--content-wide'));
-			await expectBeside(list(page), page.getByTestId('history-pick'));
+			// No change picked: its column is empty (Paper).
+			await expect(page.getByTestId('version-detail')).toHaveCount(0);
 			expect((await boxOf(list(page))).width).toBeLessThanOrEqual(
 				(await tokenPx(page, '--content-list')) + 1
 			);
 			const before = await boxOf(list(page));
 
-			// Picking a row keeps the list where it was, the row marked as the page shown.
+			// Picking a line keeps the list where it was, the line marked as the page shown.
 			for (const n of [2, 1]) {
 				await versionLink(page, n).click();
 				await expect(page).toHaveURL(new RegExp(`/train/history/${n}$`));
-				await expect(heading(page)).toHaveText(`Version ${n}`);
+				await expect(heading(page)).toHaveText(titleOf(n));
 				await expect(versionLink(page, n)).toHaveAttribute('aria-current', 'page');
 				await expect(
 					page.getByTestId('version-link').and(page.locator('[aria-current]'))
@@ -483,20 +501,21 @@ test.describe('a program that starts next week', () => {
 						1
 					);
 				}
-				await expectBeside(list(page), page.getByTestId('version-detail'));
+				await expectRightOf(page.getByTestId('version-detail'), list(page));
+				await expectHairlineColumn(page);
 			}
 			await expect(page.getByTestId('older-version')).toBeVisible();
 
-			// Back, forward and reload keep the version picked.
+			// Back, forward and reload keep the change picked.
 			await page.goBack();
 			await expect(page).toHaveURL(/\/train\/history\/2$/);
-			await expect(heading(page)).toHaveText('Version 2');
+			await expect(heading(page)).toHaveText(MOVED);
 			await expect(versionLink(page, 2)).toHaveAttribute('aria-current', 'page');
 			await page.goForward();
-			await expect(heading(page)).toHaveText('Version 1');
+			await expect(heading(page)).toHaveText('Plan created');
 			await page.reload();
 			await page.waitForLoadState('networkidle');
-			await expect(heading(page)).toHaveText('Version 1');
+			await expect(heading(page)).toHaveText('Plan created');
 			await expect(versionLink(page, 1)).toHaveAttribute('aria-current', 'page');
 			await expect(versions(page)).toHaveCount(3);
 
@@ -508,14 +527,21 @@ test.describe('a program that starts next week', () => {
 			expect(await link.evaluate((el) => el.matches(':focus-visible'))).toBe(true);
 			expect(await link.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid');
 			await page.keyboard.press('Enter');
-			await expect(heading(page)).toHaveText('Version 2');
-			await expectBeside(list(page), page.getByTestId('version-detail'));
+			await expect(heading(page)).toHaveText(MOVED);
+			await expectRightOf(page.getByTestId('version-detail'), list(page));
+
+			// The × closes the change: the list alone again, where it was.
+			await page.getByTestId('close-change').click();
+			await expect(page).toHaveURL(/\/train\/history$/);
+			await expect(page.getByTestId('version-detail')).toHaveCount(0);
+			await page.goBack();
+			await expect(heading(page)).toHaveText(MOVED);
 
 			for (const width of [...DESKTOP_WIDTHS, BELOW_DESKTOP_WIDTH]) {
 				await page.setViewportSize({ width, height: 900 });
 				await expectNoSideScroll(page);
 			}
-			// Below 1024 px the version stands alone, as on a phone.
+			// Below 1024 px the change stands alone, as on a phone.
 			await expect(list(page)).toBeHidden();
 			await page.setViewportSize(DESKTOP.viewport);
 			await auditBothThemes(page, testInfo, 'history');
@@ -523,13 +549,15 @@ test.describe('a program that starts next week', () => {
 		});
 	});
 
-	test('with only version 1, ‘no changes yet’ sits beside the list', async ({ page }, testInfo) => {
+	test('with only version 1, ‘no changes yet’ sits under the list, in its column', async ({
+		page
+	}, testInfo) => {
 		await gotoHydrated(page, '/train/history');
 		const empty = page.getByTestId('history-empty');
-		await expect(empty).toContainText('No changes yet');
+		await expect(empty).toContainText('Every move, swap and skip is kept here');
 		await expect(versions(page)).toHaveCount(1);
-		await expect(page.getByTestId('history-pick')).toHaveCount(0);
-		await expectBeside(list(page), empty);
+		await expectBelow(empty, list(page));
+		expect(Math.abs((await boxOf(empty)).x - (await boxOf(list(page))).x)).toBeLessThanOrEqual(1);
 		await expectMainCentred(page, await tokenPx(page, '--content-wide'));
 		await expectNoSideScroll(page);
 		await auditBothThemes(page, testInfo, 'history-empty');
@@ -555,7 +583,7 @@ test.describe('a program that starts next week', () => {
 			await page.unrouteAll({ behavior: 'ignoreErrors' });
 		});
 
-		/** 'Show older versions': the route's load for the next page, ?before=<cursor>. */
+		/** 'Show older changes': the route's load for the next page, ?before=<cursor>. */
 		const isOlder = (url: URL) =>
 			url.pathname === '/train/history/__data.json' && url.searchParams.has('before');
 
@@ -581,7 +609,7 @@ test.describe('a program that starts next week', () => {
 			);
 			await older.click();
 			const failed = page.getByTestId('older-failed');
-			await expect(failed).toContainText('Couldn’t load older versions');
+			await expect(failed).toContainText('Couldn’t load older changes');
 			const [box, column] = [await boxOf(failed), await boxOf(list(page))];
 			expect(box.x + box.width, 'inside the list’s column').toBeLessThanOrEqual(
 				column.x + column.width + 1
@@ -593,18 +621,18 @@ test.describe('a program that starts next week', () => {
 			await failed.getByRole('button', { name: 'Try again' }).click();
 			await expect(versions(page)).toHaveCount(22);
 			await expect(failed).toHaveCount(0);
-			await expect(heading(page)).toHaveText('Version 22');
+			await expect(versionLink(page, 22)).toHaveAttribute('aria-current', 'page');
 
 			// Version 1, from the page loaded in place: the list keeps every page.
 			await versionLink(page, 1).click();
-			await expect(heading(page)).toHaveText('Version 1');
+			await expect(heading(page)).toHaveText('Plan created');
 			await expect(versions(page)).toHaveCount(22);
 			await expect(versionLink(page, 1)).toHaveAttribute('aria-current', 'page');
 			await page.goBack();
-			await expect(heading(page)).toHaveText('Version 22');
+			await expect(versionLink(page, 22)).toHaveAttribute('aria-current', 'page');
 			await expect(versions(page)).toHaveCount(22);
 			await page.goForward();
-			await expect(heading(page)).toHaveText('Version 1');
+			await expect(heading(page)).toHaveText('Plan created');
 			await expect(versions(page)).toHaveCount(22);
 		});
 	});

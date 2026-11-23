@@ -8,8 +8,6 @@
  *   (absent, 0, 'abc', 1000) is the current week, never an error: WEEK_PARAM below.
  * - The current week is the one that holds today: week 1 before the program starts, and past the
  *   planned weeks the 'first block complete' view (`asked` false, `program.blockComplete`).
- * - The whole plan, for the plan overview: each block with its weeks, this week, the weeks not
- *   planned yet and the dated goals the plan leads to (timeline.ts).
  * - The week as Instrument v2 says it (v2/07, week-lines.ts): its place ('Week 3 of 14 · Build'),
  *   its title ('This week'), what is done, one line per session, the arrows' links, and the one
  *   line under it that opens the week's note (`note`, `noteParts`).
@@ -28,8 +26,6 @@
  * - A deload, taper, event, recovery, cutback or maintenance week still ahead names its kind
  *   with one line of why and any event's countdown (m7/38, services/periodisation/week-line.ts).
  *   A read that fails is recorded (part 'weekLine') and the week renders without it.
- * - The number of goals the season's lanes list (m7/39), so the plan sheet reserves their room
- *   while the season streams (road.server.ts, from +page.server.ts).
  * - With no program, whether the training profile is complete picks the empty state's next step.
  *   A program exists only once onboarding is complete (the build refuses it before), so a running
  *   program never shows before the owner's setup is done.
@@ -41,7 +37,6 @@
  */
 import type { IsoDate } from '#lib/domain/calendar.ts';
 import { daysBetween } from '#lib/domain/calendar.ts';
-import type { Goal } from '#lib/domain/profile/types.ts';
 import { ownerToday } from '#lib/server/local-date.ts';
 import { recordServerError, type ServerErrorInput } from '#lib/server/services/errors.ts';
 import type { ContextDeps } from '#lib/server/services/periodisation/context.ts';
@@ -76,7 +71,6 @@ import { SESSIONS_A_DAY } from '#lib/server/services/programs/edits.ts';
 import { getLiveCycleReview } from '#lib/server/services/reviews/index.ts';
 import { getSessionsInRange } from '#lib/server/services/training/history.ts';
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
-import { timelineView, type TimelineBlock } from '#lib/ui/program/timeline.ts';
 import {
 	headsUps,
 	weekLines,
@@ -148,10 +142,6 @@ export type TrainWeekData =
 			card: StateCard | null;
 			/** A bridge week's logged workouts as lines, oldest first (none in any other week). */
 			offPlan: WeekLine[];
-			/** The whole plan in words, for the plan overview. */
-			plan: TimelineBlock[];
-			/** The goals the season gives a lane in each block (laneCount), reserved while it streams. */
-			openGoals: number;
 			/** The current version's number: what an add (Add session) is made on. */
 			version: number;
 			/**
@@ -213,14 +203,6 @@ export interface TrainLoadDeps extends Pick<TrainingDeps, 'db'> {
 				context?: Pick<ContextDeps, 'repository' | 'reader' | 'statementTimeoutMs'>;
 		  });
 }
-
-/**
- * How many goals the season gives a lane in a block: the active goals, or with every open goal
- * paused the paused ones (M3's shaping goals, which the road's modes cover).
- */
-const laneCount = (goals: readonly Pick<Goal, 'status'>[]) =>
-	goals.filter((g) => g.status === 'active').length ||
-	goals.filter((g) => g.status === 'paused').length;
 
 /** The week number in `param`, or null for the current week. */
 const weekParam = (param: string | null) =>
@@ -463,9 +445,7 @@ export async function loadTrainWeek(
 								d.sessions.length < SESSIONS_A_DAY
 						)
 						.map((d) => d.date)
-				: [],
-			plan: timelineView(program, { today, goals }),
-			openGoals: laneCount(goals)
+				: []
 		};
 	} catch (error) {
 		await recordServerError(

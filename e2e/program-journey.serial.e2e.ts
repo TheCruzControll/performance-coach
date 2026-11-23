@@ -450,25 +450,33 @@ test('blank 1RMs: onboarding, a week-1 baseline program built from Today, a move
 	});
 
 	const versionCards = (p: Page) => p.getByTestId('version');
+	/** Changes: the swap, then the move, then the plan created, newest first. */
 	const expectHistory = async () => {
-		await expect(page.getByRole('heading', { level: 1 })).toHaveText('History');
+		await expect(page.getByRole('heading', { level: 1 })).toHaveText('Changes');
+		await expect(page.getByTestId('history-count')).toHaveText('Two since the plan began');
 		await expect(versionCards(page)).toHaveCount(3);
 		const links = page.getByTestId('version-link');
-		await expect(links.nth(0)).toContainText(/Version 3\s*Current/);
+		await expect(links.nth(0)).toHaveAttribute('aria-label', /, version 3$/);
 		await expect(links.nth(0)).toContainText(`Swapped ${main} for ${swappedTo}`);
 		await expect(links.nth(1)).toContainText(
 			`Moved ${strength.title} from ${day(strength.date).short} to ${day(target).short}`
 		);
-		await expect(links.nth(2)).toContainText('Version 1');
-		const why = (n: number) => versionCards(page).nth(n).getByTestId('decision');
-		await expect(why(0)).toHaveCount(1);
-		await expect(why(0)).toContainText(`You swapped ${main} for ${swappedTo}`);
-		await expect(why(0)).toContainText('this session only');
-		await expect(why(1)).toHaveCount(1);
-		await expect(why(1)).toContainText(
+		await expect(links.nth(2)).toContainText('Plan created');
+	};
+	/** Each change's page says why: the swap's, the move's, and the plan's own decisions. */
+	const expectWhy = async () => {
+		const why = () => page.getByTestId('version-changes').getByTestId('decision');
+		await gotoHydrated(page, '/train/history/3');
+		await expect(why()).toHaveCount(1);
+		await expect(why()).toContainText(`You swapped ${main} for ${swappedTo}`);
+		await expect(why()).toContainText('this session only');
+		await gotoHydrated(page, '/train/history/2');
+		await expect(why()).toHaveCount(1);
+		await expect(why()).toContainText(
 			`You moved ${strength.title} from ${day(strength.date).short} to ${day(target).short}. Work trip.`
 		);
-		expect(await why(2).count()).toBeGreaterThan(3);
+		await gotoHydrated(page, '/train/history/1');
+		expect(await why().count()).toBeGreaterThan(3);
 	};
 
 	await test.step('History lists the move and the swap with their why', async () => {
@@ -481,11 +489,13 @@ test('blank 1RMs: onboarding, a week-1 baseline program built from Today, a move
 		await expectHistory();
 		await captureScreen(page, testInfo, 'journey-history');
 		expect(await audit(page), 'History').toEqual([]);
+		await expectWhy();
 	});
 
 	await test.step('reloaded, Train, the session and History keep it all, as Postgres does', async () => {
 		await gotoHydrated(page, '/train/history');
 		await expectHistory();
+		await expectWhy();
 
 		await gotoHydrated(page, '/train');
 		await expect(sessionLine(page, strength.title, target)).toHaveAttribute('data-status', 'moved');

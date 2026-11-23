@@ -45,6 +45,10 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
 - **Train on desktop shows the week alone.** Paper's board 11 puts the picked session in a column
   at the right of the week; `v2/07a1` leaves that column out, so a session opens on its own page.
   Closes when v2/08 builds the session's page and its desktop column.
+- **A change shows who and why, not Was and Now.** Paper's change (4 · Train row 8) draws Was,
+  Now, Why and a heads-up, but versions store a summary and decisions, not before-and-after values,
+  so `/train/history/<n>` shows Who and each decision's Why, and the week as it was before it.
+  Closes when a version records what each decision changed from and to.
 - **`ListRow` still takes `icon` and `tone`, and draws neither.** v2 rows have no icon tiles, so
   both props are deprecated and accepted for the screens that still pass them.
   Closes when the last screen row drops them and `src/lib/ui/components/ListRow.svelte` removes them.
@@ -59,9 +63,6 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   removes the ones its screen does not need. `Badge` keeps its icon-side padding (`.with-icon`) so an
   icon badge keeps its width; the row that drops the pill drops it too. Closes when the screen rows
   have removed them.
-- **On Train, the Rest timer row gains a hairline on its first hover.** Prefetch mounts the sheet's
-  dialog as a sibling of the row, so the row's `:last-child` rule breaks. It stays until the Train
-  screen row.
 - **A toast clears a profile section's Save bar through a selector in `Toaster.svelte`.**
   `[data-testid='save-bar']` stands in until the section screen sets `--toast-lift` itself.
   Closes in `v2/22` (`src/routes/(app)/profile/[section]/SectionScreen.svelte`).

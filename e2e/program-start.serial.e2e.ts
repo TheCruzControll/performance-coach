@@ -154,10 +154,10 @@ async function moveAWeekLater(page: Page, request: APIRequestContext) {
 	await gotoHydrated(page, '/today');
 	await expect(page.getByTestId('today-starts')).toContainText(`Week 1 begins ${longDate(moved)}`);
 
-	// History lists the move as version 2, by the owner, with its why.
+	// Changes lists the move as version 2, its summary on its line.
 	await gotoHydrated(page, '/train/history');
 	const newest = page.getByTestId('version').first();
-	await expect(newest).toContainText('Version 2');
+	await expect(newest.getByTestId('version-link')).toHaveAttribute('aria-label', /, version 2$/);
 	await expect(newest).toContainText(`Moved the start to ${shortDate(moved)}`);
 
 	expect(await versions()).toEqual([

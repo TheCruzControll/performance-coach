@@ -394,13 +394,13 @@ The desktop specs (most also run axe and take screenshots in both themes):
 - `train-desktop.serial.e2e.ts`: Train readable. The top line, the week's lines, its one line
   and More share the column's left edge, nothing right of it; a line's hover and focus ring, Tab
   from the arrows through each session to the week's line and More; the week's note and More as
-  the right-hand panel, and the plan as a centred dialog over More.
+  the right-hand panel, and the whole plan a page in the same readable column.
   Every designed state at the column's top: a week loading (`expectNoShift`), a failed load and
-  Try again, offline, no program, rest day, not started, beyond the plan, block complete, and both
-  lazy chunks failing with Retry under their rows in More.
+  Try again, offline, no program, rest day, not started, beyond the plan, block complete, and the
+  plate calculator's chunk failing with Retry under its row in More.
 - `train-detail-desktop.serial.e2e.ts`: the session detail (wide: the side column beside the main
-  one, centred edit sheets) and History (split: the list beside the version in the URL), with
-  every designed state.
+  one, centred edit sheets) and Changes (split: the list in its column, the change in the URL
+  beside it behind a hairline, closed with ×), with every designed state.
 - `today-desktop.serial.e2e.ts`: Today in every state (setup, ready, the program's session day,
   rest day, starts Monday and block complete, a failed read, offline, a panel's chunk failing) and
   Build my program's pending, generator-failure, profile, library, new-day and offline states;
@@ -936,7 +936,7 @@ Commitments, running, interference rules and placement across disciplines. Unit 
 
 ### Train screens
 
-The Train week, the plan overview, session detail and the edit sheets.
+The Train week, the whole plan, session detail and the edit sheets.
 
 - **Seeding programs** (`e2e/program-support.ts`): program specs are serial (`*.serial.e2e.ts`) and
   pin the browser to the owner's zone with `test.use({ timezoneId: PROGRAM_TZ })` (`Europe/London`,
@@ -993,22 +993,22 @@ The Train week, the plan overview, session detail and the edit sheets.
   More under a hairline, More the right-hand panel), axe dark and light.
   `tests/integration/training/train-load.test.ts`: `loadTrainWeek`'s current and asked weeks,
   malformed ?week, not planned, block complete, no program with an incomplete and a complete
-  profile, the week's words composed on the server (its place, title, status and lines), the fail-soft error payload recorded as a server
-  error, and the whole plan for the plan overview (each block's weeks, this week whatever `?week`
-  shows, the outline weeks, and only the served goal's event).
+  profile, the week's words composed on the server (its place, title, status and lines), and the
+  fail-soft error payload recorded as a server error.
+  `tests/integration/training/plan-load.test.ts`: the whole plan's load (`loadPlan`): its title,
+  length and last day, a line per block with its weeks, done, now and ahead as today moves, all done
+  past the end, no program, and the fail-soft error recorded with `{ load: 'plan' }`.
   `tests/integration/training/form-actions.test.ts`: forms/program.ts answers 400 with dotted paths,
   409 with its reason, 404, 400 for malformed JSON and 401 without a session.
-- **Plan overview** (`e2e/train-plan.serial.e2e.ts`, Chromium + WebKit, `PROGRAM_TZ`, hybrid and
-  one-week fixtures): See the whole plan, in Train's More, opens a sheet that lists every block
-  with its phase, dates and weeks, with this week marked (`aria-current="date"`, 'This week'). With
-  the one-week fixture, the outline's phases reach the event date: each outline week says 'Not
-  planned yet' and none is a link, and the dated goal sits in its week as an Event. A tapped week
-  closes the sheet and shows on Train through the week change's pending state. Close and Escape give
-  the focus back to its row in More. The sheet's chunk is not in Train's load, and a tap made
-  before it arrives opens it. With the chunk aborted, 'Couldn't open your plan' offers Retry
-  (≥ 44 px) under its row; back online, Retry opens the sheet, in place or by reloading Train with
-  `?tool=plan` (Chromium). At 1440 × 900: the row's hover and focus states, and the timeline at a readable width with no
-  sideways scroll. axe in dark and light with the sheet open. `src/lib/ui/program/timeline.test.ts`
+- **The whole plan** (`e2e/train-plan.serial.e2e.ts`, Chromium + WebKit, `PROGRAM_TZ`, hybrid and
+  one-week fixtures): See the whole plan, in Train's More, opens `/train/plan`: the program's title,
+  its length and last day, and one line per phase with its weeks, the current one 'now' in 600, none
+  a link (the one-week fixture's outline too); its back link "Week" goes back to Train. An old
+  `?tool=plan` opens nothing on Train. End this plan asks first: Keep my plan gives the focus back,
+  End the plan archives the program and lands on Today. With no program the page is Train. At
+  1440 × 900: the readable column, End this plan's hover and focus. axe in dark and light, the
+  question open too. `src/lib/ui/program/week-lines.test.ts` (unit): `phaseLines`, `planSpan`,
+  `changeDay` and `changesCount`. `src/lib/ui/program/timeline.test.ts`
   (unit): `timelineView` lists every block with its dates and length, and its weeks numbered from
   week 1 (Train's `?week`); it names the phase only where the block's name does not already say it,
   and marks the week and the block that hold today, in planned and outline weeks; a goal the plan
@@ -1071,18 +1071,20 @@ The Train week, the plan overview, session detail and the edit sheets.
 
 ### Program history
 
-Versions and their decisions with the why; older versions stay viewable.
+Changes, each with who made it and why; the week as it was before each stays viewable.
 
-- `tests/integration/training/history-load.test.ts` covers the History load on real Postgres:
-  newest-first order, dates in the owner's zone, who made each version and each decision's why,
-  `HISTORY_PAGE_SIZE` paging with `?before`, 'no changes yet' only for version 1, the no-program,
-  404 and recorded soft-error states, and a version's read-only week opening on the week its change
-  touched.
+- `tests/integration/training/history-load.test.ts` covers the Changes load on real Postgres:
+  newest-first order, each change's day and date in the owner's zone, the count ('Two since the
+  plan began', none on a `?before` page), version 1 as 'Plan created' with its own summary kept, who
+  made each version and each decision's why, `HISTORY_PAGE_SIZE` paging with `?before`, 'no
+  changes yet' only for version 1, the no-program, 404 and recorded soft-error states, and with
+  `?week` the week as it was: version n − 1's on the week the change touched (version 1 itself).
 - `e2e/program-history.serial.e2e.ts` (hybrid fixture, versions made through the session's move
-  action) covers Train's History action, the list and paging, the inline Retry after a soft failure,
-  older versions read-only with their sessions as they were then, busy states while `__data.json` is
-  held, the move toast's History link, 404s, the shell error and offline cards, axe dark and light,
-  no layout shift, and the desktop column with hover and focus.
+  action) covers More's row to Changes, the lines and paging, the inline Retry after a soft failure,
+  a change's Who and Why, the week as it was read-only with its sessions as they were then, busy
+  states while `__data.json` is held, the move toast's History link, 404s, the shell error and
+  offline cards, axe dark and light, no layout shift, and the desktop column with hover, focus and
+  the change's ×.
 
 ### Today screens
 
@@ -1123,14 +1125,14 @@ it runs in, and CI uploads them:
 - `/design` → Plan: `design-program-week`, `design-program-cards`, `design-program-lines`,
   `design-program-move`, `design-program-desktop`.
 - Train: `train-week`, `train-pending`, `train-rest-day`, `train-empty`, `train-block-complete`,
-  `train-week-desktop`; the plan overview: `train-plan`, `train-plan-outline`, `train-plan-pending`,
-  `train-plan-retry`, `train-plan-desktop`.
+  `train-week-desktop`; the whole plan: `train-plan`, `train-plan-outline`, `train-plan-end`,
+  `train-plan-desktop`.
 - Session: `session-strength`, `session-run`, `session-muay-thai`, `session-error`,
   `session-strength-desktop`; edits: `session-move`, `session-move-warning`, `session-move-desktop`,
   `session-swap`, `session-swap-empty`, `session-swap-desktop`, `session-adjust`,
   `session-adjust-run`, `session-adjust-desktop`, `session-skipped`.
-- History: `train-history`, `train-history-empty`, `train-history-v1`, `train-history-desktop`,
-  `train-history-v1-desktop`.
+- Changes: `train-history`, `train-history-empty`, `train-history-change`,
+  `train-history-as-it-was`, `train-history-desktop`, `train-history-v1-desktop`.
 - Today: `today-build`, `today-build-preview`, `today-build-conflict`, `today-build-desktop`,
   `today-build-preview-desktop`, `today-session`, `today-rest`, `today-starts`,
   `today-block-complete`, `today-session-desktop`, `today-panel-error`, `today-panel-error-desktop`.
@@ -1405,12 +1407,12 @@ by integration tests and the three e2e specs below.
 
 ### Integration (real Postgres)
 
-- `tests/integration/periodisation/` (11 files): the week's evaluation and Train's notes
+- `tests/integration/periodisation/` (10 files): the week's evaluation and Train's notes
   (`evaluate`), why each session sits on its day (`explain`), the light weeks' line and countdown
   (`week-line`), the evaluation context with logged and planned load and a stalled read under the
   one-query guard (`context`), the re-plan preview, a priority swap on the hybrid among them (S8,
   `preview`), a change of priorities on Profile → Goals (`priority-replan`), the reactive deload
-  (S7, `reactive-deload`), the road (`road-view`, `train-road`), Train's re-plan line
+  (S7, `reactive-deload`), the road (`road-view`), Train's re-plan line
   (`train-replan-note`) and Train's page data (`train-page-data`, docs/performance.md, "M7
   (advanced coaching)").
 - `tests/integration/coach/tools-periodisation.test.ts`: `evaluate_week_interference`,

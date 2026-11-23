@@ -1,25 +1,16 @@
 /**
  * What Train says beside its week's lines (week-lines.ts): week 1's brief, what a review changed
  * and, when it has no week of sessions to show, one statement and the one next step under it.
- * History's version week still reads each day in words here (weekWords). Composed on the server
- * with the data it describes, so the words cost the screen no JavaScript: Train is near its
- * initial-JS budget (docs/performance.md).
+ * Composed on the server with the data it describes, so the words cost the screen no JavaScript:
+ * Train is near its initial-JS budget (docs/performance.md).
  */
 import { weekdayOf, type IsoDate } from '#lib/domain/calendar.ts';
 import { WEEKDAY_INFO } from '#lib/domain/profile/catalog.ts';
-import type { DayView, WeekView } from '#lib/domain/training/types.ts';
 import { PHASE_LABEL, type Phase } from '#lib/domain/training/vocabulary.ts';
-import type { FindingNote } from '#lib/server/services/periodisation/evaluate.ts';
 import type { PlacementWhy } from '#lib/server/services/periodisation/explain.ts';
 import type { CurrentProgram, WeekChanges } from '#lib/server/services/programs/index.ts';
 import { inWords, lineWhen, type WeekLine } from '#lib/ui/program/week-lines.ts';
-import {
-	cardView,
-	longDate,
-	stripDay,
-	type CardView,
-	type StripDayView
-} from '#lib/ui/program/words.ts';
+import { longDate } from '#lib/ui/program/words.ts';
 
 /** Where the next step goes: a screen, a week of the program, Train again (Retry), or a path. */
 export type NextStep =
@@ -128,19 +119,6 @@ export const BASELINE_BRIEF: AsidePanel = {
 	links: []
 };
 
-/** A day of the week shown, in words: its heading, its sessions' cards, or a rest-day line. */
-export interface TrainDay {
-	/** 'Monday 9 November'. */
-	heading: string;
-	/**
-	 * By lineage; `baseline` on a strength session of a baseline week; a finding's note; why the
-	 * session is on its day (whyWords).
-	 */
-	cards: (CardView & { lineage: string; baseline: boolean; note?: FindingNote; why?: CardWhy })[];
-	/** With no sessions: recovery is part of the plan, and what comes next this week, if any. */
-	rest: string | null;
-}
-
 /** 'Why Lower A on Tuesday?' in the week's note: its title and one plain line per decision (m7/14,
  * lever 3). */
 export interface CardWhy {
@@ -160,31 +138,6 @@ export const whyWords = (
 	title: `Why ${session.title} on ${WEEKDAY_INFO[weekdayOf(session.date)].label}?`,
 	lines: items.map((i) => `${i.kind} (${i.decidedBy}, version ${i.version}): ${i.why}`)
 });
-
-/** A planned week in words: WeekStrip's days, and each day's heading, cards and rest line. */
-export function weekWords(
-	week: Extract<WeekView, { planned: true }>,
-	today: IsoDate
-): { strip: StripDayView[]; days: TrainDay[] } {
-	const days = week.days.map((day: DayView, i): TrainDay => {
-		const next = week.days.slice(i + 1).find((d) => d.sessions.length > 0);
-		return {
-			heading: longDate(day.date),
-			cards: day.sessions.map((session) => ({
-				...cardView(session),
-				lineage: session.lineage,
-				baseline: week.kind === 'baseline' && session.kind === 'strength'
-			})),
-			rest:
-				day.sessions.length > 0
-					? null
-					: next
-						? `Recovery is part of the plan. Next: ${next.sessions[0]!.title}, ${WEEKDAY_INFO[next.weekday].label}.`
-						: 'Recovery is part of the plan. Nothing else is planned this week.'
-		};
-	});
-	return { strip: week.days.map((day) => stripDay(day, today)), days };
-}
 
 /**
  * A week past the planned weeks: its outline phase when it has one, which the review of the last

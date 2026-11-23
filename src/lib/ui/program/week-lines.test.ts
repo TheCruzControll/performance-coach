@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionStatus } from '#lib/domain/training/vocabulary.ts';
 import {
+	changeDay,
+	changesCount,
 	headsUps,
 	inWords,
+	phaseLines,
+	planSpan,
 	weekLines,
 	weekNote,
 	weekPosition,
@@ -221,5 +225,57 @@ describe('weekPosition', () => {
 		expect(weekPosition(3, 14, 'Build')).toBe('Week 3 of 14 · Build');
 		expect(weekPosition(9, null, 'Peak')).toBe('Week 9 · Peak');
 		expect(weekPosition(20, null, null)).toBe('Week 20');
+	});
+});
+
+describe('phaseLines', () => {
+	const block = (name: string, from: number, to: number, current = false) => ({
+		key: `k-${name}`,
+		name,
+		current,
+		weeks: Array.from({ length: to - from + 1 }, (_, i) => ({ number: from + i }))
+	});
+	const PLAN = [
+		block('Base', 1, 2),
+		block('Build', 3, 8, true),
+		block('Peak', 9, 12),
+		block('Taper', 13, 13),
+		block('Test week', 14, 14)
+	];
+
+	it('reads Paper’s plan: one line per block, those before now done', () => {
+		expect(phaseLines(PLAN, false).map((l) => [l.name, l.weeks, l.state])).toEqual([
+			['Base', 'Weeks 1 to 2', 'done'],
+			['Build', 'Weeks 3 to 8', 'now'],
+			['Peak', 'Weeks 9 to 12', 'ahead'],
+			['Taper', 'Week 13', 'ahead'],
+			['Test week', 'Week 14', 'ahead']
+		]);
+	});
+
+	it('has none done before the plan starts, and all done past its end', () => {
+		const ahead = PLAN.map((b) => ({ ...b, current: false }));
+		expect(phaseLines(ahead, false).map((l) => l.state)).toEqual(Array(5).fill('ahead'));
+		expect(phaseLines(ahead, true).map((l) => l.state)).toEqual(Array(5).fill('done'));
+	});
+
+	it('says the plan’s length and end', () => {
+		expect(planSpan(14, '2027-02-07')).toBe('14 weeks, ending Sunday 7 February');
+		expect(planSpan(1, '2026-11-22')).toBe('1 week, ending Sunday 22 November');
+	});
+});
+
+describe('changeDay and changesCount', () => {
+	it('dates a change as the list does', () => {
+		expect(changeDay(TODAY, TODAY)).toBe('Today');
+		expect(changeDay('2026-11-20', TODAY)).toBe('Yesterday');
+		expect(changeDay('2026-11-12', TODAY)).toBe('12 Nov');
+		expect(changeDay('2025-12-31', TODAY)).toBe('31 Dec');
+	});
+
+	it('counts the changes in words', () => {
+		expect(changesCount(5)).toBe('Five since the plan began');
+		expect(changesCount(0)).toBe('None since the plan began');
+		expect(changesCount(21)).toBe('21 since the plan began');
 	});
 });
