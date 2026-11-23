@@ -18,6 +18,7 @@ import { PERIODISATION_TOOLS } from './periodisation.ts';
 import { PREFERENCE_TOOLS } from './preferences.ts';
 import { PROGRAMMING_PROPOSAL_TOOLS } from './programming-proposals.ts';
 import { PROGRAMMING_READ_TOOLS } from './programming-reads.ts';
+import { WEIGHT_TOOLS } from './weight.ts';
 import { WORKOUT_TOOLS } from './workout.ts';
 
 export interface ToolGroupFile {
@@ -42,7 +43,8 @@ export const TOOL_GROUP_FILES: readonly ToolGroupFile[] = Object.freeze([
 	file('periodisation.ts', 'programming', PERIODISATION_TOOLS, ['read', 'propose']),
 	file('workout.ts', 'workout', WORKOUT_TOOLS),
 	file('preferences.ts', 'preferences', PREFERENCE_TOOLS),
-	file('analytics.ts', 'analytics', ANALYTICS_TOOLS)
+	file('analytics.ts', 'analytics', ANALYTICS_TOOLS),
+	file('weight.ts', 'analytics', WEIGHT_TOOLS, ['read', 'write'])
 ]);
 
 /** The files' tools sorted by name; a tool outside the catalogue or its group's file throws. */

@@ -42,7 +42,12 @@ const BY_GROUP: Record<ToolGroup, readonly ToolName[]> = {
 		'save_workout_analysis'
 	],
 	preferences: ['get_training_preferences', 'update_exercise_preferences', 'update_training_goals'],
-	analytics: ['get_weekly_training_summary', 'get_training_load', 'get_performance_trends']
+	analytics: [
+		'get_weekly_training_summary',
+		'get_training_load',
+		'get_performance_trends',
+		'get_body_weight'
+	]
 };
 
 /** Proposals: a coach_proposals row and nothing else. Writes: the brief's two direct writes. */
@@ -67,9 +72,9 @@ const DRAFTS: readonly ToolName[] = [
 const namesWhere = (keep: (name: ToolName) => boolean) => TOOL_NAMES.filter(keep);
 
 describe('the coach tool catalogue', () => {
-	it('names 29 tools once each, in snake_case, sorted by code unit', () => {
-		expect(TOOL_NAMES).toHaveLength(29);
-		expect(new Set(TOOL_NAMES).size).toBe(29);
+	it('names 30 tools once each, in snake_case, sorted by code unit', () => {
+		expect(TOOL_NAMES).toHaveLength(30);
+		expect(new Set(TOOL_NAMES).size).toBe(30);
 		for (const name of TOOL_NAMES) expect(name).toMatch(/^[a-z]+(_[a-z]+)+$/);
 		const sorted = [...TOOL_NAMES].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 		expect(TOOL_NAMES).toEqual(sorted);
@@ -91,7 +96,7 @@ describe('the coach tool catalogue', () => {
 		expect(TOOL_EFFECTS).toEqual(['read', 'propose', 'write']);
 		expect(effectOf('propose')).toEqual(PROPOSE);
 		expect(effectOf('write')).toEqual(WRITE);
-		expect(effectOf('read')).toHaveLength(18);
+		expect(effectOf('read')).toHaveLength(19);
 		const engineReads = ['evaluate_week_interference', 'explain_schedule_tradeoffs'];
 		for (const name of effectOf('read'))
 			expect(engineReads.includes(name) || name.startsWith('get_'), name).toBe(true);
