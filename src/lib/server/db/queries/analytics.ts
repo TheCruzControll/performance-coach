@@ -699,7 +699,9 @@ export function blockInputs(db: Executor, programId: string) {
 		.select({
 			number: programVersions.number,
 			blockLineage: programBlocks.lineageId,
-			input: programVersions.inputSnapshot
+			input: programVersions.inputSnapshot,
+			generator: programVersions.generator,
+			startsOn: programVersions.startsOn
 		})
 		.from(programVersions)
 		.innerJoin(programVersionBlocks, eq(programVersionBlocks.versionId, programVersions.id))

@@ -510,10 +510,11 @@ test.describe('in a desktop window', () => {
 		const edit = page
 			.getByTestId('today-goals')
 			.getByRole('link', { name: 'Edit goals', exact: true });
-		const background = () => edit.evaluate((el) => getComputedStyle(el).backgroundColor);
-		const resting = await background();
+		// A ghost has no fill: its hover brightens the text.
+		const colour = () => edit.evaluate((el) => getComputedStyle(el).color);
+		const resting = await colour();
 		await edit.hover();
-		await expect.poll(background).not.toBe(resting);
+		await expect.poll(colour).not.toBe(resting);
 		await captureScreen(page, testInfo, 'today-ready-desktop');
 	});
 });

@@ -258,17 +258,22 @@ test.describe('with no signal', () => {
 test.describe('in a desktop window', () => {
 	test.use(DESKTOP);
 
-	const background = (locator: Locator) =>
-		locator.evaluate((el) => getComputedStyle(el).backgroundColor);
+	// A primary fills and a ghost (the quiet trailing Start) only brightens its text, so the
+	// paint is the fill and the text colour together.
+	const paint = (locator: Locator) =>
+		locator.evaluate((el) => {
+			const style = getComputedStyle(el);
+			return `${style.backgroundColor} ${style.color}`;
+		});
 
 	/** Hover changes it and leaving restores it; a keyboard focus draws the ring. */
 	async function expectHoverAndFocus(page: Page, link: Locator) {
 		await page.mouse.move(0, 0);
-		const rest = await background(link);
+		const rest = await paint(link);
 		await link.hover();
-		await expect.poll(() => background(link), 'on hover').not.toBe(rest);
+		await expect.poll(() => paint(link), 'on hover').not.toBe(rest);
 		await page.mouse.move(0, 0);
-		await expect.poll(() => background(link)).toBe(rest);
+		await expect.poll(() => paint(link)).toBe(rest);
 		await link.focus();
 		await expect(link).toBeFocused();
 		await expect(link).toHaveCSS('outline-style', 'solid');

@@ -227,6 +227,12 @@
 		container-type: inline-size;
 	}
 
+	/* The steppers keep 56 px controls until v2/10 (docs/known-issues.md): the sheet fits without
+	   scrolling at this size. Button and IconButton lg are 60 px elsewhere. */
+	.fields :global(.icon-btn[data-size='lg']) {
+		--size: 3.5rem;
+	}
+
 	/*
 	 * Each stepper on one row where the sheet has room (the label beside the controls, the hint
 	 * under both), as the logger's are on a phone, so the whole set fits without scrolling; at a

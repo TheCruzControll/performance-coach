@@ -289,6 +289,15 @@
 		}
 	}
 
+	/* v2/02 keeps the logger's controls at their pre-v2 size until v2/10 redesigns the set
+	   (docs/known-issues.md). Button and IconButton lg are 60 px elsewhere. */
+	.logger :global(.btn[data-size='lg']) {
+		--btn-height: 3.5rem;
+	}
+	.steppers :global(.icon-btn[data-size='lg']) {
+		--size: 3.5rem;
+	}
+
 	/* In the main column under the set rows, as a card: not fixed, nothing over the content. */
 	@media (width >= 64rem) {
 		.logger {

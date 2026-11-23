@@ -20,8 +20,8 @@ async function openWorkout(page: Page) {
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('Lower body & pull');
 }
 
-const background = (locator: Locator) =>
-	locator.evaluate((el) => getComputedStyle(el).backgroundColor);
+// Minimise is a ghost: its hover brightens the text, so the text colour is what changes.
+const colour = (locator: Locator) => locator.evaluate((el) => getComputedStyle(el).color);
 
 test.describe('the workout screen on a desktop', () => {
 	// gotoWorkout holds /api/workouts/* with page.route, which WebKit applies only without a worker.
@@ -59,11 +59,11 @@ test.describe('the workout screen on a desktop', () => {
 		await page.mouse.move(0, 0);
 		const targets = [page.getByRole('link', { name: 'Minimise' })];
 		for (const target of targets) {
-			const rest = await background(target);
+			const rest = await colour(target);
 			await target.hover();
-			await expect.poll(() => background(target), `${target} on hover`).not.toBe(rest);
+			await expect.poll(() => colour(target), `${target} on hover`).not.toBe(rest);
 			await page.mouse.move(0, 0);
-			await expect.poll(() => background(target)).toBe(rest);
+			await expect.poll(() => colour(target)).toBe(rest);
 			await target.focus();
 			await expect(target).toHaveCSS('outline-style', 'solid');
 			await target.blur();

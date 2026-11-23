@@ -110,15 +110,19 @@ test.describe('the rest timer on a desktop', () => {
 			page.getByRole('button', { name: 'Pause workout time' })
 		];
 		await page.mouse.move(0, 0);
+		// A fill, or a ghost's text (Skip has no fill): the paint is both together.
+		const paint = (target: Locator) =>
+			target.evaluate((el) => {
+				const s = getComputedStyle(el);
+				return `${s.backgroundColor} ${s.color}`;
+			});
 		for (const [i, target] of controls.entries()) {
 			await target.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
-			const rest = await style(target, 'background-color');
+			const rest = await paint(target);
 			await target.hover();
-			await expect
-				.poll(() => style(target, 'background-color'), `control ${i} on hover`)
-				.not.toBe(rest);
+			await expect.poll(() => paint(target), `control ${i} on hover`).not.toBe(rest);
 			await page.mouse.move(0, 0);
-			await expect.poll(() => style(target, 'background-color'), `control ${i} at rest`).toBe(rest);
+			await expect.poll(() => paint(target), `control ${i} at rest`).toBe(rest);
 		}
 
 		// By keyboard: the side list's one stop and Add exercise under it, then the timer's

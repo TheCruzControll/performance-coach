@@ -555,7 +555,8 @@ const hitAreasIn = (scope: Locator) =>
 	scope.evaluate((root) => {
 		const controls = [
 			...root.querySelectorAll<HTMLElement>(
-				'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), a[href]'
+				// A .text-link sits inside a sentence, which WCAG 2.5.8 exempts from the target size.
+				'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), a[href]:not(.text-link)'
 			)
 		].filter((el) => el.checkVisibility());
 		return controls.map((el) => {

@@ -153,3 +153,27 @@ p {
 	font: var(--type-secondary);
 	color: var(--color-text-secondary);
 }
+
+/*
+ * A link in running text (docs/design-system.md#links). It inherits the font and size of its line.
+ * Standalone actions use Button variant="link", which has a 44 px hit area.
+ */
+.text-link {
+	color: var(--color-text-secondary);
+	text-decoration: underline 1px var(--color-text-disabled);
+	text-underline-offset: 4px;
+}
+
+/* Undo in a toast, Try again in an error line. */
+.text-link[data-strong] {
+	color: var(--color-text);
+	font-weight: var(--weight-semibold);
+	text-decoration-color: currentColor;
+}
+
+@media (hover: hover) and (pointer: fine) {
+	.text-link:hover {
+		color: var(--color-text);
+		text-decoration-color: currentColor;
+	}
+}
