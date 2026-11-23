@@ -2,7 +2,8 @@
   @component
   A titled group of content on a screen ("This week", "Tools"): a quiet section heading over
   its children, labelled for assistive tech. Screens use it instead of styling their own
-  headings so spacing and type stay identical everywhere.
+  headings so spacing and type stay identical everywhere. The heading is v2's group heading:
+  secondary type in tertiary text. Legacy in v2: no new use; screen rows remove it.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -53,10 +54,12 @@
 		margin-bottom: var(--space-1);
 	}
 
+	/* v2's group heading. The line box keeps its pre-v2 height (15 px × 1.1875), so the heading
+	   does not grow. */
 	.title {
-		font-size: var(--text-sm);
-		font-weight: var(--weight-semibold);
+		font: var(--type-secondary);
+		line-height: var(--leading-snug);
 		letter-spacing: var(--tracking-normal);
-		color: var(--color-text-secondary);
+		color: var(--color-text-tertiary);
 	}
 </style>

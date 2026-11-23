@@ -1,7 +1,8 @@
 <!--
   @component
-  The base container of the system. Depth comes from tone + a top highlight rather than heavy
-  shadows (dark-first). `interactive` adds a pressed state; `href` renders a link.
+  The base container of the system. Legacy in v2: no new use; screen rows remove it. It keeps
+  its padding and draws a hairline outline, with no fill, tint or shadow, and every radius is
+  the card radius. `interactive` adds the list-row tint (no scale); `href` renders a link.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -63,30 +64,16 @@
 {/if}
 
 <style>
+	/* Legacy in v2: the hairline outline stays until the screen rows drop the card. The tone is
+	   accepted and no longer tints anything. */
 	.surface {
-		--surface-bg: var(--color-surface-1);
-		--tone: transparent;
 		position: relative;
 		display: block;
-		background:
-			linear-gradient(
-				180deg,
-				color-mix(in srgb, var(--tone) 9%, transparent),
-				color-mix(in srgb, var(--tone) 2%, transparent) 70%
-			),
-			var(--surface-bg);
-		border: 1px solid var(--color-border);
-		box-shadow: var(--elevation-1);
+		background: transparent;
+		border: 1px solid var(--color-hairline);
+		border-radius: var(--radius-lg);
+		box-shadow: none;
 		color: var(--color-text);
-	}
-
-	.surface[data-level='2'] {
-		--surface-bg: var(--color-surface-2);
-		box-shadow: var(--elevation-2);
-	}
-	.surface[data-level='3'] {
-		--surface-bg: var(--color-surface-3);
-		box-shadow: var(--elevation-3);
 	}
 
 	.surface[data-padding='none'] {
@@ -102,50 +89,16 @@
 		padding: var(--space-6);
 	}
 
-	.surface[data-radius='md'] {
-		border-radius: var(--radius-md);
-	}
-	.surface[data-radius='lg'] {
-		border-radius: var(--radius-lg);
-	}
-	.surface[data-radius='xl'] {
-		border-radius: var(--radius-xl);
-	}
-
-	.surface[data-tone='accent'] {
-		--tone: var(--color-accent);
-	}
-	.surface[data-tone='strength'] {
-		--tone: var(--color-strength);
-	}
-	.surface[data-tone='running'] {
-		--tone: var(--color-running);
-	}
-	.surface[data-tone='combat'] {
-		--tone: var(--color-combat);
-	}
-	.surface[data-tone='hypertrophy'] {
-		--tone: var(--color-hypertrophy);
-	}
-	.surface[data-tone='conditioning'] {
-		--tone: var(--color-conditioning);
-	}
-
 	.interactive {
 		cursor: pointer;
-		transition:
-			transform var(--duration-fast) var(--ease-out),
-			border-color var(--duration-fast) var(--ease-standard),
-			background-color var(--duration-fast) var(--ease-standard);
 	}
+
 	.interactive:active {
-		transform: scale(0.985);
-		border-color: var(--color-border-strong);
-		transition-duration: var(--duration-instant);
+		background: var(--color-surface-2);
 	}
 	@media (hover: hover) and (pointer: fine) {
 		.interactive:hover {
-			border-color: var(--color-border-strong);
+			background: var(--color-surface-2);
 		}
 	}
 </style>

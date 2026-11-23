@@ -1,7 +1,8 @@
 <!--
   @component
   Mutually exclusive options (radiogroup). Animated thumb, roving tabindex, arrow-key
-  navigation. Use for 2–4 short options (units, theme, ranges).
+  navigation. Use for 2–4 short options (units, theme, ranges). Legacy in v2: no new use; screen
+  rows remove it.
 -->
 <script lang="ts" generics="T extends string">
 	import type { IconName } from '../icons/icons';
@@ -96,19 +97,21 @@
 </div>
 
 <style>
+	/* No outline: the track's padding is 4 px, where the 1 px border and 3 px padding were, so the
+	   thumb and the options sit where they did. */
 	.segmented {
 		--height: var(--touch-target);
-		--pad: 3px;
-		/* Track height minus padding and the 1px border on each side. */
-		--option-height: calc(var(--height) - 2 * var(--pad) - 2px);
+		--pad: 4px;
+		/* Track height minus padding on each side. */
+		--option-height: calc(var(--height) - 2 * var(--pad));
 		position: relative;
 		display: grid;
 		grid-template-columns: repeat(var(--count), minmax(0, 1fr));
 		padding: var(--pad);
 		min-height: var(--height);
+		border: 0;
 		border-radius: var(--radius-full);
 		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
 		isolation: isolate;
 	}
 
@@ -125,7 +128,6 @@
 		width: calc((100% - 2 * var(--pad)) / var(--count));
 		border-radius: var(--radius-full);
 		background: var(--color-surface-inverse);
-		box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
 		transform: translateX(calc(var(--index) * 100%));
 		transition: transform var(--duration-slow) var(--ease-spring);
 	}

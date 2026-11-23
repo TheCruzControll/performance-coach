@@ -232,13 +232,11 @@
 	</section>
 
 	<section class="section">
-		<h2 class="h">Cards & tones</h2>
+		<h2 class="h">Legacy: cards (v2 has none)</h2>
 		<div class="grid">
-			{#each ['strength', 'running', 'combat', 'hypertrophy', 'conditioning'] as const as tone (tone)}
-				<Card {tone} eyebrow={tone} title="Discipline surface" padding="md">
-					<p class="muted">Tones tint a surface; they never shout.</p>
-				</Card>
-			{/each}
+			<Card eyebrow="Legacy in v2" title="Discipline surface" padding="md">
+				<p class="muted">A hairline outline and no fill. Tones no longer tint a card.</p>
+			</Card>
 		</div>
 	</section>
 
@@ -407,7 +405,7 @@
 	/*
 	 * A desktop window: the gallery widens to --content-wide and its groups pair up, each at about
 	 * the phone column's width, so no specimen is stretched: Color beside Type, Components beside
-	 * Cards & tones, Charts beside Workout. The header and the icon grid span both columns, and the
+	 * Legacy: cards, Charts beside Workout. The header and the icon grid span both columns, and the
 	 * grids get larger cells.
 	 */
 	@media (width >= 64rem) {

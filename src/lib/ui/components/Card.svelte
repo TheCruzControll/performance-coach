@@ -1,6 +1,7 @@
 <!--
   @component
-  A Surface with an optional header row (eyebrow, title, trailing action).
+  A Surface with an optional header row (eyebrow, title, trailing action). Legacy in v2: no new
+  use; screen rows remove it.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -72,11 +73,17 @@
 		min-width: 0;
 	}
 
+	/* The eyebrow keeps the global .eyebrow type and takes the tertiary text. */
+	.eyebrow {
+		color: var(--color-text-tertiary);
+	}
+
+	/* The line box keeps its pre-v2 height (19 px × 1.1875), so the header does not move. */
 	.title {
-		font-size: var(--text-lg);
+		font: var(--type-row);
 		font-weight: var(--weight-semibold);
-		letter-spacing: var(--tracking-tight);
-		line-height: var(--leading-snug);
+		letter-spacing: var(--tracking-normal);
+		line-height: calc(var(--text-lg) * var(--leading-snug));
 	}
 
 	.action {

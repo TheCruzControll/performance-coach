@@ -3,11 +3,18 @@
 	import Badge from '#lib/ui/components/Badge.svelte';
 	import Chip from '#lib/ui/components/Chip.svelte';
 	import ListRow from '#lib/ui/components/ListRow.svelte';
+	import SegmentedControl from '#lib/ui/components/SegmentedControl.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import Stat from '#lib/ui/components/Stat.svelte';
+
+	let range = $state('4w');
 </script>
 
 <div class="grid">
+	<p class="note">
+		Legacy in v2: v2 has no cards, chips, segmented controls or stat tiles. They keep their padding
+		until each screen row removes them.
+	</p>
 	<Section title="Stat">
 		<div class="stats">
 			<Stat label="Est. 1RM" value="182.5" unit="kg" caption="Back squat" />
@@ -46,6 +53,17 @@
 			<Chip as="li" tone="combat">Muay Thai</Chip>
 			<Chip as="li">Barbell</Chip>
 		</ul>
+	</Section>
+	<Section title="Segmented control">
+		<SegmentedControl
+			label="Range"
+			bind:value={range}
+			options={[
+				{ value: '4w', label: '4 weeks' },
+				{ value: '12w', label: '12 weeks' },
+				{ value: '1y', label: '1 year' }
+			]}
+		/>
 	</Section>
 	<Section title="List row">
 		<h3 class="group">Training</h3>
@@ -92,6 +110,11 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
+	}
+
+	.note {
+		font: var(--type-secondary);
+		color: var(--color-text-tertiary);
 	}
 
 	/* A group heading: secondary type in tertiary text, as the v2 lists draw it. */

@@ -1,8 +1,9 @@
 <!--
   @component
-  Quiet outlined label for a category, e.g. a discipline. An optional discipline `tone` adds a
-  small colour dot (a signal, never a fill). Static by design: chips that filter or toggle will
-  be a SegmentedControl or a button group, not this.
+  Quiet label for a category, e.g. a discipline: plain secondary text. An optional discipline
+  `tone` adds a small colour dot (a signal, never a fill). Static by design: chips that filter or
+  toggle will be a SegmentedControl or a button group, not this. Legacy in v2: no new use; screen
+  rows remove it.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -23,16 +24,16 @@
 </svelte:element>
 
 <style>
+	/* No outline and no pill. The 1 px the border took stays in the inline padding, so the text
+	   keeps its place. */
 	.chip {
 		display: inline-flex;
 		align-items: center;
 		gap: var(--space-1-5);
 		min-height: 1.75rem;
-		padding: 0 var(--space-3);
-		border-radius: var(--radius-full);
-		border: 1px solid var(--color-border);
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
+		padding: 0 calc(var(--space-3) + 1px);
+		border: 0;
+		font: var(--type-secondary);
 		color: var(--color-text-secondary);
 		white-space: nowrap;
 	}
