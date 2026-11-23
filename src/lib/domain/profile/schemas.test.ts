@@ -7,7 +7,8 @@ import {
 	injurySchema,
 	raceResultSchema,
 	runningSchema,
-	validate
+	validate,
+	weightEntrySchema
 } from './schemas';
 
 /** Each optional date with a valid record around it, so only the date decides the outcome. */
@@ -139,6 +140,59 @@ describe('heart rate', () => {
 		expect(validate(runningSchema, { ...run, heartRate: { max: 400 } })).toEqual({
 			ok: false,
 			errors: { 'heartRate.max': 'Max heart rate between 120 and 230' }
+		});
+	});
+});
+
+describe('weight entries', () => {
+	const TODAY = '2026-11-22';
+	const entry = (overrides: Record<string, unknown> = {}) => ({
+		value: 82.4,
+		unit: 'kg',
+		measuredOn: '2026-11-21',
+		...overrides
+	});
+
+	it('accepts a weigh-in on or before today, within the unit’s range', () => {
+		const schema = weightEntrySchema(TODAY);
+		expect(validate(schema, entry())).toMatchObject({ ok: true, data: { value: 82.4 } });
+		expect(validate(schema, entry({ measuredOn: TODAY }))).toMatchObject({ ok: true });
+		expect(validate(schema, entry({ value: 175.5, unit: 'lb' }))).toMatchObject({ ok: true });
+	});
+
+	it('refuses a day after today, at that field', () => {
+		expect(validate(weightEntrySchema(TODAY), entry({ measuredOn: '2026-11-23' }))).toEqual({
+			ok: false,
+			errors: { measuredOn: 'That day hasn’t come yet' }
+		});
+	});
+
+	it('bounds the value by the unit, and to 2 decimals', () => {
+		const schema = weightEntrySchema(TODAY);
+		expect(validate(schema, entry({ value: 20 }))).toEqual({
+			ok: false,
+			errors: { value: 'Between 25 and 350 kg' }
+		});
+		expect(validate(schema, entry({ value: 100, unit: 'lb' }))).toMatchObject({ ok: true });
+		expect(validate(schema, entry({ value: 50, unit: 'lb' }))).toEqual({
+			ok: false,
+			errors: { value: 'Between 55 and 770 lb' }
+		});
+		expect(validate(schema, entry({ value: 82.456 }))).toEqual({
+			ok: false,
+			errors: { value: 'Use at most 2 decimals' }
+		});
+	});
+
+	it('reports every problem at once, and refuses an unknown unit or a non-date', () => {
+		expect(
+			validate(weightEntrySchema(TODAY), entry({ value: 20, unit: 'stone', measuredOn: 'soon' }))
+		).toEqual({
+			ok: false,
+			errors: {
+				unit: 'Pick kg or lb',
+				measuredOn: 'Use a real date'
+			}
 		});
 	});
 });

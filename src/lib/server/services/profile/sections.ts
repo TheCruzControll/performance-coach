@@ -51,6 +51,7 @@ import {
 	toExperienceList,
 	toInjury,
 	toRace,
+	type ChangeSource,
 	type ProfileDeps
 } from './shared';
 
@@ -421,12 +422,21 @@ export async function saveExercisePreferences(
 			const repo = createProfileRepository(tx);
 			await repo.lockSection(ownerId, 'exercisePreferences');
 			const stored = await repo.listExercisePreferences(ownerId);
-			const rows = linkedPreferences(items, named, stored, source);
+			const rows = linkedPreferences(items, named, stored, preferenceSourceOf(source));
 			await repo.ensureProfile(ownerId);
 			await repo.replaceExercisePreferences(ownerId, rows, now());
 			return (await repo.listExercisePreferences(ownerId)).map(toExercisePreference);
 		})
 	);
+}
+
+/**
+ * The source a preference records. ChangeSource also covers the weigh-in log ('log'), which names
+ * no preference, so a save that reaches here with it is a caller's bug.
+ */
+function preferenceSourceOf(source: ChangeSource): PreferenceSource {
+	if (source === 'log') throw new Error('The weigh-in log does not save exercise preferences');
+	return source;
 }
 
 /**

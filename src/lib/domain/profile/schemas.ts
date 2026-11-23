@@ -579,6 +579,56 @@ export const bodySchema = z
 export type BodyInput = z.input<typeof bodySchema>;
 export type BodyData = z.output<typeof bodySchema>;
 
+/**
+ * One weigh-in: its value and unit (the unit it was read in, never converted), and its day. The
+ * day cannot be later than `today`, the owner's calendar day, which only the caller knows, so this
+ * schema is built for it. The value is within BODY_WEIGHT_RANGE for its unit, to 2 decimals (the
+ * column's scale).
+ */
+export const weightEntrySchema = (today: string) =>
+	z
+		.object({
+			value: z.number('Enter your body weight'),
+			unit: z.enum(WEIGHT_UNITS, 'Pick kg or lb'),
+			measuredOn: isoDate('Use a real date')
+		})
+		.check(
+			z.superRefine((entry, ctx) => {
+				const value: unknown = entry.value;
+				const unit: unknown = entry.unit;
+				const day: unknown = entry.measuredOn;
+				const range = typeof unit === 'string' ? BODY_WEIGHT_RANGE[unit] : undefined;
+				if (typeof value === 'number' && range) {
+					const [min, max] = range;
+					if (value < min || value > max) {
+						ctx.addIssue({
+							code: 'custom',
+							message: `Between ${min} and ${max} ${unit}`,
+							path: ['value'],
+							input: value
+						});
+					} else if (Math.abs(value * 100 - Math.round(value * 100)) > 1e-6) {
+						ctx.addIssue({
+							code: 'custom',
+							message: 'Use at most 2 decimals',
+							path: ['value'],
+							input: value
+						});
+					}
+				}
+				if (typeof day === 'string' && day > today) {
+					ctx.addIssue({
+						code: 'custom',
+						message: 'That day hasn’t come yet',
+						path: ['measuredOn'],
+						input: day
+					});
+				}
+			}, always)
+		);
+export type WeightEntryInput = z.input<ReturnType<typeof weightEntrySchema>>;
+export type WeightEntryData = z.output<ReturnType<typeof weightEntrySchema>>;
+
 // ---- results ---------------------------------------------------------------------------------
 
 // validate() lives in ../validation.ts, shared with the training schemas; re-exported here so
