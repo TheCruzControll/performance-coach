@@ -30,13 +30,18 @@ interface ProposalsResult {
 		title: Wrapped;
 		status: string;
 		decisionNote: Wrapped | null;
-		origin: 'coach' | 'weekly_review' | 'cycle_review';
+		origin: 'coach' | 'weekly_review' | 'cycle_review' | 'goal_priority' | 'fatigue';
 		review: { id: string; label?: string } | null;
 	}[];
 }
 
 /** Who made a review's proposal, in the answer's words. */
-const PROPOSER = { weekly_review: 'Your weekly review', cycle_review: 'Your cycle review' };
+const PROPOSER = {
+	weekly_review: 'Your weekly review',
+	cycle_review: 'Your cycle review',
+	goal_priority: 'Your goal change',
+	fatigue: 'Your training load'
+};
 
 /** The rejected proposals the turn context lists, by id. */
 function rejectedIds(context: MockContext): string[] {
@@ -69,10 +74,10 @@ function proposedAnswer(context: MockContext): string {
 	const lines = items.map((p) => {
 		const title = p.title.untrusted_text.replace(/[[\]|\n]/g, ' ');
 		const proposal = `[[proposal:${p.source.id}]]`;
-		if (p.origin === 'coach' || !p.review)
-			return `[fact] I proposed “${title}” (${p.status}) ${proposal}`;
-		const review = `[[review:${p.review.id}|${p.review.label ?? 'Review'}]]`;
-		return `[fact] ${PROPOSER[p.origin]} proposed “${title}” (${p.status}), not me ${proposal} ${review}`;
+		if (p.origin === 'coach') return `[fact] I proposed “${title}” (${p.status}) ${proposal}`;
+		// An engine's re-plan (goal_priority, fatigue) names no review: it is still not the coach's.
+		const review = p.review ? ` [[review:${p.review.id}|${p.review.label ?? 'Review'}]]` : '';
+		return `[fact] ${PROPOSER[p.origin]} proposed “${title}” (${p.status}), not me ${proposal}${review}`;
 	});
 	return ['Here is what has been proposed lately.', ...lines].join('\n\n');
 }

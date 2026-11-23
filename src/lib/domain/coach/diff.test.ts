@@ -11,8 +11,9 @@ import {
 	PLANNED,
 	SESSION
 } from '../../../../tests/fixtures/coach-proposals';
+import { describeChanges, type PlanChanges } from '../programming/replan/changes';
 import { plannedHardSets, sessionLoadOf } from '../training/metrics';
-import type { SetPrescription } from '../training/types';
+import type { ProgramPlan, SessionPlan, SetPrescription } from '../training/types';
 import {
 	describeImpact,
 	describeProposal,
@@ -178,6 +179,44 @@ const NO_GOAL_FIELDS = {
 	notes: null
 };
 
+/** A replan's change, as its preview describes it: next week's squats go from 3 to 2 sets. */
+function replanChanges(unit: 'kg' | 'lb'): PlanChanges {
+	const plan = (sets: number, title: string): ProgramPlan => {
+		const made = squatSession(SESSION, '2026-11-16', title) as Extract<
+			DiffSession,
+			{ kind: 'strength' }
+		>;
+		const { lineage: _lineage, exercises, ...session } = made;
+		const strength = {
+			...session,
+			exercises: exercises.map(({ lineage: _l, ...e }) => ({
+				...e,
+				sets: [set({ role: 'working', sets, targetRpe: null, loadValue: 90 })]
+			}))
+		} as SessionPlan;
+		const week = { ...WEEK, startsOn: '2026-11-16', endsOn: '2026-11-22', sessions: [strength] };
+		return {
+			title: 'Strength and Muay Thai',
+			startsOn: '2026-11-09',
+			firstPlannedDay: '2026-11-09',
+			decisions: [],
+			blocks: [
+				{
+					...{ phase: 'accumulation', name: 'Block 1', startsOn: '2026-11-16' },
+					...{ endsOn: '2026-11-22', outline: false, goalRefs: [], progression: {} },
+					weeks: [week]
+				}
+			]
+		};
+	};
+	const squat = { name: 'Back squat', primaryMuscles: ['quads'], secondaryMuscles: ['glutes'] };
+	return describeChanges(plan(3, 'Lower A'), plan(2, 'Lower A'), {
+		units: { unit, distanceUnit: 'km' },
+		from: '2026-11-16',
+		exercises: new Map([['back_squat', squat as never]])
+	});
+}
+
 const CONTEXT: DiffContext = {
 	today: '2026-11-09',
 	unit: 'kg',
@@ -215,7 +254,8 @@ const CONTEXT: DiffContext = {
 		}
 	],
 	blocks: [{ lineage: BLOCK, name: 'Strength block 1' }],
-	program: { title: 'Strength and Muay Thai' }
+	program: { title: 'Strength and Muay Thai' },
+	replan: replanChanges('kg')
 };
 
 const parse = (input: unknown): Proposal => z.parse(proposalSchema, input);
@@ -538,6 +578,49 @@ describe('describeProposal impact', () => {
 			'Week of Mon 9 Nov: Glutes & hips +0.5 hard sets, Quads −2 hard sets, −40 min, load −320, running +1.61 km'
 		]);
 		expect(describeImpact(impact, { distanceUnit: 'mi' })[0]).toMatch(/running \+1 mi$/);
+	});
+});
+
+describe('a replan', () => {
+	it('is its preview’s changes: each row under its week, the impact and the summary lines', () => {
+		const changes = replanChanges('kg');
+		const { rows, impact } = describeProposal(fixture('replan'), CONTEXT);
+		expect(rows).toEqual(
+			changes.weeks.flatMap((w) =>
+				w.rows.map((r) => ({
+					area: 'session',
+					label: `Week of 16 Nov · ${r.label}`,
+					before: r.before,
+					after: r.after,
+					date: r.date,
+					link: null
+				}))
+			)
+		);
+		expect(rows).toEqual([
+			expect.objectContaining({
+				label: 'Week of 16 Nov · Lower A, Back squat',
+				before: '3 × 5, 90 kg',
+				after: '2 × 5, 90 kg',
+				date: '2026-11-16'
+			})
+		]);
+		expect(impact).toEqual(changes.impact);
+		expect(summaryLines(fixture('replan'), CONTEXT)).toEqual(changes.summaryLines);
+	});
+
+	it('words its rows in the owner’s units, the same every time', () => {
+		const lb = { ...CONTEXT, unit: 'lb' as const, replan: replanChanges('lb') };
+		const rows = rowsOf(fixture('replan'), lb);
+		expect([rows[0]!.before, rows[0]!.after]).toEqual(['3 × 5, 200 lb', '2 × 5, 200 lb']);
+		expect(rowsOf(fixture('replan'), lb)).toEqual(rows);
+		expect(rowsOf(fixture('replan'))).not.toEqual(rows);
+	});
+
+	it('needs its changes: a replan with none is a RangeError', () => {
+		const { replan: _replan, ...without } = CONTEXT;
+		expect(() => describeProposal(fixture('replan'), without)).toThrow(RangeError);
+		expect(() => summaryLines(fixture('replan'), without)).toThrow(RangeError);
 	});
 });
 

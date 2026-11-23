@@ -99,5 +99,12 @@ export const FIXTURES: Record<ProposalKind, ReturnType<typeof envelope>> = {
 		exerciseId: DISLIKED,
 		sentiment: 'dislike',
 		reason: 'Hurts my knee'
+	}),
+	replan: envelope('replan', {
+		directive: { kind: 'block', phase: 'maintenance', weeks: 4, focusGoalRef: GOAL },
+		from: '2026-11-16',
+		baseVersionNumber: 3,
+		fingerprint: '0123456789abcdef',
+		shapeDigest: 'fedcba9876543210'
 	})
 };

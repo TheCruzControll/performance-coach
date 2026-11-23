@@ -304,7 +304,7 @@ Why a week of the owner's active program is shaped as it is, from the engine and
 - **Effect:** read: changes nothing
 - **Drafts:** no
 
-The changes proposed to the owner, by you or by a review's rules, and what became of them, newest first: each one's kind, title, status (proposed, accepted, rejected, applied or superseded), summary lines, the program version applying it made, why it was superseded, when it was decided, the owner's reason for a rejection (decisionNote), and origin: coach for a change you proposed, weekly\_review or cycle\_review for one the rules of that review made, with the review as a source (review). Never present a review's proposal as your own: say the review proposed it and cite the review. Give ids (from the turn context or an earlier result) for those proposals, or a status to filter; up to 5 unless limit says otherwise.
+The changes proposed to the owner, by you or by a review's rules, and what became of them, newest first: each one's kind, title, status (proposed, accepted, rejected, applied or superseded), summary lines, the program version applying it made, why it was superseded, when it was decided, the owner's reason for a rejection (decisionNote), and origin: coach for a change you proposed, weekly\_review or cycle\_review for one the rules of that review made, with the review as a source (review), goal\_priority or fatigue for a re-plan the engine proposed after a goal change or from the owner's training load. Never present a review's or the engine's proposal as your own: say what proposed it and cite the review when there is one. Give ids (from the turn context or an earlier result) for those proposals, or a status to filter; up to 5 unless limit says otherwise.
 
 ### Input
 
@@ -330,13 +330,13 @@ The changes proposed to the owner, by you or by a review's rules, and what becam
     - `untrusted_text` (string, required)
     - `truncated` (`true`)
   - `appliedVersion` (integer | null, required)
-  - `supersededReason` (`"program_changed"` | `"revised"` | `"review_refreshed"` | `"folded_into_review"` | `"sessions_passed"` | `"cycle_planned"` | null, required)
+  - `supersededReason` (`"program_changed"` | `"revised"` | `"review_refreshed"` | `"folded_into_review"` | `"sessions_passed"` | `"cycle_planned"` | `"profile_changed"` | `"plan_changed"` | `"start_passed"` | null, required)
   - `createdAt` (string (date-time), required)
   - `decidedAt` (string (date-time) | null, required)
   - `decisionNote` (object | null, required)
     - `untrusted_text` (string, required)
     - `truncated` (`true`)
-  - `origin` (`"coach"` | `"weekly_review"` | `"cycle_review"`, required)
+  - `origin` (`"coach"` | `"weekly_review"` | `"cycle_review"` | `"goal_priority"` | `"fatigue"`, required)
   - `review` (object | null, required)
     - `type` (`"workout"` | `"set"` | `"run"` | `"session"` | `"version"` | `"decision"` | `"goal"` | `"baseline"` | `"preference"` | `"proposal"` | `"review"` | `"note"` | `"exercise"` | `"pain_report"` | `"date"`, required)
     - `id` (string, required)

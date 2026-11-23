@@ -13,7 +13,9 @@
  * - acceptProposal takes only the id: it locks the row, re-parses the stored payload, supersedes
  *   it if its program has moved on ('program_changed'), checks it again against today and runs
  *   its kind's applier (./apply) in the same transaction. A proposal already decided returns as
- *   stored and nothing is written.
+ *   stored and nothing is written. A replan whose start or week has passed is superseded, never
+ *   refused, and a superseded replan carries proposeAgain on every accept that finds it stale, a
+ *   repeat included, but never one the owner revised.
  * - rejectProposal stores the owner's optional reason; rejecting twice changes nothing.
  * - listProposals and getProposalView read one view model, from the stored rows only; a card's
  *   view (a decision's answer, getProposalView, listThreadProposals) also names the cycle review a
@@ -69,6 +71,7 @@ import { DECISION_NOTE_MAX, type AppliedRef } from '../../db/schema/coaching';
 import { getExercisesByIds, resolveKeys, type ExerciseDef } from '../exercises/index';
 import { isUuid } from '../ids';
 import { createContextCache, type ContextCache } from '../periodisation/context';
+import { previewReplan, type ReplanPreview } from '../periodisation/preview';
 import { getAthleteProfile, listGoals } from '../profile';
 import { checkMove, getProgramVersion, type StoredSession } from '../programs';
 import { programmingInputFor } from '../programs/alternatives';
@@ -80,6 +83,7 @@ import { listActiveWorkouts } from '../workouts/canonical';
 import { transition } from '../lifecycle-guard';
 import { APPLIERS, type Applier, type ApplyOutcome } from './apply';
 import { cycleReviewHref, refuseReviewNextCycle } from './apply/next-cycle';
+import { replanEnded } from './apply/replan';
 import { SESSION_ENDED, substitutionEnded } from './apply/session';
 import {
 	CoachInputError,
@@ -110,7 +114,8 @@ const ON_PROGRAM: ReadonlySet<ProposalKind> = new Set([
 	'program_adjustment',
 	'workout_update',
 	'session_substitution',
-	'next_cycle'
+	'next_cycle',
+	'replan'
 ]);
 
 /** The proposal fails its schema or today's rules: nothing was written. */
@@ -190,21 +195,38 @@ export interface RulesProvenance {
 	trimmed?: number;
 }
 
-/** Where a review's proposal came from, and the review page that shows it. */
-export interface ProposalOrigin {
-	kind: RulesProvenance['kind'];
-	reviewId: string;
-	href: string;
-	/** A weekly review's Monday ('From your weekly review · Week of 2 Nov'); null for a cycle's. */
-	weekStartsOn: IsoDate | null;
-	/** The review as a coach source, whose action opens that page (sourceAction). */
-	source: SourceRef;
+/**
+ * A re-plan the rules made with no review behind it (M7): from a change to the goals'
+ * priorities, or from the training load. Stored as evidence.source, like a review's.
+ */
+export interface EngineProvenance {
+	kind: 'goal_priority' | 'fatigue';
 }
 
-/** What a review's source is called wherever the coach reads it. */
-export const REVIEW_SOURCE_LABEL: Record<RulesProvenance['kind'], string> = {
+/** Where a rules-made proposal came from, and the page that shows it. */
+export interface ProposalOrigin {
+	kind: RulesProvenance['kind'] | EngineProvenance['kind'];
+	/** The review that proposed it; null for an engine's. */
+	reviewId: string | null;
+	href: string;
+	/** A weekly review's Monday ('From your weekly review · Week of 2 Nov'); null otherwise. */
+	weekStartsOn: IsoDate | null;
+	/** The review as a coach source, whose action opens that page (sourceAction); null otherwise. */
+	source: SourceRef | null;
+}
+
+/** What a rules-made proposal's source is called wherever the coach reads it. */
+export const REVIEW_SOURCE_LABEL: Record<ProposalOrigin['kind'], string> = {
 	weekly_review: 'Weekly review',
-	cycle_review: 'Cycle review'
+	cycle_review: 'Cycle review',
+	goal_priority: 'Goal priorities',
+	fatigue: 'Training load'
+};
+
+/** The page an engine's re-plan leads to: the goals it follows, or Progress for the load. */
+export const ENGINE_ORIGIN_HREF: Record<EngineProvenance['kind'], string> = {
+	goal_priority: '/profile/goals',
+	fatigue: '/progress'
 };
 
 const origin = (
@@ -224,6 +246,11 @@ const origin = (
 export function originOf(source: unknown): ProposalOrigin | null {
 	if (typeof source !== 'object' || source === null) return null;
 	const { kind, reviewId, weekStartsOn } = source as Partial<RulesProvenance>;
+	const engine = (source as Partial<EngineProvenance>).kind;
+	if (engine === 'goal_priority' || engine === 'fatigue') {
+		const href = ENGINE_ORIGIN_HREF[engine];
+		return { kind: engine, reviewId: null, href, weekStartsOn: null, source: null };
+	}
 	if (typeof reviewId !== 'string') return null;
 	if (kind === 'weekly_review' && typeof weekStartsOn === 'string')
 		return origin(kind, reviewId, reviewKey({ kind: 'weekly', weekStartsOn }), weekStartsOn);
@@ -451,10 +478,12 @@ async function checkAgainstToday(
 	const version = found
 		? await getProgramVersion(ownerId, found.program.id, found.version.number, { db })
 		: null;
-	const goals = kind === 'goal_update' ? await listGoals(ownerId, { db }) : [];
+	const goals = kind === 'goal_update' || kind === 'replan' ? await listGoals(ownerId, { db }) : [];
 	const preferences = await listExercisePreferences(ownerId, { db });
 	const programming =
-		version && ON_PROGRAM.has(kind) ? await programmingInputFor(ownerId, { db }) : null;
+		version && ON_PROGRAM.has(kind) && kind !== 'replan'
+			? await programmingInputFor(ownerId, { db })
+			: null;
 
 	const sessions = (version?.blocks ?? [])
 		.flatMap((b) => b.weeks)
@@ -569,6 +598,32 @@ async function checkAgainstToday(
 	};
 }
 
+/** Why a replan whose preview no longer matches its payload is refused at create. */
+export const PREVIEW_AGAIN = 'The plan has changed since this was previewed: preview it again';
+
+/**
+ * A replan's card rows, impact and summary lines: its preview's describeChanges, run on `db`
+ * unless `given`. Refused when the preview is refused, or its hashes no longer match the payload.
+ */
+async function replanChanges(
+	ownerId: string,
+	{ payload }: Extract<Proposal, { kind: 'replan' }>,
+	today: IsoDate,
+	db: Executor,
+	given?: ReplanPreview
+): Promise<NonNullable<DiffContext['replan']>> {
+	const shown =
+		given ?? (await previewReplan(ownerId, { today, directive: payload.directive }, { db }));
+	if ('refusal' in shown) throw new ProposalRefusedError({ 'payload.directive': shown.why });
+	const same =
+		shown.fingerprint === payload.fingerprint &&
+		shown.shapeDigest === payload.shapeDigest &&
+		shown.from === payload.from &&
+		shown.baseVersionNumber === payload.baseVersionNumber;
+	if (!same) throw new ProposalRefusedError({ 'payload.fingerprint': PREVIEW_AGAIN });
+	return { weeks: shown.weeks, impact: shown.impact, summaryLines: shown.summaryLines };
+}
+
 // ---- create -----------------------------------------------------------------------------
 
 export interface NewProposal {
@@ -580,8 +635,10 @@ export interface NewProposal {
 	origin?: { threadId: string; runId: string; toolUseId: string } | null;
 	/** What the coach read to propose it. */
 	evidence?: Record<string, unknown> | null;
-	/** A review's rules proposed it, with no conversation: stored as evidence.source. */
-	provenance?: RulesProvenance | null;
+	/** A review's or an engine's rules proposed it, with no conversation: evidence.source. */
+	provenance?: RulesProvenance | EngineProvenance | null;
+	/** A replan's preview, already run on this executor (proposeReplan): not run again. */
+	preview?: ReplanPreview;
 }
 
 export interface CreatedProposal {
@@ -608,11 +665,15 @@ export async function createProposal(
 		: (input.evidence ?? null);
 	return inTransaction(deps, async (resolved) => {
 		const repo = createCoachProposalsRepository(resolved.db);
-		const { proposal, program, diffContext, warnings } = await checkAgainstToday(
+		const { proposal, today, program, diffContext, warnings } = await checkAgainstToday(
 			ownerId,
 			input.proposal,
 			resolved
 		);
+		if (proposal.kind === 'replan') {
+			const { db } = resolved;
+			diffContext.replan = await replanChanges(ownerId, proposal, today, db, input.preview);
+		}
 		const base = ON_PROGRAM.has(proposal.kind) ? program : null;
 		const hash = payloadHash(proposal.payload);
 		const of = { kind: proposal.kind, payloadHash: hash, baseVersionId: base?.versionId ?? null };
@@ -681,6 +742,8 @@ export interface DecidedProposal {
 	superseded?: { reason: typeof SESSIONS_PASSED; href: string };
 	/** Where a next_cycle went when a cycle review took it in (the outcome's href). */
 	href?: string;
+	/** A replan found stale at an accept (this one or an earlier): it can be proposed again. */
+	proposeAgain?: true;
 }
 
 /** A session the version does not hold: kept, so today's check refuses it as it would. */
@@ -756,6 +819,14 @@ export async function acceptProposal(
 	id: string,
 	deps: CoachDeps = {}
 ): Promise<DecidedProposal> {
+	const decided = await acceptOnce(ownerId, id, deps);
+	const { kind, status, supersededReason } = decided.proposal;
+	// Any accept of a stale replan, this one or a repeat; never one the owner revised.
+	const again = kind === 'replan' && status === 'superseded' && supersededReason !== 'revised';
+	return again ? { ...decided, proposeAgain: true } : decided;
+}
+
+async function acceptOnce(ownerId: string, id: string, deps: CoachDeps): Promise<DecidedProposal> {
 	return inTransaction(deps, async (resolved) => {
 		const repo = createCoachProposalsRepository(resolved.db);
 		const row = await lockOwn(repo, ownerId, id);
@@ -809,17 +880,24 @@ export async function acceptProposal(
 		};
 		// One context read for the check and the applier's moves (M7's rules), in this transaction.
 		const contexts = createContextCache(ownerId, { db: resolved.db });
+		let ended: SupersededReason = SESSION_ENDED;
 		const checked = await checkAgainstToday(ownerId, stored, resolved, contexts).catch(
 			async (error) => {
-				// A refused substitution whose workout or session is over is superseded instead.
+				// A refused substitution whose workout or session is over is superseded instead, and so
+				// is a replan whose start or week has passed.
 				const parsed = validate(proposalSchema, stored);
 				if (!(error instanceof ProposalRefusedError) || !parsed.ok) throw error;
+				const late = replanEnded(parsed.data, error.errors);
+				if (late) {
+					ended = late;
+					return null;
+				}
 				if (!(await substitutionEnded(ownerId, parsed.data, resolved.db))) throw error;
 				return null;
 			}
 		);
 		if (!checked) {
-			const superseded = { supersededReason: SESSION_ENDED, closedAt: at };
+			const superseded = { supersededReason: ended, closedAt: at };
 			const t = transition(PROPOSAL, row.status, 'supersede');
 			await repo.decide(ownerId, row.id, t, { ...superseded, updatedAt: at });
 			return { proposal: await view(resolved.db, ownerId, row.id), changed: true };

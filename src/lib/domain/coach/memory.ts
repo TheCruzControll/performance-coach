@@ -97,8 +97,17 @@ export type MemoryDecision = Sourced<{
 	what: string;
 	why: string;
 }>;
-/** Who proposed a change: the coach, or the rules of one of the owner's reviews. */
-export const PROPOSAL_ORIGINS = ['coach', 'weekly_review', 'cycle_review'] as const;
+/**
+ * Who proposed a change: the coach, the rules of one of the owner's reviews, or (M7) the rules
+ * re-planning for a goal change or the training load.
+ */
+export const PROPOSAL_ORIGINS = [
+	'coach',
+	'weekly_review',
+	'cycle_review',
+	'goal_priority',
+	'fatigue'
+] as const;
 export type ProposalOriginKind = (typeof PROPOSAL_ORIGINS)[number];
 
 export type MemoryProposal = Sourced<{

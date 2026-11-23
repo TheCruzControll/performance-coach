@@ -396,15 +396,16 @@ Every change the agent makes is a `coach_proposals` row, created by `createPropo
 (with `program_id` whenever it is set), and the thread, run and tool call. An identical open
 proposal on the same base is returned instead of a second row.
 
-| Kind                   | Payload from          | Applied on accept by (`services/coach/apply/`)                                 |
-| ---------------------- | --------------------- | ------------------------------------------------------------------------------ |
-| `program_adjustment`   | a draft, effort high  | `program.ts`: its ops as one version (`applyProgramEdits`)                     |
-| `workout_update`       | a draft, effort high  | `program.ts`: the same, refused once the workout has started                   |
-| `session_substitution` | the strict tool input | `session.ts`: M4's dispatcher in a live workout, else M3's one-off swap        |
-| `new_program`          | M3's `previewProgram` | `program-create.ts`: `buildProgram` (proposed only while no program is active) |
-| `next_cycle`           | a draft, effort high  | `next-cycle.ts`: M6's paths, below ([Reviews (M6)](#reviews-m6))               |
-| `goal_update`          | the strict tool input | `profile.ts`: M2's goal services, source 'coach'                               |
-| `preference_update`    | the strict tool input | `profile.ts`: `recordExercisePreference`, source 'coach'                       |
+| Kind                   | Payload from          | Applied on accept by (`services/coach/apply/`)                                   |
+| ---------------------- | --------------------- | -------------------------------------------------------------------------------- |
+| `program_adjustment`   | a draft, effort high  | `program.ts`: its ops as one version (`applyProgramEdits`)                       |
+| `workout_update`       | a draft, effort high  | `program.ts`: the same, refused once the workout has started                     |
+| `session_substitution` | the strict tool input | `session.ts`: M4's dispatcher in a live workout, else M3's one-off swap          |
+| `new_program`          | M3's `previewProgram` | `program-create.ts`: `buildProgram` (proposed only while no program is active)   |
+| `next_cycle`           | a draft, effort high  | `next-cycle.ts`: M6's paths, below ([Reviews (M6)](#reviews-m6))                 |
+| `goal_update`          | the strict tool input | `profile.ts`: M2's goal services, source 'coach'                                 |
+| `preference_update`    | the strict tool input | `profile.ts`: `recordExercisePreference`, source 'coach'                         |
+| `replan`               | M7's `previewReplan`  | `replan.ts`: the preview again, then one store (`storeReplan` or `reviseDeload`) |
 
 `acceptProposal` takes only the id (`POST /api/coach/proposals/[id]`; any payload a client sends
 is dropped). It locks the row, re-parses the stored payload, supersedes it as `program_changed` if

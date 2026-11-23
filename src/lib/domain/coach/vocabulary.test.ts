@@ -84,7 +84,10 @@ describe('coach vocabulary', () => {
 			'review_refreshed',
 			'folded_into_review',
 			'sessions_passed',
-			'cycle_planned'
+			'cycle_planned',
+			'profile_changed',
+			'plan_changed',
+			'start_passed'
 		]);
 		expect(RUN_STATUSES[0]).toBe('running');
 	});

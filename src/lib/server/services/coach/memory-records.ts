@@ -196,7 +196,7 @@ export async function loadMemoryRecords(
 				decidedOn: p.decidedOn,
 				decisionNote: p.decisionNote,
 				origin: origin?.kind ?? 'coach',
-				review: origin && { type: 'review', id: origin.source.id },
+				review: origin?.source ? { type: 'review', id: origin.source.id } : null,
 				source: { type: 'proposal', id: p.id }
 			};
 		}),

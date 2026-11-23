@@ -50,8 +50,8 @@ export type Applier<K extends ProposalKind> = (input: ApplyInput<K>) => Promise<
 export type Appliers = { [K in ProposalKind]: Applier<K> };
 
 /**
- * The applier for this kind has not landed yet (the M5 plan's apply-* slices replace each stub):
- * nothing was written and the proposal stays proposed.
+ * Thrown by an applier that cannot apply its kind yet: the accept transaction rolls back, so
+ * nothing is written and the proposal stays proposed.
  */
 export class ApplierUnavailableError extends Error {
 	readonly kind: ProposalKind;
@@ -62,10 +62,3 @@ export class ApplierUnavailableError extends Error {
 		this.kind = kind;
 	}
 }
-
-/** A stub applier: refuses, so the accept transaction writes nothing. */
-export const unavailable =
-	<K extends ProposalKind>(kind: K): Applier<K> =>
-	async () => {
-		throw new ApplierUnavailableError(kind);
-	};

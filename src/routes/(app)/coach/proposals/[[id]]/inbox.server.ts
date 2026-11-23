@@ -60,7 +60,8 @@ export const PROPOSAL_KIND_WORDS: Record<string, string> = {
 	new_program: 'New program',
 	next_cycle: 'Next cycle',
 	goal_update: 'Goal change',
-	preference_update: 'Exercise preference'
+	preference_update: 'Exercise preference',
+	replan: 'Re-plan'
 };
 const kindWords = (kind: string) => PROPOSAL_KIND_WORDS[kind] ?? 'Change';
 

@@ -1,0 +1,2 @@
+ALTER TABLE "coach_proposals" DROP CONSTRAINT "coach_proposals_superseded_reason_ck";--> statement-breakpoint
+ALTER TABLE "coach_proposals" ADD CONSTRAINT "coach_proposals_superseded_reason_ck" CHECK (superseded_reason in ('program_changed', 'revised', 'review_refreshed', 'folded_into_review', 'sessions_passed', 'cycle_planned', 'profile_changed', 'plan_changed', 'start_passed'));

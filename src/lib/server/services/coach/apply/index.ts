@@ -7,6 +7,7 @@ import { NEXT_CYCLE_APPLIERS } from './next-cycle';
 import { PROFILE_APPLIERS } from './profile';
 import { PROGRAM_APPLIERS } from './program';
 import { PROGRAM_CREATE_APPLIERS } from './program-create';
+import { REPLAN_APPLIERS } from './replan';
 import { SESSION_APPLIERS } from './session';
 import type { Appliers } from './types';
 
@@ -18,5 +19,6 @@ export const APPLIERS: Appliers = {
 	...PROGRAM_CREATE_APPLIERS,
 	...NEXT_CYCLE_APPLIERS,
 	...PROFILE_APPLIERS,
-	...SESSION_APPLIERS
+	...SESSION_APPLIERS,
+	...REPLAN_APPLIERS
 };
