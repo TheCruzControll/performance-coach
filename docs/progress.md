@@ -74,7 +74,7 @@ runs the criteria and updates milestones.md.
 
 ## In flight
 
-- **Abuse limits (m9/35).** Every public POST has a rate-limit bucket (`PUBLIC_POST_BUCKETS`), every request body is capped in the hook (`src/lib/server/body-limit.ts`), and every cookie write goes through `src/lib/server/auth/http.ts` or `guard.ts`, each proven by a unit guard; no e2e leg was added.
+- **Abuse limits (m9/35).** Every public POST has a rate-limit bucket (`PUBLIC_POST_BUCKETS`), every declared request body is capped in the hook (`src/lib/server/body-limit.ts`), and every cookie write goes through `src/lib/server/auth/http.ts` or `guard.ts`, each proven by a unit guard; no e2e leg was added.
 - **Weight tracking, started.** The trend, weekly rate, stats and log book are in the domain
   (`src/lib/domain/analytics/weight.ts`), and the goal line, milestones, verdicts and phase
   suggestion are in `src/lib/domain/analytics/weight-goal.ts`. The data slice adds one weigh-in
