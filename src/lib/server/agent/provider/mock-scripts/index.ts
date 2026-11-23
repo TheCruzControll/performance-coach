@@ -8,6 +8,7 @@ import type { MockScript } from '../mock.ts';
 import { analyticsScripts } from './analytics.ts';
 import { generalScripts } from './general.ts';
 import { historyScripts } from './history.ts';
+import { periodisationScripts } from './periodisation.ts';
 import { preferenceScripts } from './preferences.ts';
 import { programmingProposalScripts } from './programming-proposals.ts';
 import { programmingReadScripts } from './programming-reads.ts';
@@ -21,6 +22,7 @@ export const MOCK_SCRIPTS: readonly MockScript[] = Object.freeze([
 	...summaryScripts,
 	...reviewScripts,
 	...historyScripts,
+	...periodisationScripts,
 	...programmingReadScripts,
 	...programmingProposalScripts,
 	...workoutScripts,

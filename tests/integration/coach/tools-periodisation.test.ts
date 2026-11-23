@@ -1,10 +1,9 @@
 /**
- * The coach's periodisation read on real Postgres (M7's tools-periodisation-reads, the
- * evaluate_week_interference half), on the periodisation-week fixture at the turn's Wednesday
- * 11 November 2026: next week the owner moved Lower A to Monday, the day before Tuesday's hard
- * Muay Thai class.
+ * The coach's periodisation reads on real Postgres (M7's tools-periodisation-reads), on the
+ * periodisation-week fixture at the turn's Wednesday 11 November 2026: next week the owner moved
+ * Lower A to Monday, the day before Tuesday's hard Muay Thai class.
  * - outputs validate against their schemas; the score is a metric with its method, and the
- *   owner's move is one avoid finding citing its sessions
+ *   owner's move is one avoid finding citing its sessions and the owner's decision, by id
  * - every evaluation is judged 'full' with no evaluation-context error recorded: the owner is
  *   profiled, so the context's reads ran, and a degraded context cannot pass
  * - a what-if move returns its finding and writes no row
@@ -16,14 +15,18 @@
  *   is one the week shows: the Sunday's load is counted once, in the repair's model too
  * - propose_program_adjustment's ops take moves only: a skip in ops is INVALID_INPUT, storing
  *   nothing
+ * - explain_schedule_tradeoffs: the goal's priority as a metric, the decisions with their ids,
+ *   the owner's first, the kept clash and the road; for one session, only its decisions
+ * - the scripted answers' [metric] and [fact] blocks are grounded, and the chips read as listed
  * - a random ownerId given the seeded owner's lineages is NOT_FOUND and reads nothing of theirs
- * - on an M7-built multiGoal program the output stays under the 8 KB cap, untruncated
+ * - on an M7-built multiGoal program both outputs stay under the 8 KB cap, untruncated
  */
 import { count, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import * as z from 'zod/mini';
 import { addDays, type IsoDate } from '../../../src/lib/domain/calendar';
 import { TURN_LIMITS } from '../../../src/lib/domain/coach/budgets';
+import type { CoachEvent } from '../../../src/lib/domain/coach/events';
 import { canonicalJson, programOpSchema } from '../../../src/lib/domain/coach/proposals';
 import { CATALOGUE } from '../../../src/lib/domain/exercises/index';
 import type { TrainingProfile } from '../../../src/lib/domain/profile/types';
@@ -33,13 +36,23 @@ import { M7_SCENARIOS } from '../../../src/lib/domain/programming/periodisation/
 import { GENERATOR_ID } from '../../../src/lib/domain/programming/random';
 import { SCENARIO_START } from '../../../src/lib/domain/programming/scenarios';
 import { MockProvider, type MockScript } from '../../../src/lib/server/agent/provider/mock';
+import { periodisationScripts } from '../../../src/lib/server/agent/provider/mock-scripts/periodisation';
 import type { LlmProvider } from '../../../src/lib/server/agent/provider/types';
 import { toolContext } from '../../../src/lib/server/agent/tools/context';
 import type { CoachTool } from '../../../src/lib/server/agent/tools/define';
 import { executeToolCalls } from '../../../src/lib/server/agent/tools/execute';
-import { LOAD_METHOD, SCORE_METHOD } from '../../../src/lib/server/agent/tools/periodisation';
+import {
+	LOAD_METHOD,
+	PRIORITY_METHOD,
+	SCORE_METHOD
+} from '../../../src/lib/server/agent/tools/periodisation';
 import { COACH_TOOLS } from '../../../src/lib/server/agent/tools/registry';
-import { agentToolCalls, coachProposals, type Executor } from '../../../src/lib/server/db';
+import {
+	agentRuns,
+	agentToolCalls,
+	coachProposals,
+	type Executor
+} from '../../../src/lib/server/db';
 import { createAppErrorsRepository } from '../../../src/lib/server/db/repositories/app-errors';
 import { plannedSessionDetails } from '../../../src/lib/server/db/schema/prescriptions';
 import { plannedSessions, programVersions } from '../../../src/lib/server/db/schema/programs';
@@ -95,6 +108,18 @@ interface Evaluated {
 	} | null;
 	truncated?: true;
 }
+interface Explained {
+	priorities: { goal: Ref; mode: string; weight: { value: number; method: string } }[];
+	decisions: {
+		value: { source: Ref; kind: string; decidedBy: string; version: number };
+		sources: Ref[];
+	}[];
+	doses: Ref[];
+	keptConflicts: { rule: string; sources: Ref[] }[];
+	road: { value: { untrusted_text: string } } | null;
+	session: Ref | null;
+	truncated?: true;
+}
 
 async function seed(db: Executor) {
 	const owner = await makeOwner(db);
@@ -147,6 +172,12 @@ async function planSparring(db: Executor, date: IsoDate) {
 async function contextErrorIds(db: Executor) {
 	const recent = await createAppErrorsRepository(db).recent(200);
 	return recent.flatMap((e) => (e.context?.part === 'evaluation-context' ? [e.id] : []));
+}
+
+/** Fails when an evaluation context failed since `before` (a turn judged its weeks degraded). */
+async function expectNoContextErrors(db: Executor, before: number[]) {
+	const failed = (await contextErrorIds(db)).filter((id) => !before.includes(id));
+	expect(failed, 'evaluation-context errors').toEqual([]);
 }
 
 /**
@@ -204,6 +235,12 @@ function counting(scripts: readonly MockScript[]) {
 	};
 	return { structured, ready: { status: 'ready' as const, provider } };
 }
+
+const script = (name: string) => periodisationScripts.find((s) => s.name === name)!;
+const blocksOf = (events: CoachEvent[]) =>
+	events.flatMap((e) => (e.type === 'block_completed' || e.type === 'block_replaced' ? [e] : []));
+const chips = (events: CoachEvent[], state: string) =>
+	events.flatMap((e) => (e.type === 'activity' && e.state === state ? [e.label] : []));
 
 describe('evaluate_week_interference', () => {
 	it('judges the owner’s move as one avoid finding, scored with its method, citing the sessions', async () => {
@@ -323,6 +360,25 @@ describe('evaluate_week_interference', () => {
 				moves: [{ session: tuesday!.lineage, toDate: thursday!.date }]
 			});
 			expect(combat(r)).toBe('overloaded');
+		});
+	});
+
+	it('cites the stored decisions that explain a finding, by the ids explain_schedule_tradeoffs gives', async () => {
+		await withRollback(async (db) => {
+			const { owner } = await seed(db);
+			const r = await output<Evaluated>(db, owner, 'evaluate_week_interference', { week: 'next' });
+			const [avoid] = r.findings.filter((f) => f.severity === 'avoid');
+			const cited = avoid!.sources.filter((s) => s.type === 'decision');
+			expect(cited.length).toBeGreaterThan(0);
+			// Each cited decision is one explain_schedule_tradeoffs lists, by the same id.
+			const why = await output<Explained>(db, owner, 'explain_schedule_tradeoffs', {
+				week: 'next'
+			});
+			const listed = why.decisions.map((d) => d.value.source);
+			for (const source of cited) expect(listed).toContainEqual(source);
+			// The owner's move is among them: it is the decision that put Lower A where it is.
+			const ownerMove = why.decisions.find((d) => d.value.decidedBy === 'owner')!;
+			expect(cited).toContainEqual(ownerMove.value.source);
 		});
 	});
 
@@ -456,6 +512,128 @@ describe('propose_program_adjustment with ops', () => {
 	});
 });
 
+describe('explain_schedule_tradeoffs', () => {
+	it('gives the goal’s priority as a metric, the decisions with their ids, the owner’s first, the kept clash and the road', async () => {
+		await withRollback(async (db) => {
+			const { owner, seeded } = await seed(db);
+			const r = await output<Explained>(db, owner, 'explain_schedule_tradeoffs', { week: 'next' });
+			expect(r.priorities).toHaveLength(1);
+			expect(r.priorities[0]).toMatchObject({
+				mode: 'primary',
+				weight: { value: 1, method: PRIORITY_METHOD }
+			});
+			const kinds = r.decisions.map((d) => d.value.kind);
+			expect(kinds[0]).toBe('session_moved');
+			expect(r.decisions[0]!.value.decidedBy).toBe('owner');
+			expect(kinds).toEqual(expect.arrayContaining(['commitment_placed', 'interference_resolved']));
+			for (const d of r.decisions) {
+				expect(d.value.source).toEqual({ type: 'decision', id: expect.stringMatching(/^\d+$/) });
+				expect(d.sources).toContainEqual(d.value.source);
+			}
+			expect(r.keptConflicts.map((k) => k.rule)).toEqual(['placement.heavy_lower_before_hard']);
+			expect(r.road?.value.untrusted_text).toMatch(/^Now: /);
+			expect(r.session).toBeNull();
+
+			const one = await output<Explained>(db, owner, 'explain_schedule_tradeoffs', {
+				session: seeded.lineages.hardMuayThai
+			});
+			expect(one.session).toMatchObject({ type: 'session', id: seeded.lineages.hardMuayThai });
+			expect(one.decisions.map((d) => d.value.kind)).toEqual(['commitment_placed']);
+		});
+	});
+});
+
+describe('scripted turns', () => {
+	it('the week-repair script proposes the engine’s repair exactly as computed, with three model calls and no draft', async () => {
+		await withRollback(async (db) => {
+			const { owner } = await seed(db);
+			const before = await rows(db);
+			const errors = await contextErrorIds(db);
+			const { structured, ready } = counting(periodisationScripts);
+			const turn = await runScripted(script('week-repair'), {
+				db,
+				owner,
+				text: 'Fix next week for me',
+				provider: ready,
+				tools: TOOLS
+			});
+			expect(turn.done.status).toBe('completed');
+			const calls = await db
+				.select()
+				.from(agentToolCalls)
+				.where(eq(agentToolCalls.runId, turn.runId!))
+				.orderBy(agentToolCalls.callIndex);
+			expect(calls.map((c) => [c.name, c.status])).toEqual([
+				['evaluate_week_interference', 'succeeded'],
+				['propose_program_adjustment', 'succeeded']
+			]);
+			const evaluated = calls[0]!.output as unknown as Evaluated;
+			const [proposal] = await db
+				.select()
+				.from(coachProposals)
+				.where(eq(coachProposals.ownerId, owner));
+			expect(proposal).toMatchObject({ kind: 'program_adjustment', status: 'proposed' });
+			expect(canonicalJson((proposal!.payload as { ops: unknown }).ops)).toBe(
+				canonicalJson(evaluated.suggestedRepair!.ops)
+			);
+			expect(proposal!.title).toMatch(/^Move Lower A to /);
+			expect(structured).toEqual([]);
+			const [run] = await db.select().from(agentRuns).where(eq(agentRuns.id, turn.runId!));
+			expect(run!.modelCalls).toBe(3);
+			expect(await rows(db)).toEqual({ ...before, proposals: before.proposals + 1 });
+			await expectNoContextErrors(db, errors);
+		});
+	});
+
+	it('answer ‘Does next week clash?’ with grounded metrics and facts, under the listed chips', async () => {
+		await withRollback(async (db) => {
+			const { owner } = await seed(db);
+			const errors = await contextErrorIds(db);
+			const turn = await runScripted(script('week-clash'), {
+				db,
+				owner,
+				text: 'Does next week clash with anything?',
+				tools: TOOLS
+			});
+			expect(turn.done.status).toBe('completed');
+			const blocks = blocksOf(turn.events);
+			expect(blocks.every((b) => b.type === 'block_completed')).toBe(true);
+			const checked = blocks.filter((b) => b.kind === 'metric' || b.kind === 'fact');
+			expect(checked.map((b) => b.kind)).toEqual(['metric', 'fact', 'metric']);
+			expect(checked.every((b) => b.grounded)).toBe(true);
+			expect(checked[0]!.method).toBe(SCORE_METHOD);
+			expect(blocks.some((b) => b.kind === 'recommendation')).toBe(true);
+			expect(chips(turn.events, 'running')).toEqual(['Checking this week’s schedule…']);
+			expect(chips(turn.events, 'done')).toEqual(['Checked this week’s schedule']);
+			await expectNoContextErrors(db, errors);
+		});
+	});
+
+	it('answer ‘Why is my week shaped like this?’ quoting the decisions, every block grounded', async () => {
+		await withRollback(async (db) => {
+			const { owner } = await seed(db);
+			const errors = await contextErrorIds(db);
+			const turn = await runScripted(script('week-shape'), {
+				db,
+				owner,
+				text: 'Why is next week shaped like this?',
+				tools: TOOLS
+			});
+			expect(turn.done.status).toBe('completed');
+			const blocks = blocksOf(turn.events);
+			expect(blocks.every((b) => b.type === 'block_completed')).toBe(true);
+			const checked = blocks.filter((b) => b.kind === 'metric' || b.kind === 'fact');
+			expect(checked[0]).toMatchObject({ kind: 'metric', method: PRIORITY_METHOD });
+			expect(checked.filter((b) => b.kind === 'fact').length).toBeGreaterThanOrEqual(2);
+			expect(checked.every((b) => b.grounded)).toBe(true);
+			expect(chips(turn.events, 'running')).toEqual([
+				'Looking at why your week is shaped this way…'
+			]);
+			await expectNoContextErrors(db, errors);
+		});
+	});
+});
+
 describe('owner scoping', () => {
 	it('a random ownerId given the seeded owner’s lineages is NOT_FOUND and reads nothing', async () => {
 		await withRollback(async (db) => {
@@ -475,6 +653,23 @@ describe('owner scoping', () => {
 						moves: [{ session: seeded.lineages.moved, toDate: addDays(seeded.mondays.moved, 2) }]
 					})
 				).error
+			).toBeNull();
+		});
+	});
+
+	it('a random ownerId given the seeded owner’s lineage is NOT_FOUND for explain_schedule_tradeoffs and reads nothing', async () => {
+		await withRollback(async (db) => {
+			const { owner, seeded } = await seed(db);
+			const stranger = crypto.randomUUID();
+			const outcome = await call(db, stranger, 'explain_schedule_tradeoffs', {
+				session: seeded.lineages.moved
+			});
+			expect(outcome.error).toMatchObject({ code: 'NOT_FOUND' });
+			expect(JSON.stringify(outcome)).not.toContain('Lower A');
+			// The same call for the owner does read the session's week.
+			expect(
+				(await call(db, owner, 'explain_schedule_tradeoffs', { session: seeded.lineages.moved }))
+					.error
 			).toBeNull();
 		});
 	});
@@ -533,13 +728,16 @@ describe('output size', () => {
 				{ db }
 			);
 			for (const week of ['current', 'next']) {
-				const outcome = await call(db, owner, 'evaluate_week_interference', { week });
-				expect(outcome.error, week).toBeNull();
-				expect((outcome.output as { truncated?: true }).truncated, week).toBeUndefined();
-				const bytes = new TextEncoder().encode(canonicalJson(outcome.output)).length;
-				expect(bytes, `evaluate_week_interference ${week}`).toBeLessThanOrEqual(
-					TURN_LIMITS.toolOutputBytes
-				);
+				for (const name of ['evaluate_week_interference', 'explain_schedule_tradeoffs']) {
+					const outcome = await call(db, owner, name, { week });
+					expect(outcome.error, `${name} ${week}`).toBeNull();
+					expect(
+						(outcome.output as { truncated?: true }).truncated,
+						`${name} ${week}`
+					).toBeUndefined();
+					const bytes = new TextEncoder().encode(canonicalJson(outcome.output)).length;
+					expect(bytes, `${name} ${week}`).toBeLessThanOrEqual(TURN_LIMITS.toolOutputBytes);
+				}
 			}
 			// Judged in full: the goals' priorities and the load model are in.
 			const busy = await output<Evaluated>(db, owner, 'evaluate_week_interference', {
@@ -547,6 +745,8 @@ describe('output size', () => {
 			});
 			expect(busy.checked).toBe('full');
 			expect(busy.loads).toHaveLength(5);
+			const why = await output<Explained>(db, owner, 'explain_schedule_tradeoffs', {});
+			expect(why.priorities.map((p) => p.mode)).toContain('primary');
 		});
 	});
 });
