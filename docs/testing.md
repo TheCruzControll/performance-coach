@@ -875,7 +875,7 @@ Commitments, running, interference rules and placement across disciplines. Unit 
   has room for one; a run stays off a running-club day while another day has none; a partial week 1
   drops easy runs first and says so, counting club runs before the first planned day; a marathon 20
   weeks out leads through build, peak and taper outline phases ending on race day, each block
-  carrying its `MARATHON_HOOKS`.
+  carrying its phase's hooks (`hooksFor`: `MARATHON_HOOKS`, or `HALF_HOOKS` for a half).
 - **Running paces** (`src/lib/domain/programming/generate-running.test.ts`): hybrid's paces from its
   told easy pace's VDOT; runnerLifter's every pace, warm-up included, from its 10K's VDOT ahead of
   the told pace; the best recent race over the latest; only undated races give race paces worded as
@@ -883,6 +883,14 @@ Commitments, running, interference rules and placement across disciplines. Unit 
   added run takes the same paces; a marathon build's long runs close with a steady segment at M
   pace, its share rising from 20 % to 40 %, 40 % in peak, 20 % in the taper and none in the race
   week; a first program has no marathon-pace work.
+- **Running race plans** (`src/lib/domain/programming/generate-running.test.ts`): a race plan's long
+  run takes its target and rises at most 1.5 km a week, in a marathon build and a half's base; the
+  race week has no long run; a marathon build week holds a threshold run beside the marathon-pace
+  long run, and a marathon taper week only the long run; a half's build weeks, the cutback too, hold
+  a threshold run and 10K-pace intervals, and its peak names the intervals first; a half's outline
+  phases store `HALF_HOOKS`; a cutback week holds at most 80 % of the biggest week before it;
+  multiGoal's secondary marathon holds its dose; journey's time-based secondary marathon keeps M3's
+  week.
 - **Other sessions** (`other.test.ts`): a custom-discipline goal gets sessions titled with its name
   at RPE 6 for the session length, with a `default_assumed` decision citing them; Muay Thai is
   technique at RPE 6 with no class or profile, alternates technique and pad work when the profile is

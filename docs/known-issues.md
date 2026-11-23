@@ -54,7 +54,7 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   was cut from set. Found in m7r/06 reading `blockBands` in
   `src/lib/domain/programming/planned-targets.ts`. Closes when a deload in a spliced tail is judged
   by the range its block set, or a test pins the first range as the intended judgement.
-- **A first program's marathon blocks carry no running targets (`targets.running`), so marathon pace and the race plan's other work reach only next blocks and re-plans.** The first block's weeks never set the running targets that marathon pace reads (`src/lib/domain/programming/running.ts`), for every M7 scenario checked. Found building m7r/07. Closes when a first program's marathon weeks carry their running targets, so a first block's long run closes at marathon pace too.
+- **A first program's marathon blocks, and a first block that is a marathon or half taper, carry no running targets (`targets.running`), so their race work, long-run targets and race week without a long run reach only next blocks and re-plans.** A first program's half base, build and peak blocks do carry them. Found building m7r/07 and checked again in m7r/08 (`src/lib/domain/programming/running.ts`). Closes when a first program's marathon and taper weeks carry their running targets.
 
 ## Stale documentation
 

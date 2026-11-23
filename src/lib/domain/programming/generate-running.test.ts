@@ -3,8 +3,12 @@
  * recent race's VDOT by Daniels' formula (an undated race at low confidence when no race has a
  * date), else the told easy pace's, each segment at its kind's training pace. In a marathon week
  * planned with its targets the long run closes at marathon pace, a steady segment at M pace whose
- * share rises over the build. m7r/08 extends this file with its long-run, cutback, race-work and
- * dose cases.
+ * share rises over the build.
+ *
+ * generator-running, race plans (m7r/08): a marathon or half week planned with its targets takes
+ * its long run at the planned length, at most 1.5 km over the longest planned before it, none in
+ * the race week, and its phase's race work up to its hooks' quality sessions; a cutback week holds
+ * at most 80 % of the biggest week; a running goal that does not lead holds its dose.
  */
 import { describe, expect, it } from 'vitest';
 import { addDays } from '../calendar';
@@ -18,10 +22,12 @@ import { buildProgrammingInput } from './input';
 import { paceFor, trainingPaces, vdotFromEasyPace, vdotFromPerformance } from './paces';
 import { deloadSessions } from './periodisation/deload';
 import { enduranceWeeks } from './periodisation/endurance';
-import { M7_SCENARIOS } from './periodisation/scenarios';
+import { M7_SCENARIOS, m7Day } from './periodisation/scenarios';
 import { taperSessions, taperWeeks } from './periodisation/taper';
-import { ENDURANCE } from './rules/endurance';
+import { ENDURANCE, HALF_HOOKS } from './rules/endurance';
 import { TARGETS } from './rules/deload';
+import { MAINTENANCE_BLOCK } from './rules/maintenance';
+import { MARATHON_HOOKS } from './rules/running';
 import { ROUGH_GUIDE } from './running';
 import { SCENARIO_START, SCENARIOS } from './scenarios';
 import type { Draft, GenerateOptions, StageContext } from './stage';
@@ -39,6 +45,9 @@ const runsIn = (week: WeekPlan) =>
 	week.sessions.filter((s): s is RunSessionPlan => s.kind === 'run' && s.source === 'generator');
 const metresOf = (run: RunSessionPlan) =>
 	run.segments.reduce((sum, s) => sum + (s.distanceMetres ?? 0) * (s.repeats ?? 1), 0);
+/** A run's metres, a timed quality session's at runnerLifter's told easy pace (5:30 /km). */
+const metresOrMinutes = (run: RunSessionPlan) => metresOf(run) || (run.estMinutes * 60_000) / 330;
+const weekMetres = (week: WeekPlan) => runsIn(week).reduce((sum, r) => sum + metresOrMinutes(r), 0);
 const longRunOf = (week: WeekPlan) => runsIn(week).find((r) => r.type === 'long_run');
 const qualityIn = (week: WeekPlan) =>
 	runsIn(week).filter((r) => r.type === 'tempo_run' || r.type === 'interval_run');
@@ -64,18 +73,29 @@ function lifterWith(races: (races: Races) => Races, told = true) {
 	return profile;
 }
 
+/** runnerLifter with its marathon a half marathon instead, and `longestKm` as its longest run. */
+function halfRunner(longestKm = 26) {
+	const profile = M7_SCENARIOS.runnerLifter();
+	Object.assign(profile.goals[0]!, { title: 'Half marathon', eventType: 'Half marathon' });
+	profile.running!.longestRun = longestKm;
+	return profile;
+}
+
 /**
  * runnerLifter's marathon `phase` weeks as periodisation/endurance.ts plans them from week 1 (55 km
- * a week, its longest run 26 km), run through the running stage as the first block.
+ * a week, its longest run `longestKm`), run through the running stage as the first block.
  */
-function marathonBlock(phase: 'marathon_build' | 'marathon_peak' | 'marathon_taper') {
+function marathonBlock(
+	phase: 'marathon_build' | 'marathon_peak' | 'marathon_taper',
+	longestKm = 26
+) {
 	const profile = M7_SCENARIOS.runnerLifter();
-	profile.running!.longestRun = 26;
+	profile.running!.longestRun = longestKm;
 	const weeks = enduranceWeeks('marathon', {
 		startsOn: SCENARIO_START,
 		raceOn: profile.goals[0]!.eventDate!,
 		startVolume: 55_000,
-		longestRun: 26_000,
+		longestRun: longestKm * 1000,
 		level: null,
 		paces: TEN_K_PACES
 	}).filter((w) => w.phase === phase);
@@ -292,8 +312,8 @@ describe('marathon pace on steady segments', () => {
 			if (i > 0) expect(share).toBeGreaterThanOrEqual(shares[i - 1]! - 0.01);
 		});
 		expect(decisions.find((d) => d.kind === 'quality_session')).toMatchObject({
-			ruleKey: 'endurance.marathon_pace',
-			summary: 'Quality running: marathon pace in the long run and one tempo run a week'
+			ruleKey: 'endurance.race_work',
+			summary: 'Quality running: marathon pace in the long run and a threshold run'
 		});
 	});
 
@@ -338,5 +358,169 @@ describe('marathon pace on steady segments', () => {
 		const segments = plan.blocks.flatMap((b) => b.weeks.flatMap(runsIn)).flatMap((r) => r.segments);
 		expect(segments.map((s) => s.kind)).not.toContain('steady');
 		expect(decisionOf(plan, 'quality_session')).toMatchObject({ ruleKey: 'running.tempo_run' });
+	});
+});
+
+/** Every long run within the race plan's caps: its target, the event's cap, 1.5 km over the last. */
+function expectLongRunsWithinCaps(weeks: readonly WeekPlan[], capMetres: number) {
+	let longest: number | null = null;
+	for (const week of weeks) {
+		const long = longRunOf(week);
+		if (!long) continue;
+		const size = metresOf(long);
+		if (longest !== null) {
+			expect(size, week.startsOn).toBeLessThanOrEqual(longest + ENDURANCE.long_run.stepMetres);
+		}
+		const target = week.targets.running?.longRunMetres;
+		if (target) expect(size, week.startsOn).toBeLessThanOrEqual(target);
+		expect(size, week.startsOn).toBeLessThanOrEqual(capMetres);
+		longest = Math.max(longest ?? 0, size);
+	}
+	expect(longest).not.toBeNull();
+}
+
+describe('the long run in a race plan', () => {
+	it('rises at most 1.5 km a week within its caps, in a marathon build and a half’s base', () => {
+		const { block } = marathonBlock('marathon_build', 20);
+		expect(block.weeks.length).toBeGreaterThan(3);
+		expectLongRunsWithinCaps(block.weeks, ENDURANCE.long_run.cap.marathon.metres);
+		const half = generateProgram(inputOf(halfRunner(20)), optionsOn(m7Day(2, 0)));
+		expect(half.blocks[0]!.phase).toBe('half_base');
+		expectLongRunsWithinCaps(half.blocks[0]!.weeks, ENDURANCE.long_run.cap.half.metres);
+		expect(decisionOf(half, 'run_volume')).toMatchObject({
+			ruleKey: 'generator.block_runs',
+			why: expect.stringContaining(
+				'Each week follows your race plan: the long run grows at most 1.5 km a week, and every 4th week of base and build is a cutback to 80 % of the biggest.'
+			)
+		});
+	});
+
+	it('leaves the long run out of the race week', () => {
+		const { block } = marathonBlock('marathon_taper');
+		const race = block.weeks.find((w) => w.kind === 'event')!;
+		expect(race.targets.running).toBeDefined();
+		expect(runsIn(race).length).toBeGreaterThan(0);
+		expect(longRunOf(race)).toBeUndefined();
+	});
+});
+
+describe('race-specific work', () => {
+	it('gives every marathon build week a threshold run beside the marathon-pace long run', () => {
+		const { block } = marathonBlock('marathon_build');
+		for (const week of block.weeks) {
+			const quality = qualityIn(week);
+			expect(
+				quality.map((r) => r.type),
+				week.startsOn
+			).toEqual(['tempo_run']);
+			const tempo = quality[0]!.segments.find((s) => s.kind === 'tempo')!;
+			expect(paceOf(tempo)).toEqual([...paceFor('tempo', TEN_K_PACES)]);
+			expect(quality[0]!.instructions).toBe('20 min at threshold pace, between easy running.');
+			// The marathon-pace long run is the hooks' second quality session.
+			expect(quality.length + 1).toBe(MARATHON_HOOKS.marathon_build!.qualityPerWeek);
+		}
+	});
+
+	it('holds a marathon taper week to its one quality session: the marathon-pace long run', () => {
+		const { block } = marathonBlock('marathon_taper');
+		expect(MARATHON_HOOKS.marathon_taper!.qualityPerWeek).toBe(1);
+		const tapering = block.weeks.filter((w) => w.kind !== 'event');
+		expect(tapering.length).toBeGreaterThan(0);
+		for (const week of tapering) {
+			expect(qualityIn(week), week.startsOn).toEqual([]);
+			expect(longRunOf(week)!.segments.map((s) => s.kind)).toEqual(['long', 'steady']);
+		}
+		const race = block.weeks.find((w) => w.kind === 'event')!;
+		expect(qualityIn(race)).toEqual([]);
+	});
+
+	it('gives a half’s build weeks, the cutback too, their 2 quality sessions from HALF_HOOKS', () => {
+		const plan = generateProgram(inputOf(halfRunner()), optionsOn(m7Day(9, 0)));
+		const block = plan.blocks[0]!;
+		expect(block.phase).toBe('half_build');
+		expect(block.weeks.map((w) => w.kind)).toContain('cutback');
+		const want = HALF_HOOKS.half_build!.qualityPerWeek!;
+		expect(want).toBe(2);
+		for (const week of block.weeks) {
+			const quality = qualityIn(week);
+			expect(quality.map((r) => r.type).sort(), week.startsOn).toEqual([
+				'interval_run',
+				'tempo_run'
+			]);
+			const intervals = quality.find((r) => r.type === 'interval_run')!;
+			// 10K pace: between threshold's fast end and VO2max's slow end.
+			expect(paceOf(intervals.segments.find((s) => s.kind === 'interval')!)).toEqual([
+				paceFor('interval', TEN_K_PACES)[1],
+				paceFor('tempo', TEN_K_PACES)[0]
+			]);
+			expect(intervals.instructions).toBe('5 × 3 min at 10K pace, with 2-minute jogs.');
+			expect(longRunOf(week)!.segments.map((s) => s.kind)).toEqual(['long']);
+		}
+		expect(decisionOf(plan, 'quality_session')).toMatchObject({
+			ruleKey: 'endurance.race_work',
+			summary: 'Quality running: a threshold run and 10K-pace intervals'
+		});
+	});
+
+	it('names a half peak’s main workout first: 10K-pace intervals, then the threshold run', () => {
+		const plan = generateProgram(inputOf(halfRunner()), optionsOn(m7Day(13, 0)));
+		expect(plan.blocks[0]!.phase).toBe('half_peak');
+		expect(decisionOf(plan, 'quality_session').summary).toBe(
+			'Quality running: 10K-pace intervals and a threshold run'
+		);
+	});
+
+	it('stores a half’s own hooks on its outline phases, and sizes a marathon peak with its own', () => {
+		const plan = generateProgram(inputOf(halfRunner()), optionsOn(m7Day(9, 0)));
+		for (const phase of ['half_peak', 'half_taper'] as const) {
+			const outline = plan.blocks.find((b) => b.outline && b.phase === phase)!;
+			expect(outline.progression, phase).toEqual(HALF_HOOKS[phase]);
+		}
+		expect(marathonBlock('marathon_peak').block.progression).toMatchObject(
+			MARATHON_HOOKS.marathon_peak!
+		);
+	});
+});
+
+describe('cutback weeks', () => {
+	it('holds a cutback week to 80 % of the biggest week before it', () => {
+		const plan = generateProgram(inputOf(halfRunner()), optionsOn(m7Day(9, 0)));
+		const weeks = plan.blocks[0]!.weeks;
+		const at = weeks.findIndex((w) => w.kind === 'cutback');
+		expect(at).toBeGreaterThan(0);
+		expect(weeks[at]!.targets.running?.cutback).toBe(true);
+		const biggest = Math.max(...weeks.slice(0, at).map(weekMetres));
+		expect(weekMetres(weeks[at]!)).toBeLessThanOrEqual(ENDURANCE.cutback.factor * biggest);
+	});
+});
+
+describe('a running goal that does not lead', () => {
+	it('holds its dose through multiGoal’s fight camp: 65 % of recent volume, one quality run, the long run held', () => {
+		const profile = M7_SCENARIOS.multiGoal();
+		const plan = generateProgram(inputOf(profile), OPTIONS);
+		const recent = profile.running!.weeklyDistance! * 1000;
+		const longest = profile.running!.longestRun! * 1000;
+		const dose = MAINTENANCE_BLOCK.runVolumeFactor * recent;
+		const weeks = plan.blocks[0]!.weeks;
+		expect(plan.blocks[0]!.phase).toBe('fight_camp');
+		expect(weeks.length).toBeGreaterThan(3);
+		for (const week of weeks) {
+			expect(weekMetres(week), week.startsOn).toBeLessThanOrEqual(dose);
+			expect(qualityIn(week).length, week.startsOn).toBeLessThanOrEqual(1);
+			expect(metresOf(longRunOf(week)!), week.startsOn).toBeLessThanOrEqual(longest);
+		}
+		const volume = decisionOf(plan, 'run_volume');
+		expect(volume).toMatchObject({
+			ruleKey: 'generator.run_dose',
+			why: expect.stringContaining('running holds its dose: 65 % of your recent volume')
+		});
+		// The dose alone explains the volume: no second reason blames the long-run or session caps.
+		expect(volume.why).not.toContain('The long run is held to');
+	});
+
+	it('keeps M3’s time-based week for a secondary running goal with no volume told (journey)', () => {
+		const plan = generateProgram(inputOf(SCENARIOS.journey()), OPTIONS);
+		expect(decisionOf(plan, 'priority_resolved').why).toContain('Marathon trains alongside');
+		expect(decisionOf(plan, 'run_volume').ruleKey).toBe('running.time_week');
 	});
 });
