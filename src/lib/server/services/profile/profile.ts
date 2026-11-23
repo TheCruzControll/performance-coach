@@ -25,6 +25,7 @@ import type {
 import { createProfileRepository, type AthleteProfileRow, type ProfileRepository } from '../../db';
 import { measure } from '../../observability/timing';
 import { logWeight } from '../weight/entries';
+import { syncWeightTarget } from '../weight/goals';
 import { listGoals } from './goals';
 import {
 	getEquipment,
@@ -101,7 +102,9 @@ export async function getBody(ownerId: string, deps: ProfileDeps = {}) {
 /**
  * Body weight, nutrition phase and weight target. A body weight is recorded as today's entry
  * in the history (re-saving the same day replaces it); leaving it blank never deletes history.
- * "Today" is the owner's calendar day in their time zone, not the UTC one.
+ * The target goes through the weight goal (services/weight/goals.ts): a dated target sets the
+ * goal, a cleared one clears it, and an undated one stays on the profile. "Today" is the owner's
+ * calendar day in their time zone, not the UTC one.
  */
 export async function saveBody(ownerId: string, input: unknown, deps: ProfileDeps = {}) {
 	const body = parseWith(bodySchema, input);
@@ -114,13 +117,7 @@ export async function saveBody(ownerId: string, input: unknown, deps: ProfileDep
 			const today = localDay(at, profile.timeZone);
 			await repo.updateProfile(
 				ownerId,
-				{
-					birthYear: body.birthYear,
-					nutritionPhase: body.nutritionPhase,
-					targetWeight: body.targetWeight,
-					targetWeightUnit: body.targetWeight == null ? null : body.weightUnit,
-					targetDate: body.targetDate
-				},
+				{ birthYear: body.birthYear, nutritionPhase: body.nutritionPhase },
 				at
 			);
 			if (body.bodyWeight != null) {
@@ -135,6 +132,14 @@ export async function saveBody(ownerId: string, input: unknown, deps: ProfileDep
 					);
 				}
 			}
+			// After the weigh-in: a new goal starts at the trend, which the weigh-in may have moved.
+			await syncWeightTarget(
+				ownerId,
+				body.targetWeight == null
+					? null
+					: { weight: body.targetWeight, unit: body.weightUnit, date: body.targetDate },
+				{ db: tx, now: () => at, source }
+			);
 		})
 	);
 	return getBody(ownerId, deps);
