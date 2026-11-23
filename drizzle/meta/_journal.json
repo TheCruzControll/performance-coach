@@ -246,6 +246,20 @@
       "when": 1795394331586,
       "tag": "0034_replan_superseded_reasons",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1795418582698,
+      "tag": "0035_body_weight_one_per_day",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795418614722,
+      "tag": "0036_weight_tracking",
+      "breakpoints": true
     }
   ]
 }

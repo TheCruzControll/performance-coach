@@ -5,7 +5,12 @@
  */
 import { eq } from 'drizzle-orm';
 import { createMutation } from '../../../src/lib/domain/workout/index';
-import { createAppErrorsRepository, workouts, type Executor } from '../../../src/lib/server/db';
+import {
+	createAppErrorsRepository,
+	createWeightRepository,
+	workouts,
+	type Executor
+} from '../../../src/lib/server/db';
 import { MockProvider } from '../../../src/lib/server/agent/provider/mock';
 import { runTurn } from '../../../src/lib/server/agent/turn';
 import { recordCoachDecision } from '../../../src/lib/server/services/coach/notes';
@@ -130,6 +135,24 @@ export async function seedEveryTable(db: Executor, ctx: EveryTableContext): Prom
 			targetDate: null
 		},
 		deps
+	);
+
+	// A weight goal and one of its milestones, written through the repository (no service writes goals yet).
+	const weight = createWeightRepository(db);
+	const goal = await weight.insertGoal({
+		ownerId,
+		unit: 'kg',
+		startOn: '2026-11-01',
+		startWeight: 80,
+		targetWeight: 75,
+		targetOn: '2027-01-31',
+		source: 'profile'
+	});
+	await weight.replaceMilestones(
+		ownerId,
+		goal.id,
+		[{ onDate: '2026-12-15', weight: 77.5, source: 'generated' }],
+		ctx.now()
 	);
 
 	// Training log.
