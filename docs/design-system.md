@@ -630,9 +630,11 @@ later-pass screen).
   `RunSegments` (each segment on one line), `SessionDetails` (a class's stats beside its metrics)
   and `BaselineCallout` (the steps beside the why) adapt from 35 rem with container queries,
   above the phone column, so the iPhone is unchanged.
-- **Progress** (`/progress`): wide (`data-layout="wide"` on its root). From 1024 px the view nav
-  and the period picker share one row over the view; the overview's five trend tiles keep one row,
-  and its discipline cards and chart frames pair up from a 44 rem column (a container query).
+- **Progress** (`/progress`): wide (`data-layout="wide"` on its root). This week (sessions,
+  training load and distance against the same days last week) sits under History and Reviews, in
+  every view, until v2/14. From 1024 px the view nav and the period picker share one row over the
+  view; the overview's five trend tiles keep one row, and its discipline cards and chart frames
+  pair up from a 44 rem column (a container query).
 - **Reviews** (`/progress/reviews/[[key]]`): split. From 1024 px the reviews list (the block to
   review, the cycle reviews, then every week, a Create button on each one not yet reviewed)
   beside the review shown (`aria-current`), or beside 'Pick a review'; every section of a review
@@ -694,10 +696,11 @@ later-pass screen).
   11 · Desktop) arrives with v2/08.
 - **Today** (`/today`): wide. From 1024 px the week runs across the top (M2's week, or the plan's
   `WeekStrip`, a subgrid row that holds its room while the plan loads); the state's panel (setup,
-  Build, the plan, or its skeleton or Retry) takes a main column at most `--content-readable`
-  wide, beside This week, the tools and the goals (at least `--content-list`). Build my program
-  spans both: week 1 in the main column with Start week 1 as its column chrome, the block
-  timeline beside it. A failed read and offline keep the readable column. CSS only.
+  Build, the plan, or its skeleton or Retry) takes one column at most `--content-readable` wide,
+  with nothing beside it: This week is on Progress and the goals and schedule in Profile
+  (v2/06a). Build my program spans the content: week 1 in the main column with Start week 1 as
+  its column chrome, the block timeline beside it. A failed read and offline keep the readable
+  column. CSS only.
 - **Workout pages** (`/workout`, `/workout/run`, `/workout/session`; outside the shell): from
   1024 px the header spans the page in one row, and below it the Shell's two columns are centred:
   the side column (`--content-list`: `ExerciseList` for strength, the segments for a run, sticky)

@@ -16,7 +16,6 @@ import { createProgramFromPlan } from '../../../src/lib/server/services/programs
 import { programFixture } from '../../../src/lib/server/test-support/program-fixtures';
 import { loadToday } from '../../../src/routes/(app)/today/load.server';
 import * as programRead from '../../../src/routes/(app)/today/program.server';
-import * as weekRead from '../../../src/routes/(app)/today/week.server';
 import { watchPool, withCommitted } from '../helpers';
 import { generalGoal, makeOwner } from '../profile/fixtures';
 
@@ -24,10 +23,6 @@ import { generalGoal, makeOwner } from '../profile/fixtures';
 vi.mock('../../../src/routes/(app)/today/program.server', async (original) => {
 	const real = await original<typeof programRead>();
 	return { ...real, loadTodayProgram: vi.fn(real.loadTodayProgram) };
-});
-vi.mock('../../../src/routes/(app)/today/week.server', async (original) => {
-	const real = await original<typeof weekRead>();
-	return { ...real, loadTodayWeek: vi.fn(real.loadTodayWeek) };
 });
 
 /** A Thursday, and a morning on it. */
@@ -77,11 +72,8 @@ describe('Today’s page data', () => {
 				today: TODAY,
 				selected: TODAY
 			});
-			// This week's figures stream beside the plan: nothing logged yet, so no data yet.
-			expect(await data.week).toMatchObject({
-				failed: false,
-				tiles: [{ value: null }, { value: null }, { value: null }]
-			});
+			// This week's figures are Progress's now (v2/06a): Today reads none.
+			expect(data).not.toHaveProperty('week');
 			expect(pool.peak()).toBeGreaterThan(1);
 		});
 	});
@@ -90,18 +82,14 @@ describe('Today’s page data', () => {
 		await withCommitted(async (db) => {
 			const owner = await makeOwner(db);
 			vi.mocked(programRead.loadTodayProgram).mockClear();
-			vi.mocked(weekRead.loadTodayWeek).mockClear();
 			const data = await loadToday(owner, { now, origin });
 			expect(data).toEqual({
 				setup: { complete: false, done: 0, total: expect.any(Number), next: 'welcome' },
 				program: undefined,
-				plan: undefined,
-				week: undefined
+				plan: undefined
 			});
-			// Once the program read has answered, the week's reads have not started for nothing.
+			// The program read started beside the setup's: it settles before the test ends.
 			await vi.mocked(programRead.loadTodayProgram).mock.results[0]!.value;
-			await new Promise((resolve) => setTimeout(resolve, 0));
-			expect(weekRead.loadTodayWeek).not.toHaveBeenCalled();
 		});
 	});
 
@@ -111,8 +99,6 @@ describe('Today’s page data', () => {
 			const data = await loadToday(owner, { now, origin });
 			expect(data.setup).toMatchObject({ complete: true });
 			expect(data).toMatchObject({ program: 'none', plan: undefined });
-			// A week before any program still reads: no data yet until the first session.
-			expect(await data.week).toMatchObject({ failed: false });
 		});
 	});
 });

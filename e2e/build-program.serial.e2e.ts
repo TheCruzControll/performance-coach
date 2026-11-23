@@ -147,12 +147,8 @@ test('Build previews week 1 with its rationale, and Start week 1 stores version 
 	await hybridProfile(request);
 	await gotoHydrated(page, '/today');
 
-	// The Build card sits above the summary, which is unchanged.
+	// The Build card alone: the goals and schedule live in Profile (v2/06a).
 	await expect(card(page).getByRole('heading', { level: 2 })).toHaveText('Build my program');
-	const cardBox = (await card(page).boundingBox())!;
-	const goalsBox = (await page.getByTestId('today-goals').boundingBox())!;
-	expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(goalsBox.y);
-	await expect(page.getByTestId('today-goal')).toHaveCount(3);
 	const target = (await cta(page).boundingBox())!;
 	expect(target.height).toBeGreaterThanOrEqual(44);
 	expect(await audit(page), 'card, dark').toEqual([]);

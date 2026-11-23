@@ -87,17 +87,17 @@ test.describe('week-complete, on Today', () => {
 	test.describe('in a desktop window', () => {
 		test.use({ ...DESKTOP });
 
-		test('the prompt sits in the plan’s column, beside the side column', async ({
+		test('the prompt sits in the plan’s column, with nothing beside it', async ({
 			page
 		}, testInfo) => {
 			test.skip(isSunday(seeded), SUNDAY);
 			await gotoHydrated(page, '/today');
 			const prompt = await boxOf(promptOf(page));
 			const day = await boxOf(page.getByTestId('today-day'));
-			const side = await boxOf(page.getByTestId('today-side'));
 			expect(Math.abs(prompt.x - day.x), 'the plan’s column').toBeLessThan(2);
 			expect(Math.abs(prompt.width - day.width), 'the plan’s width').toBeLessThan(2);
-			expect(side.x).toBeGreaterThan(prompt.x + prompt.width);
+			// The goals and This week left Today's side column (v2/06a): nothing sits beside it.
+			await expect(page.getByTestId('today-side')).toHaveCount(0);
 			await createButton(page).hover();
 			await expectNoSideScroll(page);
 			await auditBothThemes(page, 'Today, a week to review, desktop');

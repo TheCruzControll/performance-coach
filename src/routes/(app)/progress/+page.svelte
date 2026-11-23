@@ -7,7 +7,9 @@
 
   Above them, rows to the workout history and the reviews, on every view. The reviews row sits
   here rather than in OverviewView because a second ListRow in the overview's own chunk would put
-  the route over its 60 KB initial JS budget, and here it costs only a few bytes.
+  the route over its 60 KB initial JS budget, and here it costs only a few bytes. Under them, This
+  week (WeekSoFar, moved from Today in v2/06a), on every view and through a failed load, until
+  v2/14 redraws Progress's home.
 -->
 <script lang="ts">
 	import { beforeNavigate, invalidateAll } from '$app/navigation';
@@ -21,6 +23,7 @@
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
 	import type { PageProps } from './$types';
 	import { DEFAULT_VIEW, progressQuery, PROGRESS_VIEWS, VIEW_LABEL } from './params';
+	import WeekSoFar from './WeekSoFar.svelte';
 
 	let { data }: PageProps = $props();
 
@@ -79,6 +82,10 @@
 		/>
 	</div>
 
+	<div class="week">
+		<WeekSoFar week={data.week} {retrying} onretry={retry} />
+	</div>
+
 	{#if offline}
 		<div class="notice">
 			<Notice tone="warning" icon="wifi-off" data-testid="progress-offline">
@@ -126,6 +133,7 @@
 
 <style>
 	.history,
+	.week,
 	.notice {
 		margin-bottom: var(--space-5);
 	}

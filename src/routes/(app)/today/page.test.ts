@@ -26,21 +26,17 @@ async function loadModule(where: { browser: false } | { browser: true; pathname:
 }
 
 type Module = Awaited<ReturnType<typeof loadModule>>;
-const run = async (
-	module: Module,
-	setup: unknown,
-	program?: unknown,
-	plan?: unknown,
-	week?: unknown
-) =>
-	module.load({ data: { setup, program, plan, week } } as unknown as Parameters<Module['load']>[0]);
+const run = async (module: Module, setup: unknown, program?: unknown, plan?: unknown) =>
+	module.load({ data: { setup, program, plan } } as unknown as Parameters<Module['load']>[0]);
 
 /** Whether the load finishes while the panel's import is still held. */
 async function finishesBeforeImport(module: Module): Promise<boolean> {
 	let finish = () => {};
 	preloadPanel.mockImplementationOnce(() => new Promise<void>((r) => (finish = r)));
 	let settled = false;
-	const loading = run(module, { complete: true, goals: [], week: {} }).then(() => (settled = true));
+	const loading = run(module, { complete: true, goals: [], week: {} }, 'none').then(
+		() => (settled = true)
+	);
 	// Every microtask has run: only the held import can keep the load from finishing.
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	const early = settled;
@@ -59,15 +55,16 @@ afterEach(() => {
 });
 
 describe("Today's universal load", () => {
-	it('imports the setup card while onboarding is incomplete, the summary once complete', async () => {
+	it('imports the setup card while onboarding is incomplete, the build card with no program (no summary)', async () => {
 		const module = await loadModule({ browser: false });
 		const setup = { complete: false, done: 2, total: 10, next: 'experience' };
 		await expect(run(module, setup)).resolves.toMatchObject({ setup });
 		expect(preloadPanel).toHaveBeenCalledExactlyOnceWith(module.PANELS.setup);
 		preloadPanel.mockClear();
 		const done = { complete: true, goals: [], week: {} };
-		await expect(run(module, done)).resolves.toMatchObject({ setup: done });
-		expect(preloadPanel).toHaveBeenCalledExactlyOnceWith(module.PANELS.summary);
+		await expect(run(module, done, 'none')).resolves.toMatchObject({ setup: done });
+		expect(preloadPanel).toHaveBeenCalledExactlyOnceWith(module.PANELS.build);
+		expect(module.PANELS).not.toHaveProperty('summary');
 	});
 
 	it('imports no panel when the setup read failed', async () => {
@@ -80,19 +77,23 @@ describe("Today's universal load", () => {
 		expect(preloadPanel).not.toHaveBeenCalled();
 	});
 
-	it('with no program, imports the Build card and the summary, and sends both as markup', async () => {
+	it('with no program, imports the Build card and sends it as markup', async () => {
 		const module = await loadModule({ browser: false });
 		const setup = { complete: true, goals: [], week: {} };
 		await expect(run(module, setup, 'none')).resolves.toEqual({
 			setup,
 			program: 'none',
-			served: { build: '<section>the panel</section>', summary: '<section>the panel</section>' }
+			served: { build: '<section>the panel</section>' }
 		});
-		expect(preloadPanel.mock.calls).toEqual([[module.PANELS.build], [module.PANELS.summary]]);
+		expect(preloadPanel).toHaveBeenCalledExactlyOnceWith(module.PANELS.build);
 		preloadPanel.mockClear();
-		// Once the program read failed, the summary alone.
-		await run(module, setup, null);
-		expect(preloadPanel).toHaveBeenCalledExactlyOnceWith(module.PANELS.summary);
+		// Once the program read failed, no panel: the setup error's Retry.
+		await expect(run(module, setup, null)).resolves.toEqual({
+			setup,
+			program: null,
+			served: {}
+		});
+		expect(preloadPanel).not.toHaveBeenCalled();
 	});
 
 	it('with a program, waits for the streamed plan on the server and renders it into the markup', async () => {
@@ -101,11 +102,9 @@ describe("Today's universal load", () => {
 		const plan = { failed: false, week: null, starts: null, complete: null, upNext: [] };
 		const loaded = await run(module, setup, 'active', Promise.resolve(plan));
 		expect(loaded).toMatchObject({ plan, served: { program: '<section>the panel</section>' } });
-		expect(preloadPanel.mock.calls).toEqual([[module.PANELS.program], [module.PANELS.summary]]);
-		// Each panel is rendered with the plan settled, and the summary without the week's shape.
-		for (const [, props] of servedPanel.mock.calls as unknown as [unknown, object][]) {
-			expect(props).toEqual({ setup, plan, showWeek: false });
-		}
+		expect(preloadPanel).toHaveBeenCalledExactlyOnceWith(module.PANELS.program);
+		// The panel is rendered with the plan settled.
+		expect(servedPanel).toHaveBeenCalledExactlyOnceWith(Panel, { setup, plan });
 	});
 
 	it('hydrating Today takes the plan as settled; a client navigation passes the promise on', async () => {
@@ -119,34 +118,16 @@ describe("Today's universal load", () => {
 		expect(navigated.plan).toBe(streamed);
 	});
 
-	it('waits for this week’s streamed figures on the server and when hydrating; a navigation passes them on', async () => {
-		const setup = { complete: true, goals: [], week: {} };
-		const week = { failed: false, tiles: [], against: 'Nothing logged by Monday last week.' };
-		const server = await loadModule({ browser: false });
-		expect(await run(server, setup, 'none', undefined, Promise.resolve(week))).toMatchObject({
-			week
-		});
-		const browser = await loadModule({ browser: true, pathname: '/today' });
-		expect(await run(browser, setup, 'none', undefined, Promise.resolve(week))).toMatchObject({
-			week
-		});
-		const streamed = Promise.resolve(week);
-		const navigated = (await run(browser, setup, 'none', undefined, streamed)) as {
-			week: unknown;
-		};
-		expect(navigated.week).toBe(streamed);
-	});
-
 	it('waits for the import on the server, and sends the panel as markup', async () => {
 		const module = await loadModule({ browser: false });
 		expect(await finishesBeforeImport(module)).toBe(false);
 		const setup = { complete: true, goals: [], week: {} };
-		await expect(run(module, setup)).resolves.toEqual({
+		await expect(run(module, setup, 'none')).resolves.toEqual({
 			setup,
-			program: undefined,
-			served: { summary: '<section>the panel</section>' }
+			program: 'none',
+			served: { build: '<section>the panel</section>' }
 		});
-		expect(servedPanel).toHaveBeenLastCalledWith(Panel, { setup, plan: undefined, showWeek: true });
+		expect(servedPanel).toHaveBeenLastCalledWith(Panel, { setup, plan: undefined });
 	});
 
 	it('never waits for it in the browser: hydrating Today keeps the server’s markup instead', async () => {
@@ -155,19 +136,23 @@ describe("Today's universal load", () => {
 		// The hydrating load finishes while the panel's import is held.
 		preloadPanel.mockImplementationOnce(() => new Promise<void>(() => {}));
 		const hydrating = await Promise.race([
-			run(module, setup),
+			run(module, setup, 'none'),
 			new Promise((resolve) => setTimeout(() => resolve('held'), 0))
 		]);
-		expect(hydrating).toEqual({ setup, program: undefined, served: { summary: SERVED_IN_PLACE } });
+		expect(hydrating).toEqual({ setup, program: 'none', served: { build: SERVED_IN_PLACE } });
 		expect(servedPanel).not.toHaveBeenCalled();
 		// Any later load in that document (an invalidation, a navigation back) shows the skeleton.
-		await expect(run(module, setup)).resolves.toEqual({ setup, program: undefined, served: {} });
+		await expect(run(module, setup, 'none')).resolves.toEqual({
+			setup,
+			program: 'none',
+			served: {}
+		});
 	});
 
 	it('does not wait on a client navigation: Today shows the panel’s skeleton at once', async () => {
 		const module = await loadModule({ browser: true, pathname: '/train' });
 		expect(await finishesBeforeImport(module)).toBe(true);
-		expect(preloadPanel).toHaveBeenCalledExactlyOnceWith(module.PANELS.summary);
+		expect(preloadPanel).toHaveBeenCalledExactlyOnceWith(module.PANELS.build);
 	});
 
 	it('names no panel import in its own source, which check-budgets would count as initial JS', () => {

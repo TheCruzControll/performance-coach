@@ -10,9 +10,12 @@ import {
 	setGoalAction,
 	setPhaseAction
 } from '#lib/server/forms/weight.ts';
+import { ownerToday } from '#lib/server/local-date.ts';
+import { logWhenSettled } from '#lib/server/observability/timing.ts';
 import type { Actions, PageServerLoad } from './$types';
 import { loadProgress, type ProgressDeps } from './load';
 import { progressParams } from './params';
+import { loadWeekSoFar } from './week.server';
 
 /**
  * TEST ONLY: with test routes enabled (never in production), this cookie set to 'progress' makes
@@ -24,7 +27,11 @@ const failing = (): never => {
 	throw new Error('Forced failure (test routes)');
 };
 
-/** Progress for the owner's today (worked out inside loadProgress, so it fails soft too), the view and period from the URL (load.ts, params.ts). */
+/**
+ * Progress for the owner's today (worked out inside loadProgress, so it fails soft too), the view
+ * and period from the URL (load.ts, params.ts), and This week's figures, streamed beside it
+ * (week.server.ts) in every view. The forced failure leaves the week alone.
+ */
 export const load: PageServerLoad = async ({ cookies, locals, request, route, url }) => {
 	const owner = ownerId(locals);
 	const forced = testRoutesEnabled() && cookies.get(FAIL_COOKIE) === 'progress';
@@ -35,7 +42,11 @@ export const load: PageServerLoad = async ({ cookies, locals, request, route, ur
 		routeId: route.id,
 		appVersion: version
 	};
-	return loadProgress(
+	const week = ownerToday(owner, new Date())
+		.then((today) => loadWeekSoFar(owner, { today, origin }))
+		// ownerToday's own failure: the tiles' Retry.
+		.catch(() => ({ failed: true }) as const);
+	const data = await loadProgress(
 		owner,
 		{ ...progressParams(url.searchParams), origin },
 		new Date(),
@@ -48,6 +59,8 @@ export const load: PageServerLoad = async ({ cookies, locals, request, route, ur
 				} satisfies ProgressDeps)
 			: {}
 	);
+	logWhenSettled(route.id, [week]);
+	return { ...data, week };
 };
 
 /**

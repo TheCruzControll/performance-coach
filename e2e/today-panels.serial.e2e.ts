@@ -1,12 +1,13 @@
 /**
  * Today's state panels are code-split (src/routes/(app)/today/panels): the server sends the
  * state's panel as markup, which the browser keeps as sent while Today hydrates without its code,
- * and a client navigation shows Today at once with the panel's skeleton. These specs prove that the panel's code arriving late moves nothing,
- * on either path, and that a panel whose code fails to
- * load is a designed notice with Retry, in place of the panel only, which recovers once the
- * code can be fetched: in place where the browser fetches a failed module again (WebKit), or
- * through a reload of Today where it does not (Chromium). Serial: each test sets up the one
- * owner's training profile, and the last one leaves it blank again.
+ * and a client navigation shows Today at once with the panel's skeleton (here the Build card's,
+ * the panel of an owner set up with no program). These specs prove that the panel's code
+ * arriving late moves nothing, on either path, and that a panel whose code fails to load is a
+ * designed notice with Retry, in place of the panel only, which recovers once the code can be
+ * fetched: in place where the browser fetches a failed module again (WebKit), or through a
+ * reload of Today where it does not (Chromium). Serial: each test sets up the one owner's
+ * training profile, and the last one leaves it blank again.
  */
 import AxeBuilder from '@axe-core/playwright';
 import {
@@ -14,6 +15,7 @@ import {
 	test,
 	type APIRequestContext,
 	type APIResponse,
+	type Locator,
 	type Page,
 	type Route
 } from '@playwright/test';
@@ -26,8 +28,11 @@ import {
 	SAME_ORIGIN
 } from './support';
 
-/** Only the Summary panel's chunk carries its schedule line's test id. */
-const SUMMARY_MARKUP = 'today-schedule-summary';
+/**
+ * Only the Build panel's chunk carries its badge's words. Not its test id: the card passes it to
+ * Card as a prop, so the chunk never holds `data-testid="today-build"`.
+ */
+const BUILD_MARKUP = 'Profile ready';
 /** Only the Setup panel's chunk carries its step count's test id. */
 const SETUP_MARKUP = 'today-setup-count';
 
@@ -68,7 +73,7 @@ async function setUp(request: APIRequestContext) {
 async function routePanelChunk(
 	page: Page,
 	panel: (route: Route, response: APIResponse) => Promise<void>,
-	markup = SUMMARY_MARKUP
+	markup = BUILD_MARKUP
 ) {
 	await page.route('**/_app/immutable/**/*.js', async (route) => {
 		const response = await route.fetch().catch(() => null);
@@ -81,9 +86,9 @@ async function routePanelChunk(
 
 /**
  * With onboarding incomplete, go from Profile to Today with the Setup chunk held: Today shows its
- * skeleton, and the setup card that replaces it moves nothing below it (This week). On a phone the
- * card fills its skeleton’s room; on the wide layout nothing sits under it in its column, so it
- * takes its own height there, never more than the room.
+ * skeleton, and the setup card that replaces it moves nothing (the title and the week above it).
+ * On a phone the card fills its skeleton’s room; on the wide layout nothing sits under it in its
+ * column, so it takes its own height there, never more than the room.
  */
 async function setupArrivesInPlace(page: Page, room: 'fills' | 'own' = 'fills') {
 	await resetTrainingProfile();
@@ -135,9 +140,11 @@ async function setupArrivesInPlace(page: Page, room: 'fills' | 'own' = 'fills') 
 }
 
 const notice = (page: Page) => page.getByTestId('today-panel-error');
-const goals = (page: Page) => page.getByTestId('today-goal');
-/** This week's heading: under the summary (goals first), beside or under the state's panel. */
-const week = (page: Page) => page.getByRole('heading', { level: 2, name: 'This week' });
+/** M2's week shape, above the state's panel until a program exists. */
+const week = (page: Page) => page.getByRole('list', { name: 'This week' });
+/** The Build card's live button, not its served copy (inert until the card's code arrives). */
+const buildCta = (page: Page) =>
+	page.locator('[data-testid="today-build-cta"]:not([data-served] *)');
 
 async function audit(page: Page) {
 	await page.waitForFunction(() => document.fonts.status === 'loaded');
@@ -148,8 +155,8 @@ async function audit(page: Page) {
 	return violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.target.join(' ')}`));
 }
 
-/** Arrive on Today with the Summary chunk failing, then let it through for Retry. */
-async function arriveWithSummaryFailing(page: Page) {
+/** Arrive on Today with the Build chunk failing, then let it through for Retry. */
+async function arriveWithBuildFailing(page: Page) {
 	let failing = true;
 	await routePanelChunk(page, async (route, response) => {
 		if (failing) await route.abort('internetdisconnected');
@@ -189,34 +196,26 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		});
 		// Not waiting for the load event, which the held chunk could delay.
 		await page.goto('/today', { waitUntil: 'domcontentloaded' });
-		// Server-rendered, before its code: the goals and schedule are there, the countdown (which
-		// the panel fills in once hydrated) still blank.
-		await expect(goals(page)).toHaveCount(1);
-		await expect(page.getByTestId('today-schedule-summary')).toHaveText(
-			'4 days a week · 60 min sessions'
-		);
+		// Server-rendered, before its code: the Build card is there, its button the served copy.
+		await expect(page.getByTestId('today-build')).toBeVisible();
+		await expect(page.getByTestId('today-build-cta')).toHaveText('Build my program');
 		await expect.poll(() => requested, { message: 'the panel’s code is on its way' }).toBe(true);
 		await page.waitForFunction(() => document.fonts.status === 'loaded');
-		const countdown = page.getByTestId('today-goal-countdown');
-		await expect(countdown).toBeVisible();
-		await expect(countdown).not.toContainText('to go');
+		await expect(buildCta(page)).toHaveCount(0);
 		// Today hydrates without the panel's code (its initial JS holds only what every state
 		// shares): today's date is marked on the week strip while the chunk is still held.
-		await expect(
-			page.getByRole('list', { name: 'This week' }).locator('[aria-current="date"]')
-		).toHaveCount(1);
-		await expect(goals(page)).toHaveCount(1);
+		await expect(week(page).locator('[aria-current="date"]')).toHaveCount(1);
+		await expect(buildCta(page)).toHaveCount(0);
 
 		await expectNoShift(page, {
 			boxes: [
-				page.getByTestId('today-goals'),
-				page.getByTestId('today-schedule'),
+				page.getByTestId('today-build'),
 				week(page),
 				page.getByRole('heading', { level: 1, name: 'Today' })
 			],
 			action: async () => {
 				release();
-				await expect(countdown).toHaveText('10 weeks to go');
+				await expect(buildCta(page)).toBeVisible();
 			}
 		});
 		await expect(page.getByTestId('today-panel')).toHaveCount(0);
@@ -238,34 +237,25 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		// The held chunk does not hold the navigation: Today is there, its panel a skeleton.
 		await expect(page).toHaveURL(/\/today$/);
 		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
-		// The summary's, the last panel: the Build card's skeleton above it may still show.
-		const skeleton = page.getByTestId('today-panel').last();
+		const skeleton = page.getByTestId('today-panel');
 		await expect(skeleton).toHaveAttribute('aria-busy', 'true');
-		await expect(goals(page)).toHaveCount(0);
+		await expect(page.getByTestId('today-build')).toHaveCount(0);
 		await expect.poll(() => requested, { message: 'the panel’s code is on its way' }).toBe(true);
-		// The Build card above it is not held.
-		await expect(page.getByTestId('today-build')).toBeVisible();
 		const reserved = (await skeleton.boundingBox())!;
 		expect(reserved.height, 'the skeleton holds the panel’s room').toBeGreaterThanOrEqual(
-			24 * 16 - 1
+			17 * 16 - 1
 		);
 		await page.waitForFunction(() => document.fonts.status === 'loaded');
 
-		// This week, under the summary (goals first), may move as the summary's actual height
-		// replaces its skeleton's: on a client navigation only, below the fold on a phone, and not
-		// worth reserving 24rem under a short summary.
 		await expectNoShift(page, {
-			boxes: [
-				page.getByRole('heading', { level: 1, name: 'Today' }),
-				page.getByTestId('today-build')
-			],
+			boxes: [page.getByRole('heading', { level: 1, name: 'Today' }), week(page)],
 			action: async () => {
 				release();
-				await expect(page.getByTestId('today-goal-countdown')).toHaveText('10 weeks to go');
+				await expect(buildCta(page)).toBeVisible();
 			}
 		});
 		await expect(skeleton).toHaveCount(0);
-		const panel = (await page.getByTestId('today-goals').boundingBox())!;
+		const panel = (await page.getByTestId('today-build').boundingBox())!;
 		expect(
 			Math.abs(panel.y - reserved.y),
 			'the panel starts where its skeleton did'
@@ -281,19 +271,18 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 	test('a panel whose code fails is a designed notice with Retry, and Retry renders the panel', async ({
 		page
 	}, testInfo) => {
-		const letThrough = await arriveWithSummaryFailing(page);
+		const letThrough = await arriveWithBuildFailing(page);
 		const failed = notice(page);
 		await expect(failed).toContainText('Couldn’t load this part of Today');
-		await expect(goals(page)).toHaveCount(0);
+		await expect(page.getByTestId('today-build')).toHaveCount(0);
 		// Only the panel failed: the rest of Today is there and works.
 		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
-		await expect(page.getByTestId('today-build')).toBeVisible();
 		await expect(week(page)).toBeVisible();
 		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
 		// It holds the panel's room: what is above it stays put once the panel arrives.
 		const panel = page.getByTestId('today-panel');
 		await expect(panel).toHaveAttribute('aria-busy', 'false');
-		expect((await panel.boundingBox())!.height).toBeGreaterThanOrEqual(24 * 16 - 1);
+		expect((await panel.boundingBox())!.height).toBeGreaterThanOrEqual(17 * 16 - 1);
 		const retry = failed.getByRole('button', { name: 'Try again' });
 		const target = (await retry.boundingBox())!;
 		expect(target.width, 'Try again is at least 44 px wide').toBeGreaterThanOrEqual(44);
@@ -301,27 +290,27 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		expect(await audit(page), 'dark').toEqual([]);
 		await captureScreen(page, testInfo, 'today-panel-error');
 
-		// Where the Build card above the panel sits in the document: Retry may scroll the page
-		// (Chromium reloads it). The live card, not its served copy: after the reload the copy
-		// shows first and is replaced once the card mounts, which leaves a box read from it null.
-		const documentTop = async () =>
-			(await page.locator('[data-testid="today-build"]:not([data-served] *)').boundingBox())!.y +
-			(await page.evaluate(() => window.scrollY));
-		const buildTop = await documentTop();
+		// Where the notice sits in the document: Retry may scroll the page (Chromium reloads it).
+		// The Build card arrives where the notice was. The live card, not its served copy: after
+		// the reload the copy shows first and is replaced once the card mounts, which leaves a box
+		// read from it null.
+		const documentTop = async (target: Locator) =>
+			(await target.boundingBox())!.y + (await page.evaluate(() => window.scrollY));
+		const noticeTop = await documentTop(panel);
 		letThrough();
 		await retry.click();
-		await expect(goals(page)).toHaveCount(1);
-		await expect(page.getByTestId('today-goal-countdown')).toHaveText('10 weeks to go');
+		await expect(buildCta(page)).toBeVisible();
 		await expect(notice(page)).toHaveCount(0);
 		await expect(page.getByTestId('today-panel')).toHaveCount(0);
-		expect(Math.abs((await documentTop()) - buildTop)).toBeLessThanOrEqual(1);
+		const card = page.locator('[data-testid="today-build"]:not([data-served] *)');
+		expect(Math.abs((await documentTop(card)) - noticeTop)).toBeLessThanOrEqual(1);
 	});
 
 	test('the notice is designed in the light theme too', async ({ page }) => {
 		await page.addInitScript(() =>
 			localStorage.setItem('pc:prefs:v1', JSON.stringify({ theme: 'light' }))
 		);
-		await arriveWithSummaryFailing(page);
+		await arriveWithBuildFailing(page);
 		await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 		expect(await audit(page), 'light').toEqual([]);
 	});
@@ -338,7 +327,7 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		test('the notice sits in the wide column, and Retry has a hover state', async ({
 			page
 		}, testInfo) => {
-			await arriveWithSummaryFailing(page);
+			await arriveWithBuildFailing(page);
 			await expectMainCentred(page, await tokenPx(page, '--content-wide'));
 			await expectNoSideScroll(page);
 			const main = (await page.locator('main#main').boundingBox())!;
