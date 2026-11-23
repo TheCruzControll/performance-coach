@@ -392,3 +392,9 @@ export const DISTANCE_UNITS = ['km', 'mi'] as const;
 export function disciplineLabel(discipline: Discipline, customLabel?: string | null): string {
 	return discipline === 'custom' && customLabel ? customLabel : DISCIPLINE_INFO[discipline].label;
 }
+
+/** The body weights the app accepts, per unit (schemas.ts and the weight goal read it). */
+export const BODY_WEIGHT_RANGE: Record<string, readonly [number, number]> = {
+	kg: [25, 350],
+	lb: [55, 770]
+};

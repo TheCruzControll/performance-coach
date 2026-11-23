@@ -22,13 +22,13 @@
  * TOLERANCE, so float noise never decides a verdict.
  *
  * Conventions for src/lib/domain/analytics (M6), as in weight.ts: pure (no I/O, clock or
- * randomness), imported by path, server-only at runtime. The range BODY_WEIGHT_RANGE comes from
- * profile/schemas.ts, so this module loads zod/mini through it; no schema is built here.
+ * randomness), imported by path, server-only at runtime, with no zod: BODY_WEIGHT_RANGE comes from
+ * profile/catalog.ts.
  */
 import { addDays, daysBetween } from '../calendar.ts';
 import type { IsoDate } from '../calendar.ts';
+import { BODY_WEIGHT_RANGE } from '../profile/catalog.ts';
 import type { NutritionPhase } from '../profile/catalog.ts';
-import { BODY_WEIGHT_RANGE } from '../profile/schemas.ts';
 import { cleanFloat, convertWeight } from '../units.ts';
 import type { WeightUnit } from '../units.ts';
 import { TOLERANCE, trendOn, weeklyRate } from './weight.ts';
