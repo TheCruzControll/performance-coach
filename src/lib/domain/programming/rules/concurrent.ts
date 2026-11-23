@@ -130,7 +130,7 @@ export const CONCURRENT_RULES = {
 	same_day_priority_order: {
 		severity: 'prefer',
 		headline: 'The higher-priority session comes second',
-		why: 'When one day holds two hard sessions, the first is done fresh: it goes to the goal that ranks higher. This replaces M3’s fixed order when priorities are known.'
+		why: 'When one day holds two hard sessions, the first is done fresh: it goes to the goal that ranks higher. For a pair the priorities rank apart, this replaces M3’s fixed order; a pair they do not rank keeps it.'
 	},
 	same_day_separation: {
 		severity: 'avoid',

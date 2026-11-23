@@ -24,7 +24,13 @@ import type { MoveSessionInput } from '../../training/edits.ts';
 import { render, TEMPLATES } from '../decisions.ts';
 import type { FactsFor } from '../decisions.ts';
 import { clip } from '../demand.ts';
-import { checkConcurrent, goalOf, hasContext, weightFor } from '../evaluate/concurrent.ts';
+import {
+	checkConcurrent,
+	goalOf,
+	hasContext,
+	rankedApart,
+	weightFor
+} from '../evaluate/concurrent.ts';
 import type { ContextEvent, WeekContext } from '../evaluate/concurrent.ts';
 import type { Finding, WeekEvaluation } from '../evaluate/types.ts';
 import { evaluateWeek } from '../evaluate/week.ts';
@@ -39,7 +45,7 @@ import {
 import type { SessionDemand, TraitsOf } from '../interference.ts';
 import { loadModel } from '../load/fatigue.ts';
 import type { ModelLogged, ModelPlanned } from '../load/fatigue.ts';
-import { PLACEMENT } from '../placement.ts';
+import { PLACEMENT, zone2 } from '../placement.ts';
 import type { GoalPriority } from '../priority/weights.ts';
 import { canonicalJson, compareText } from '../random.ts';
 import { CONCURRENT_RULES } from '../rules/concurrent.ts';
@@ -70,17 +76,21 @@ export interface RepairContext {
 	keepOwnerMoves?: boolean;
 	/** Lineages of sessions already logged: they never change. */
 	completed?: readonly string[];
+	/** Whether a generated session may be left out as a last resort: every one by default. */
+	mayDrop?: (session: EvaluatedSession) => boolean;
 	traitsOf?: TraitsOf;
 }
 
 type DecisionOf<
-	K extends 'schedule_repaired' | 'load_eased' | 'priority_tradeoff' | 'session_dropped'
+	K extends
+		'schedule_repaired' | 'load_eased' | 'priority_tradeoff' | 'schedule_kept' | 'session_dropped'
 > = { kind: K; ruleKey: string; facts: FactsFor<K> };
 /** The facts of the decision an action or a kept finding is recorded with. */
 export type RepairDecision =
 	| DecisionOf<'schedule_repaired'>
 	| DecisionOf<'load_eased'>
 	| DecisionOf<'priority_tradeoff'>
+	| DecisionOf<'schedule_kept'>
 	| DecisionOf<'session_dropped'>;
 
 export interface Slot {
@@ -105,8 +115,12 @@ export interface KeptFinding {
 	finding: Finding;
 	/** Why the week keeps it, in one sentence. */
 	tradeoff: string;
-	/** When a higher-priority goal's session holds it. */
-	decision?: DecisionOf<'priority_tradeoff'>;
+	/**
+	 * Why the week keeps an avoid finding: a higher-priority goal's session holds it (priority_tradeoff),
+	 * else the finding's headline and this reason are recorded as schedule_kept. Never set for a
+	 * finding the owner's commitments fix alone.
+	 */
+	decision?: DecisionOf<'priority_tradeoff'> | DecisionOf<'schedule_kept'>;
 }
 
 /** An M3 moveSession input: valid under moveSessionSchema. */
@@ -266,12 +280,18 @@ export function repairWeek<S extends EvaluatedSession>(
 		return demands.get(s)!;
 	};
 
+	/**
+	 * A session as the load model reads it: a generated zone 2 bike loads as the easy run it
+	 * replaced (cross-training.ts), as placement places it, not as conditioning's hard efforts.
+	 */
+	const asLoaded = <P extends ModelPlanned>(s: P): P =>
+		s.kind === 'other' && zone2(s) ? { ...s, type: 'easy_run' } : s;
 	const contextOf = (week: readonly S[]): WeekContext => {
 		const dates = week.map((s) => s.date).sort(compareText);
 		const monday = mondayOf(dates[0] ?? ctx.load?.from ?? '2000-01-03');
 		const load = ctx.load && {
 			days: loadModel({
-				planned: [...(ctx.load.planned ?? []), ...week],
+				planned: [...(ctx.load.planned ?? []), ...week].map(asLoaded),
 				logged: ctx.load.logged,
 				from: ctx.load.from,
 				to: addDays(mondayOf(dates.at(-1) ?? monday), 6),
@@ -285,14 +305,22 @@ export function repairWeek<S extends EvaluatedSession>(
 
 	/**
 	 * The findings of a candidate week, as evaluateWeek finds them (M3's checkWeek, the concurrent
-	 * rules with a context, same_day_order replaced with priorities, in its order), each with the
-	 * harmed goal's weight, without the words and the fingerprint only the reported weeks need.
+	 * rules with a context, same_day_order replaced with priorities for a pair they rank apart, in
+	 * its order), each with the harmed goal's weight, without the words and the fingerprint only the
+	 * reported weeks need.
 	 */
 	const clashesOf = (week: readonly S[]): Clash[] => {
 		const happening = week.filter((s) => s.status !== 'skipped');
 		const context = contextOf(happening);
 		const m3 = checkWeek(happening, { traitsOf, openDates: ctx.open })
-			.filter((v) => !(priorities && v.rule === 'same_day_order'))
+			.filter(
+				(v) =>
+					!(
+						priorities &&
+						v.rule === 'same_day_order' &&
+						rankedApart(weight, v.sessions[0]!, v.sessions.at(-1)!)
+					)
+			)
 			.map((v) => ({
 				rule: `placement.${v.rule}`,
 				severity: v.severity,
@@ -455,7 +483,7 @@ export function repairWeek<S extends EvaluatedSession>(
 		}
 		if (f.severity !== 'avoid') return;
 		for (const x of movable) {
-			if (x.now.source !== 'generator') continue;
+			if (x.now.source !== 'generator' || ctx.mayDrop?.(x.now) === false) continue;
 			if (rivals(state, f, x).some((w) => weight(x.now) >= w)) continue;
 			yield {
 				kind: 'drop',
@@ -556,7 +584,17 @@ export function repairWeek<S extends EvaluatedSession>(
 		const keptGoal = priorities && first && goalOf(first.now, priorities);
 		const given = priorities && last && goalOf(last.now, priorities);
 		const held = finding.resolution?.kind === 'priority_kept' && keptGoal && given;
-		if (!held || keptGoal.rank >= given.rank) return { finding, tradeoff };
+		if (!held || keptGoal.rank >= given.rank) {
+			if (finding.severity !== 'avoid' || finding.resolution?.kind === 'commitment_fixed') {
+				return { finding, tradeoff };
+			}
+			const facts = { headline: clip(finding.headline, 120), reason: clip(tradeoff, 200) };
+			return {
+				finding,
+				tradeoff,
+				decision: { kind: 'schedule_kept', ruleKey: 'schedule.kept', facts }
+			};
+		}
 		const facts = {
 			kept: clip(keptGoal.title, 40),
 			given: clip(given.title, 80),

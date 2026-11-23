@@ -18,7 +18,7 @@ import type { GoalPriority } from '../priority/weights.ts';
 import { canonicalJson, compareText, fnv1a64 } from '../random.ts';
 import { CONCURRENT_RULES } from '../rules/concurrent.ts';
 import { EVALUATION_ID, GRADES, RESOLUTION_ORDER, SCORE_WEIGHTS } from '../rules/evaluation.ts';
-import { checkConcurrent, goalOf, hasContext, weightFor } from './concurrent.ts';
+import { checkConcurrent, goalOf, hasContext, rankedApart, weightFor } from './concurrent.ts';
 import type { ConcurrentFinding, Named, WeekContext } from './concurrent.ts';
 import type { Finding, ResolutionHint, WeekEvaluation } from './types.ts';
 
@@ -255,7 +255,7 @@ const RULE_ORDER = [
  * Judge a week (or more) of sessions. Skipped sessions are left out: they will not happen.
  * Findings come by first day, then in INTERFERENCE_RULES' order, then CONCURRENT_RULES'. With a
  * context, the concurrent rules run too, and with priorities same_day_priority_order replaces
- * M3's same_day_order.
+ * M3's same_day_order for a pair the priorities rank apart (rankedApart), never for one they do not.
  */
 export function evaluateWeek(
 	sessions: readonly EvaluatedSession[],
@@ -283,7 +283,14 @@ export function evaluateWeek(
 	);
 	if (hasContext(context)) {
 		drafts = [
-			...drafts.filter((d) => !(priorities && d.rule === 'placement.same_day_order')),
+			...drafts.filter(
+				(d) =>
+					!(
+						priorities &&
+						d.rule === 'placement.same_day_order' &&
+						rankedApart(weight, d.sessions[0]!, d.sessions.at(-1)!)
+					)
+			),
 			...checkConcurrent(happening, context, traitsOf).map((f) => ({
 				...f,
 				area: 'concurrent' as const

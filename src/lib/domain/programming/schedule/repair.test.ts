@@ -164,6 +164,62 @@ describe('repairWeek: the PRD §5 conflicts', () => {
 		expect(dayOf(r, 'Lower A')! > weekDay(1)).toBe(true);
 		expect(r.after.evaluation.findings).toEqual([]);
 	});
+
+	it('judges a generated zone 2 bike as the easy run it replaced (cross-training.ts), not as conditioning', () => {
+		// After a hard camp week, conditioning's nervous-system share would overload Wednesday's
+		// sparring; the easy runs the bikes replaced do not, so the week must be judged alike.
+		const load = { from: weekDay(-7), logged: fromLogged(HISTORIES.hardCampWeek(1)) };
+		const ctx = { ...CTX, load, today: weekDay(0) };
+		const run = (day: number) =>
+			easyRun(day, { estMinutes: 60, targetRpe: 6, lineage: `easy-${day}` });
+		const bike = (day: number) => {
+			const { segments: _segments, ...base } = run(day) as Extract<
+				EvaluatedSession,
+				{ kind: 'run' }
+			>;
+			return {
+				...base,
+				kind: 'other',
+				type: 'conditioning',
+				title: 'Zone 2 bike',
+				details: { kind: 'conditioning', durationMinutes: 60, targetRpe: 6, metrics: [] }
+			} as EvaluatedSession;
+		};
+		const week = (easy: (day: number) => EvaluatedSession) => [
+			easy(0),
+			easy(1),
+			sparring(2),
+			lowerA(3)
+		];
+		const judged = (r: ReturnType<typeof repairWeek>) => ({
+			before: r.before.evaluation.findings.map((f) => f.rule),
+			actions: r.actions.map((a) => [a.kind, a.session.lineage, a.rule, a.to])
+		});
+		const [asRuns, asBikes] = [repairWeek(week(run), ctx), repairWeek(week(bike), ctx)];
+		expect(asRuns.before.evaluation.findings.map((f) => f.rule)).not.toContain(
+			'concurrent.residual_fatigue_before_hard'
+		);
+		expect(judged(asBikes)).toEqual(judged(asRuns));
+	});
+});
+
+describe('repairWeek: the load of the week before', () => {
+	// Five hard sessions in the week before, none on its last day (the eve), so the eve is empty.
+	const heavyBefore = () => [legVolume(-6), legVolume(-5), legVolume(-4), lowerA(-3), lowerA(-2)];
+	const loadOf = (planned: EvaluatedSession[]) => ({ from: weekDay(-7), planned, logged: [] });
+	const residualOf = (r: ReturnType<typeof repairWeek>) =>
+		r.before.evaluation.findings.map((f) => f.rule);
+
+	it('counts the planned load of the week before when the stage passes its first day as today', () => {
+		// The stage's context: today is the week before's Monday, so its planned days are the past
+		// that still carry fatigue, not missed sessions.
+		const ctx = { ...CTX, today: weekDay(-7) };
+		const counted = repairWeek([sparring(0)], { ...ctx, load: loadOf(heavyBefore()) });
+		const missing = repairWeek([sparring(0)], { ...ctx, load: loadOf([]) });
+		expect(residualOf(counted)).toEqual(['concurrent.residual_fatigue_before_hard']);
+		expect(residualOf(missing)).toEqual([]);
+		expect(counted.before.cost).toBeGreaterThan(missing.before.cost);
+	});
 });
 
 // ---- The owner's own week -------------------------------------------------------------------

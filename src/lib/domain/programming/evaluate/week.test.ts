@@ -3,10 +3,13 @@
  * week of Monday 9 November 2026.
  */
 import { describe, expect, it } from 'vitest';
+import type { Discipline } from '../../profile/catalog';
 import { INTERFERENCE_RULES } from '../interference';
+import type { GoalPriority } from '../priority/weights';
 import { PRD_WEEKS, weekDay } from '../periodisation/weeks';
 import type { PrdWeek } from '../periodisation/weeks';
 import { GRADES, RESOLUTION_ORDER, SCORE_WEIGHTS } from '../rules/evaluation';
+import { RANK_WEIGHTS } from '../rules/priority';
 import { RULE_BY_ID } from '../rules/registry/index';
 import type { Finding } from './types';
 import { evaluateWeek } from './week';
@@ -271,5 +274,46 @@ describe('evaluateWeek: an empty priorities list', () => {
 		expect(rules(none.findings)).toContain('placement.same_day_order');
 		expect(rules(empty.findings)).toContain('placement.same_day_order');
 		expect(empty).toEqual(none);
+	});
+});
+
+describe('evaluateWeek: a same-day pair the priorities rank apart', () => {
+	// Heavy lower body in the morning, then hard Muay Thai in the evening: M3's wrong order.
+	const [lower, sparring] = PRD_WEEKS.squat_before_sparring();
+	const week: EvaluatedSession[] = [
+		{ ...lower!, date: weekDay(0), timeOfDay: 'morning', orderInDay: 1 },
+		{ ...sparring!, date: weekDay(0), timeOfDay: 'evening', orderInDay: 2 }
+	];
+	const build = { kind: 'build' } as const;
+	const goal = (title: string, disciplines: Discipline[], rank: number): GoalPriority => ({
+		goalId: title.toLowerCase().replaceAll(' ', '-'),
+		title,
+		disciplines,
+		priority: rank + 1,
+		rank,
+		weight: RANK_WEIGHTS[rank]!,
+		mode: rank === 0 ? 'primary' : 'secondary',
+		why: `${title} is in place ${rank + 1}.`,
+		eventKind: null,
+		eventDate: null,
+		weeksToEvent: null,
+		inWindow: false,
+		rule: 'priority.rank_weights'
+	});
+
+	it('an equal-weight pair keeps M3’s same_day_order, as does a pair no goal ranks', () => {
+		const oneGoal = [goal('Get fit', ['strength', 'muay_thai'], 0)];
+		const unranked = [goal('Half marathon', ['running'], 0)];
+		for (const priorities of [oneGoal, unranked]) {
+			const { findings } = evaluateWeek(week, { context: { priorities, week: build } });
+			expect(rules(findings)).toEqual(['placement.same_day_order']);
+		}
+	});
+
+	it('a ranked-apart pair gets same_day_priority_order instead of M3’s same_day_order', () => {
+		const fightFirst = [goal('Fight', ['muay_thai'], 0), goal('Get stronger', ['strength'], 1)];
+		const { findings } = evaluateWeek(week, { context: { priorities: fightFirst, week: build } });
+		expect(rules(findings)).toEqual(['concurrent.same_day_priority_order']);
+		expect(findings[0]!.message).toContain('goal ranks higher, so it goes first');
 	});
 });

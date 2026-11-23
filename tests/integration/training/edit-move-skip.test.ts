@@ -1029,7 +1029,7 @@ describe("a move judged with M7's rules", () => {
 		});
 	});
 
-	it("lists each day's warning, and marks the day the scheduler would pick in the owner-move fixture", async () => {
+	it("lists each day's warning, with M3's same-day order where one goal ranks the pair equal, and marks the day the scheduler would pick in the owner-move fixture", async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
 			const now = new Date('2026-11-11T12:00:00Z');
@@ -1047,14 +1047,31 @@ describe("a move judged with M7's rules", () => {
 			const monday = seeded.mondays.moved;
 			const heavy = INTERFERENCE_RULES.heavy_lower_before_hard;
 			expect(targets).toEqual([
-				// The morning lifts before the evening class: with priorities, in their order.
-				{ date: addDays(monday, 1), planned: 'Muay Thai class' },
+				// The morning lifts before the evening class. The fixture's one goal ranks every session
+				// equal, so the priorities do not rank this pair apart and M3's same_day_order still
+				// warns on Monday+1 and Monday+3. Only a pair the goals rank apart drops it, for
+				// same_day_priority_order (rankedApart, shared by evaluateWeek and the schedule repair).
+				{
+					date: addDays(monday, 1),
+					planned: 'Muay Thai class',
+					warning: {
+						headline: 'Heavy lower body before hard Muay Thai on the same day',
+						why: INTERFERENCE_RULES.same_day_order.why
+					}
+				},
 				{
 					date: addDays(monday, 2),
 					planned: 'Upper A',
 					warning: { headline: 'Heavy lower body the day before hard Muay Thai', why: heavy.why }
 				},
-				{ date: addDays(monday, 3), planned: 'Muay Thai class' },
+				{
+					date: addDays(monday, 3),
+					planned: 'Muay Thai class',
+					warning: {
+						headline: 'Heavy lower body before hard Muay Thai on the same day',
+						why: INTERFERENCE_RULES.same_day_order.why
+					}
+				},
 				{ date: addDays(monday, 4), planned: 'Rest day', clears: CLEARS_CLASH },
 				{
 					date: addDays(monday, 5),

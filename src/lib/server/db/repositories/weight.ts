@@ -77,11 +77,17 @@ export function createWeightRepository(db: Executor) {
 			return { entry: entry!, previous: previous ?? null };
 		},
 
-		async getById(ownerId: string, id: number): Promise<WeightEntryRow | null> {
-			const [row] = await db
+		/** One of the owner's weigh-ins. `forUpdate` locks it until the transaction ends. */
+		async getById(
+			ownerId: string,
+			id: number,
+			{ forUpdate = false }: { forUpdate?: boolean } = {}
+		): Promise<WeightEntryRow | null> {
+			const query = db
 				.select()
 				.from(bodyWeightEntries)
 				.where(and(eq(bodyWeightEntries.ownerId, ownerId), eq(bodyWeightEntries.id, id)));
+			const [row] = await (forUpdate ? query.for('update') : query);
 			return row ?? null;
 		},
 

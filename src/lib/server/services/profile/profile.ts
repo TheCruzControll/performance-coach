@@ -22,13 +22,9 @@ import type {
 	Schedule,
 	TrainingProfile
 } from '../../../domain/profile/types';
-import {
-	createProfileRepository,
-	createWeightRepository,
-	type AthleteProfileRow,
-	type ProfileRepository
-} from '../../db';
+import { createProfileRepository, type AthleteProfileRow, type ProfileRepository } from '../../db';
 import { measure } from '../../observability/timing';
+import { logWeight } from '../weight/entries';
 import { listGoals } from './goals';
 import {
 	getEquipment,
@@ -132,17 +128,10 @@ export async function saveBody(ownerId: string, input: unknown, deps: ProfileDep
 				const unchanged =
 					latest && latest.value === body.bodyWeight && latest.unit === body.weightUnit;
 				if (!unchanged || latest.measuredOn === today) {
-					await createWeightRepository(tx).upsertForDay(
+					await logWeight(
 						ownerId,
-						{
-							value: body.bodyWeight,
-							unit: body.weightUnit,
-							measuredOn: today,
-							source,
-							runId: null,
-							replaced: null
-						},
-						at
+						{ value: body.bodyWeight, unit: body.weightUnit, measuredOn: today },
+						{ db: tx, now: () => at, source }
 					);
 				}
 			}

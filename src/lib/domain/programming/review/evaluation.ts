@@ -26,6 +26,7 @@ import { WEEKDAY_INFO } from '../../profile/catalog.ts';
 import type { ExperienceLevel, TimeOfDay } from '../../profile/catalog.ts';
 import type { SetPrescription } from '../../training/types.ts';
 import type { WeekKind } from '../../training/vocabulary.ts';
+import { rankedApart, weightFor } from '../evaluate/concurrent.ts';
 import type { ContextEvent, WeekContext } from '../evaluate/concurrent.ts';
 import type { Finding, WeekEvaluation } from '../evaluate/types.ts';
 import { evaluateWeek } from '../evaluate/week.ts';
@@ -34,7 +35,6 @@ import { checkWeek, INTERFERENCE_RULES } from '../interference.ts';
 import type { InterferenceSession, TraitsOf } from '../interference.ts';
 import { loadModel } from '../load/fatigue.ts';
 import type { FatigueDay, ModelLogged, ModelPlanned } from '../load/fatigue.ts';
-import { weightOfSession } from '../priority/weights.ts';
 import type { GoalPriority } from '../priority/weights.ts';
 import { repairWeek } from '../schedule/repair.ts';
 
@@ -97,9 +97,10 @@ const conflictKey = (c: ReviewConflict) => [c.rule, ...c.days, ...c.workouts].jo
 
 /**
  * The reviewed week's conflicts as performed, on the logged load. `sessions` are its performed
- * sessions with the session RPE logged, by workout id. M3's conflicts evaluateWeek leaves out
- * follow: same_day_order, which priorities replace, only for a pair they do not rank (both goals
- * unranked or of equal weight), so a ranked pair is judged by same_day_priority_order alone.
+ * sessions with the session RPE logged, by workout id. M3's same_day_order is left out only for a
+ * pair the priorities rank apart (rankedApart, as evaluateWeek drops it): that pair is judged by
+ * same_day_priority_order alone. A pair they do not rank (no priorities, or equal weights) keeps
+ * same_day_order.
  */
 export function performedConflicts(
 	sessions: readonly (InterferenceSession & { id: string; rpe: number | null })[],
@@ -133,9 +134,10 @@ export function performedConflicts(
 	const listed = new Set(conflicts.map(conflictKey));
 	const byId = new Map(sessions.map((s) => [s.id, s]));
 	// A pair the priorities rank follows same_day_priority_order alone, as evaluateWeek has it.
+	const weight = weightFor(priorities);
 	const ranked = (c: ReviewConflict) => {
-		const [a, b] = c.workouts.map((id) => weightOfSession(byId.get(id)!, priorities));
-		return a !== b;
+		const [a, b] = c.workouts.map((id) => byId.get(id)!);
+		return rankedApart(weight, a!, b!);
 	};
 	const m3 = m3Conflicts(sessions, at.traitsOf).filter(
 		(c) => !listed.has(conflictKey(c)) && !(c.rule === 'same_day_order' && ranked(c))
