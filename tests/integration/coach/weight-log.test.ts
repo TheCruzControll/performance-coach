@@ -10,6 +10,9 @@
  *   each write nothing
  * - a replace keeps the earlier entry, so Undo with the run puts it back, and a second write in
  *   the same run still names that earlier entry as replaced
+ * - the Undo card: the turn's event names the weigh-in and its day; the card is listed on reload
+ *   only while the weigh-in holds the run's write; Undo after an edit is changed (409), a second
+ *   Undo of a fresh weigh-in is gone (404), and after a replace it is changed (409)
  */
 import { describe, expect, it } from 'vitest';
 import * as z from 'zod/mini';
@@ -17,11 +20,18 @@ import type { CoachTool } from '../../../src/lib/server/agent/tools/define';
 import { toolContext } from '../../../src/lib/server/agent/tools/context';
 import { executeToolCalls } from '../../../src/lib/server/agent/tools/execute';
 import { WEIGHT_TOOLS } from '../../../src/lib/server/agent/tools/weight';
+import { recordedOf } from '../../../src/lib/server/agent/turn';
 import { createWeightRepository, type Executor } from '../../../src/lib/server/db';
 import { toolRuntime, type ResolvedCoachDeps } from '../../../src/lib/server/services/coach/shared';
-import { logWeight, undoCoachWeight } from '../../../src/lib/server/services/weight';
+import {
+	editWeight,
+	listThreadWeightLogs,
+	logWeight,
+	undoCoachWeight,
+	WeightUndoError
+} from '../../../src/lib/server/services/weight';
 import { withRollback } from '../helpers';
-import { makeOwner } from '../profile/fixtures';
+import { makeOwner, makeSecondOwner } from '../profile/fixtures';
 import { TURN_NOW } from './harness';
 
 const TODAY = '2026-11-11';
@@ -72,8 +82,20 @@ async function log(
 		{ tools: TOOLS }
 	);
 	const [outcome] = outcomes;
-	return { runId, error: outcome!.error, output: outcome!.output as Recorded | undefined };
+	return {
+		runId,
+		outcome: outcome!,
+		error: outcome!.error,
+		output: outcome!.output as Recorded | undefined
+	};
 }
+
+/** The reason an Undo was refused, or null when it took the write back. */
+const undoRefusal = (undo: Promise<unknown>) =>
+	undo.then(
+		() => null,
+		(err: unknown) => (err instanceof WeightUndoError ? err.reason : err)
+	);
 
 /** Every weigh-in the owner has, as the repository holds them. */
 const weighIns = (db: Executor, owner: string) =>
@@ -305,6 +327,132 @@ describe('the coach records a weight the owner states', () => {
 				runId: null,
 				replaced: null
 			});
+		});
+	});
+});
+
+describe('the Undo card of a weigh-in the coach logged', () => {
+	it('the turn’s event names the weigh-in and words its day from the owner’s today', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const { outcome, output } = await log(db, owner, 'I weighed 82.4 this morning', {
+				weight: 82.4,
+				unit: 'kg',
+				measuredOn: TODAY
+			});
+			expect(recordedOf(outcome, TODAY)).toEqual({
+				type: 'recorded',
+				kind: 'body_weight',
+				id: output!.undo.entryId,
+				label: 'Logged 82.4 kg for today'
+			});
+			// Read the next day, the same weigh-in is yesterday; two days on, its weekday.
+			expect(recordedOf(outcome, TOMORROW)).toMatchObject({
+				label: 'Logged 82.4 kg for yesterday'
+			});
+			expect(recordedOf(outcome, '2026-11-13')).toMatchObject({
+				label: 'Logged 82.4 kg for Wed 11 Nov'
+			});
+		});
+	});
+
+	it('names no card for a refused write', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const { outcome } = await log(db, owner, 'I feel strong today', {
+				weight: 82.4,
+				unit: 'kg',
+				measuredOn: TODAY
+			});
+			expect(recordedOf(outcome, TODAY)).toBeNull();
+		});
+	});
+
+	it('is listed on reload while its weigh-in holds the run’s write, and not after Undo', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const { runId, output } = await log(db, owner, 'I weighed 82.4 this morning', {
+				weight: 82.4,
+				unit: 'kg',
+				measuredOn: TODAY
+			});
+			const entryId = output!.undo.entryId;
+			expect(await listThreadWeightLogs(owner, [runId], { db })).toEqual([
+				{ id: entryId, runId, measuredOn: TODAY, value: 82.4, unit: 'kg' }
+			]);
+			// Only the owner’s own weigh-ins, and only runs that are real ids.
+			const other = await makeSecondOwner(db);
+			expect(await listThreadWeightLogs(other, [runId], { db })).toEqual([]);
+			expect(await listThreadWeightLogs(owner, ['not-a-run'], { db })).toEqual([]);
+
+			await undoCoachWeight(owner, entryId, runId, { db, now: NOW });
+			expect(await listThreadWeightLogs(owner, [runId], { db })).toEqual([]);
+		});
+	});
+
+	it('an Undo after the owner edited the weigh-in is refused as changed (the 409)', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const { runId, output } = await log(db, owner, 'I weighed 82.4 this morning', {
+				weight: 82.4,
+				unit: 'kg',
+				measuredOn: TODAY
+			});
+			const entryId = output!.undo.entryId;
+			await editWeight(
+				owner,
+				entryId,
+				{ value: 83, unit: 'kg', measuredOn: TODAY },
+				{ db, now: NOW }
+			);
+			expect(await undoRefusal(undoCoachWeight(owner, entryId, runId, { db, now: NOW }))).toBe(
+				'changed'
+			);
+			// The owner's edit stands: nothing was taken back.
+			expect(await weighIns(db, owner)).toMatchObject([{ value: 83, source: 'log' }]);
+		});
+	});
+
+	it('a second Undo of a fresh weigh-in is gone (the 404)', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const { runId, output } = await log(db, owner, 'I weighed 82.4 this morning', {
+				weight: 82.4,
+				unit: 'kg',
+				measuredOn: TODAY
+			});
+			const entryId = output!.undo.entryId;
+			expect(
+				await undoRefusal(undoCoachWeight(owner, entryId, runId, { db, now: NOW }))
+			).toBeNull();
+			expect(await weighIns(db, owner)).toEqual([]);
+			expect(await undoRefusal(undoCoachWeight(owner, entryId, runId, { db, now: NOW }))).toBe(
+				'gone'
+			);
+		});
+	});
+
+	it('a second Undo after a replace is changed (the 409): the earlier entry is back, not the coach’s', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			await logWeight(
+				owner,
+				{ value: 81, unit: 'kg', measuredOn: TODAY },
+				{ db, now: NOW, source: 'log' }
+			);
+			const { runId, output } = await log(db, owner, 'I weighed 82.4 this morning', {
+				weight: 82.4,
+				unit: 'kg',
+				measuredOn: TODAY
+			});
+			const entryId = output!.undo.entryId;
+			expect(
+				await undoRefusal(undoCoachWeight(owner, entryId, runId, { db, now: NOW }))
+			).toBeNull();
+			expect(await weighIns(db, owner)).toMatchObject([{ value: 81, source: 'log', runId: null }]);
+			expect(await undoRefusal(undoCoachWeight(owner, entryId, runId, { db, now: NOW }))).toBe(
+				'changed'
+			);
 		});
 	});
 });

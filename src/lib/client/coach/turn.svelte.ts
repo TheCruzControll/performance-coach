@@ -36,6 +36,14 @@ export interface TurnProposal {
 	title: string;
 }
 
+/** A weigh-in the turn's tool logged: its Undo card, which sends the run that logged it. */
+export interface TurnRecorded {
+	/** The weigh-in's id (Undo's path). */
+	id: number;
+	label: string;
+	runId: string;
+}
+
 export interface Chip {
 	id: string;
 	state: ActivityState;
@@ -80,6 +88,7 @@ export class CoachTurn {
 	drafts = $state.raw<Draft[]>([]);
 	blocks = $state.raw<CompletedBlock[]>([]);
 	proposals = $state.raw<TurnProposal[]>([]);
+	recorded = $state.raw<TurnRecorded[]>([]);
 	running = $state(true);
 	error = $state<CoachErrorKind | null>(null);
 	/** Why the coach was unavailable, when the error says. */
@@ -178,6 +187,19 @@ export class CoachTurn {
 					{ id: event.id, kind: event.kind, title: event.title }
 				];
 				return;
+			case 'recorded': {
+				// Its card sends the run that logged it, which run_started named.
+				const runId = this.runId;
+				if (runId === null) return;
+				// A second event for the same weigh-in replaces its label in place, as activity does.
+				const card = { id: event.id, label: event.label, runId };
+				const at = this.recorded.findIndex((each) => each.id === event.id);
+				this.recorded =
+					at < 0
+						? [...this.recorded, card]
+						: this.recorded.map((each, i) => (i === at ? card : each));
+				return;
+			}
 			case 'answer_completed':
 				this.answerMessageId = event.messageId;
 				return;

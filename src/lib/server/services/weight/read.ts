@@ -50,6 +50,7 @@ import {
 	type WeightMilestoneRow
 } from '../../db';
 import { measure } from '../../observability/timing';
+import { isUuid } from '../ids';
 
 export interface WeightReadDeps {
 	db?: Executor;
@@ -290,6 +291,38 @@ export async function getWeightToday(
 		stale: reading?.stale ?? false,
 		verdict
 	};
+}
+
+/** A weigh-in the coach logged in a run, as it stands now: the run that wrote it names its card. */
+export interface ThreadWeighIn {
+	id: number;
+	runId: string;
+	measuredOn: IsoDate;
+	value: number;
+	unit: WeightUnit;
+}
+
+/**
+ * The weigh-ins the coach logged in the given runs that still hold that run's write. One an edit,
+ * a delete, an Undo or a later write has moved on is not listed, so its Undo card goes with it.
+ * Read-only and scoped to the owner; a run id that is not one names nothing.
+ */
+export async function listThreadWeightLogs(
+	ownerId: string,
+	runIds: readonly string[],
+	deps: WeightReadDeps = {}
+): Promise<ThreadWeighIn[]> {
+	const wanted = [...new Set(runIds.filter(isUuid))];
+	if (wanted.length === 0) return [];
+	const db = deps.db ?? getDb();
+	const rows = await measure('db', () => createWeightRepository(db).listByRunIds(ownerId, wanted));
+	return rows.map((row) => ({
+		id: row.id,
+		runId: row.runId!,
+		measuredOn: row.measuredOn,
+		value: row.value,
+		unit: row.unit
+	}));
 }
 
 export interface WeightFacts {

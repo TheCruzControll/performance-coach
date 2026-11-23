@@ -5,8 +5,9 @@
  *
  * A turn's events arrive in this order: run_started; then, repeated, activity chips and blocks
  * (block_started, text_delta…, block_completed, or block_replaced when the policy changed a
- * block); proposal cards as tools create them; answer_reset if a fallback model took over and
- * the visible answer starts again; answer_completed or error; and always done, last.
+ * block); proposal cards as tools create them, and a recorded card (a weigh-in the coach logged,
+ * with its Undo) as its tool writes it; answer_reset if a fallback model took over and the visible
+ * answer starts again; answer_completed or error; and always done, last.
  *
  * Events only ever gain optional fields and new types; the decoder skips a type it does not know.
  */
@@ -48,6 +49,8 @@ export type CoachEvent =
 	| ({ type: 'block_replaced'; reason: BlockReplacedReason } & CompletedBlock)
 	| { type: 'answer_reset'; reason: 'fallback' }
 	| { type: 'proposal'; id: string; kind: string; title: string }
+	/** A weigh-in the coach logged: `id` is the weigh-in's id (Undo's path), `label` its words. */
+	| { type: 'recorded'; kind: 'body_weight'; id: number; label: string }
 	| { type: 'answer_completed'; messageId: string }
 	| {
 			type: 'error';
@@ -68,6 +71,7 @@ const EVENT_TYPE: Record<CoachEventType, true> = {
 	block_replaced: true,
 	answer_reset: true,
 	proposal: true,
+	recorded: true,
 	answer_completed: true,
 	error: true,
 	done: true

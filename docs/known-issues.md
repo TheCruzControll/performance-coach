@@ -66,6 +66,12 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
 
 - The Add session sheet has no e2e or verify-coach coverage yet.
 
+- **The coach's weigh-in Undo card has no e2e test.** The mock provider has no script that logs a
+  weigh-in, so no e2e turn can reach the card. Integration tests cover the event, the Undo answers
+  and the card on reload (tests/integration/coach/weight-log.test.ts and screen-load.test.ts); the
+  card's button is covered by the phase unit test only. Closes when a mock script logs a weigh-in
+  and an e2e clicks Undo on the card.
+
 - **The new fonts' CLS is not re-measured.** Mona Sans and Hubot Sans, with their metric-matched
   fallbacks, replace Geist and Geist Mono. The CLS of the audited routes has not been measured
   on them, so the expected value of about 0 is unproven. Closes when the routes in

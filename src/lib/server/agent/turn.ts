@@ -38,10 +38,12 @@ import type {
 	BetaUserMessageParam
 } from '@anthropic-ai/sdk/resources/beta/messages';
 import * as z from 'zod/mini';
+import type { IsoDate } from '../../domain/calendar.ts';
 import { createAnswerParser } from '../../domain/coach/answer.ts';
 import { DAILY_LIMITS, TURN_LIMITS } from '../../domain/coach/budgets.ts';
 import type { CoachEvent, CompletedBlock } from '../../domain/coach/events.ts';
 import { directIntent } from '../../domain/coach/intents.ts';
+import { weighInLabel } from '../../domain/coach/recorded.ts';
 import type { ToolEffect } from '../../domain/coach/tools.ts';
 import { detectPain } from '../../domain/coach/safety.ts';
 import type {
@@ -197,6 +199,30 @@ function proposalOf(outcome: ToolCallOutcome): CoachEvent | null {
 	const { id, kind, title } = proposal as Record<string, unknown>;
 	if (typeof id !== 'string' || typeof kind !== 'string' || typeof title !== 'string') return null;
 	return { type: 'proposal', id, kind, title };
+}
+
+/**
+ * The convention for log_body_weight: its output names the weigh-in it recorded, so the thread
+ * shows its Undo card (the weight plan's PR 9). `today` is the owner's day, for the card's words.
+ */
+export function recordedOf(outcome: ToolCallOutcome, today: IsoDate): CoachEvent | null {
+	const output = outcome.output as { outcome?: unknown; entry?: unknown; undo?: unknown } | null;
+	if (outcome.status !== 'succeeded' || output?.outcome !== 'recorded') return null;
+	const entry = output.entry as
+		{ value?: unknown; unit?: unknown; measuredOn?: unknown } | undefined;
+	const undo = output.undo as { entryId?: unknown } | undefined;
+	if (
+		typeof entry?.value !== 'number' ||
+		(entry.unit !== 'kg' && entry.unit !== 'lb') ||
+		typeof entry.measuredOn !== 'string' ||
+		typeof undo?.entryId !== 'number'
+	)
+		return null;
+	const label = weighInLabel(
+		{ value: entry.value, unit: entry.unit, measuredOn: entry.measuredOn },
+		today
+	);
+	return { type: 'recorded', kind: 'body_weight', id: undo.entryId, label };
 }
 
 /** A pushed queue read as an async iterable, so the loop's callbacks feed the generator. */
@@ -697,7 +723,7 @@ async function turn(
 			);
 			answer.observe(step.outcomes);
 			for (const outcome of step.outcomes) {
-				const event = proposalOf(outcome);
+				const event = proposalOf(outcome) ?? recordedOf(outcome, day.today);
 				if (event) emit(event);
 			}
 		},
