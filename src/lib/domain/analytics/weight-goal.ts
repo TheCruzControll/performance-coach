@@ -249,12 +249,21 @@ function byMonth(goal: WeightGoal): Milestone[] {
 	return milestones;
 }
 
+/** Weight steps a goal's range may hold before generation refuses it outright. */
+const STEPS_MAX = 1000;
+
 /**
  * The milestones for the goal, every one strictly between its start and target, with one per day.
  * `too_many` when more than MILESTONES_MAX would be generated.
  */
 export function generateMilestones(goal: WeightGoal, by: MilestoneBy): GeneratedMilestones {
 	const checkedGoal = checked(goal);
+	// A step far too small for the range is refused before any loop runs (about 10^8 steps at 1e-7).
+	if (
+		by.kind === 'weight' &&
+		Math.abs(checkedGoal.targetWeight - checkedGoal.startWeight) / by.step > STEPS_MAX
+	)
+		return { ok: false, reason: 'too_many' };
 	const milestones = by.kind === 'weight' ? byWeight(checkedGoal, by.step) : byMonth(checkedGoal);
 	if (milestones.length > MILESTONES_MAX) return { ok: false, reason: 'too_many' };
 	return { ok: true, milestones };
@@ -310,7 +319,7 @@ export function goalStatus(
 	series: readonly TrendDay[],
 	today: IsoDate,
 	unit: WeightUnit,
-	milestones: readonly Milestone[] = []
+	milestones: readonly Milestone[]
 ): GoalStatus {
 	const g = asUnit(checked(goal), unit);
 	const reading = trendOn(series, today);

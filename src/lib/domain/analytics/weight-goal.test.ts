@@ -165,6 +165,13 @@ describe('milestones by month', () => {
 });
 
 describe('the milestone cap', () => {
+	it('refuses a step far too small for the range before generating anything', () => {
+		expect(generateMilestones(LOSS, { kind: 'weight', step: 1e-7 })).toEqual({
+			ok: false,
+			reason: 'too_many'
+		});
+	});
+
 	it('refuses more than 24 milestones from weight steps', () => {
 		// 0.25 kg steps between 80 and 90 kg make 39.
 		expect(generateMilestones(LOSS, { kind: 'weight', step: 0.25 })).toEqual({
@@ -240,7 +247,7 @@ describe('validating edited milestones', () => {
 describe('the goal status: on track, ahead or behind', () => {
 	it('is on track at 0.5 kg from the line, with the gap and the rate it needs', () => {
 		// Day 50 is 85 kg on the line; the trend is 84.5 kg, 0.5 kg below it.
-		const status = goalStatus(LOSS, flat(84.5, range(0, 50)), at(50), 'kg');
+		const status = goalStatus(LOSS, flat(84.5, range(0, 50)), at(50), 'kg', []);
 		expect(status).toMatchObject({
 			verdict: 'on_track',
 			trend: 84.5,
@@ -259,28 +266,28 @@ describe('the goal status: on track, ahead or behind', () => {
 
 	it('is on track at 1 lb from the line in pounds', () => {
 		// Day 50 is 175 lb on the line; the trend is 174 lb, a pound below it.
-		expect(goalStatus(LB_LOSS, flat(174, range(0, 50), 'lb'), at(50), 'lb')).toMatchObject({
+		expect(goalStatus(LB_LOSS, flat(174, range(0, 50), 'lb'), at(50), 'lb', [])).toMatchObject({
 			verdict: 'on_track',
 			gap: 1
 		});
 	});
 
 	it('uses the tolerance of the unit: 0.6 lb is on track, 0.6 kg is not', () => {
-		expect(goalStatus(LB_LOSS, flat(175.6, range(0, 50), 'lb'), at(50), 'lb').verdict).toBe(
+		expect(goalStatus(LB_LOSS, flat(175.6, range(0, 50), 'lb'), at(50), 'lb', []).verdict).toBe(
 			'on_track'
 		);
-		expect(goalStatus(LOSS, flat(85.6, range(0, 50)), at(50), 'kg').verdict).toBe('behind');
+		expect(goalStatus(LOSS, flat(85.6, range(0, 50)), at(50), 'kg', []).verdict).toBe('behind');
 	});
 
 	it('is ahead when the trend is further than the tolerance below a loss line', () => {
-		expect(goalStatus(LOSS, flat(83, range(0, 50)), at(50), 'kg')).toMatchObject({
+		expect(goalStatus(LOSS, flat(83, range(0, 50)), at(50), 'kg', [])).toMatchObject({
 			verdict: 'ahead',
 			gap: 2
 		});
 	});
 
 	it('is behind when the trend is further than the tolerance above a loss line, with the rate needed', () => {
-		const status = goalStatus(LOSS, flat(86.5, range(0, 50)), at(50), 'kg');
+		const status = goalStatus(LOSS, flat(86.5, range(0, 50)), at(50), 'kg', []);
 		expect(status).toMatchObject({
 			verdict: 'behind',
 			gap: 1.5,
@@ -293,20 +300,20 @@ describe('the goal status: on track, ahead or behind', () => {
 
 	it('judges a gain the other way round', () => {
 		// Day 50 is 75 kg on the line.
-		expect(goalStatus(GAIN, flat(75, range(0, 50)), at(50), 'kg')).toMatchObject({
+		expect(goalStatus(GAIN, flat(75, range(0, 50)), at(50), 'kg', [])).toMatchObject({
 			verdict: 'on_track',
 			percentDone: 50,
 			// 5 kg still to gain over 50 days: 0.7 kg a week.
 			requiredRate: 0.7,
 			distanceLeft: 5
 		});
-		expect(goalStatus(GAIN, flat(77, range(0, 50)), at(50), 'kg').verdict).toBe('ahead');
-		expect(goalStatus(GAIN, flat(73, range(0, 50)), at(50), 'kg').verdict).toBe('behind');
+		expect(goalStatus(GAIN, flat(77, range(0, 50)), at(50), 'kg', []).verdict).toBe('ahead');
+		expect(goalStatus(GAIN, flat(73, range(0, 50)), at(50), 'kg', []).verdict).toBe('behind');
 	});
 
 	it('reads a goal entered in pounds in the unit asked for', () => {
 		// 175 lb on the line is 79.38 kg.
-		const status = goalStatus(LB_LOSS, flat(79.38, range(0, 50)), at(50), 'kg');
+		const status = goalStatus(LB_LOSS, flat(79.38, range(0, 50)), at(50), 'kg', []);
 		expect(status).toMatchObject({ verdict: 'on_track', line: 79.38 });
 	});
 
@@ -316,7 +323,7 @@ describe('the goal status: on track, ahead or behind', () => {
 			range(0, 50).map((n) => ({ measuredOn: at(n), value: 90 - 0.1 * n, unit: 'kg' })),
 			'kg'
 		);
-		const status = goalStatus(LOSS, falling, at(50), 'kg');
+		const status = goalStatus(LOSS, falling, at(50), 'kg', []);
 		expect(ACTUAL_RATE_DAYS).toBe(28);
 		expect(status.verdict).not.toBe('no_data');
 		if (status.verdict === 'no_data') return;
@@ -325,27 +332,27 @@ describe('the goal status: on track, ahead or behind', () => {
 	});
 
 	it('gives no data without a trend today, or with no weigh-in on or after the start less 30 days', () => {
-		expect(goalStatus(LOSS, [], at(50), 'kg')).toEqual({ verdict: 'no_data' });
+		expect(goalStatus(LOSS, [], at(50), 'kg', [])).toEqual({ verdict: 'no_data' });
 		// The only weigh-ins are 31 and more days before the start.
-		expect(goalStatus(LOSS, flat(88, range(-60, -31)), at(50), 'kg')).toEqual({
+		expect(goalStatus(LOSS, flat(88, range(-60, -31)), at(50), 'kg', [])).toEqual({
 			verdict: 'no_data'
 		});
 	});
 
 	it('counts a weigh-in exactly 30 days before the start', () => {
-		const status = goalStatus(LOSS, flat(88, [-30]), at(50), 'kg');
+		const status = goalStatus(LOSS, flat(88, [-30]), at(50), 'kg', []);
 		expect(status.verdict).not.toBe('no_data');
 	});
 
 	it('is stale once the last weigh-in is more than 7 days before today', () => {
-		expect(goalStatus(LOSS, flat(80, range(0, 110)), at(120), 'kg')).toMatchObject({
+		expect(goalStatus(LOSS, flat(80, range(0, 110)), at(120), 'kg', [])).toMatchObject({
 			stale: true
 		});
 	});
 
 	it('has no required rate once the target day has passed, and no days left', () => {
 		// Weighed at 80 kg until day 110, then the target day has passed by day 120.
-		expect(goalStatus(LOSS, flat(80, range(0, 110)), at(120), 'kg')).toMatchObject({
+		expect(goalStatus(LOSS, flat(80, range(0, 110)), at(120), 'kg', [])).toMatchObject({
 			verdict: 'on_track',
 			requiredRate: null,
 			daysLeft: 0,
@@ -356,7 +363,7 @@ describe('the goal status: on track, ahead or behind', () => {
 
 	it('clamps percent done to 0 to 100', () => {
 		// Below the target, the trend has done more than the whole loss.
-		expect(goalStatus(LOSS, flat(70, range(0, 50)), at(50), 'kg')).toMatchObject({
+		expect(goalStatus(LOSS, flat(70, range(0, 50)), at(50), 'kg', [])).toMatchObject({
 			percentDone: 100,
 			distanceLeft: 0
 		});
@@ -377,19 +384,19 @@ describe('the goal status: on track, ahead or behind', () => {
 describe('a maintain goal', () => {
 	it('is on track within the tolerance of its weight, and behind beyond it', () => {
 		expect(directionOf(MAINTAIN)).toBe('maintain');
-		expect(goalStatus(MAINTAIN, flat(80.4, range(0, 50)), at(50), 'kg')).toMatchObject({
+		expect(goalStatus(MAINTAIN, flat(80.4, range(0, 50)), at(50), 'kg', [])).toMatchObject({
 			verdict: 'on_track',
 			percentDone: 100
 		});
-		expect(goalStatus(MAINTAIN, flat(79.4, range(0, 50)), at(50), 'kg')).toMatchObject({
+		expect(goalStatus(MAINTAIN, flat(79.4, range(0, 50)), at(50), 'kg', [])).toMatchObject({
 			verdict: 'behind',
 			percentDone: 0
 		});
 	});
 
 	it('is never ahead, however far the trend is from its weight', () => {
-		expect(goalStatus(MAINTAIN, flat(70, range(0, 50)), at(50), 'kg').verdict).toBe('behind');
-		expect(goalStatus(MAINTAIN, flat(90, range(0, 50)), at(50), 'kg').verdict).toBe('behind');
+		expect(goalStatus(MAINTAIN, flat(70, range(0, 50)), at(50), 'kg', []).verdict).toBe('behind');
+		expect(goalStatus(MAINTAIN, flat(90, range(0, 50)), at(50), 'kg', []).verdict).toBe('behind');
 	});
 });
 
