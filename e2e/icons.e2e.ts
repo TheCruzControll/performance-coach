@@ -9,12 +9,19 @@
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { ICON_NAMES } from '../src/lib/ui/icons/names';
-import { captureScreen, TABS, trackConsoleErrors } from './support';
+import { captureScreen, openProfile, SCREENS, TABS, trackConsoleErrors } from './support';
 
 /** The sprite Vite emits: hashed and immutable (never a data: URL, which <use> cannot draw). */
 const SPRITE = /^(https?:\/\/[^/]+)?\/_app\/immutable\/assets\/sprite\.[\w-]+\.svg$/;
 
 const visibleIcons = (page: Page) => page.locator('svg.icon:visible');
+
+/**
+ * The bottom nav's icons drawn: the four tabs, and from 1024 px the rail's avatar glyph too (the
+ * avatar is hidden on a phone, so `:visible` leaves it out there).
+ */
+const navIconCount = (page: Page) =>
+	TABS.length + ((page.viewportSize()?.width ?? 0) >= 1024 ? 1 : 0);
 
 /**
  * Every icon on screen, by its <use> reference, and whether its <use> has a geometry box (a
@@ -142,15 +149,17 @@ test.describe('icons', () => {
 		const symbols = await spriteSymbols(page, await spriteUrlOf(page));
 		expect([...symbols]).toEqual(ICON_NAMES);
 
-		for (const tab of TABS) {
-			await page.goto(tab.path);
+		for (const tab of SCREENS) {
+			// Profile is opened from the avatar (not a tab), so the way in is not a URL.
+			if (tab.path === '/profile') await openProfile(page);
+			else await page.goto(tab.path);
 			await expect(page.getByRole('heading', { level: 1, name: tab.heading })).toBeVisible();
 			if (tab.path === '/profile') await expect(page.getByTestId('db-status')).toBeVisible();
 			await expectEveryIconFromSprite(page, symbols);
 			await expectEveryIconDrawn(page);
-			// Five bottom-nav icons, each drawn: the tab bar is the icon set's busiest surface.
+			// The bottom nav's icons, each drawn: the tab bar is the icon set's busiest surface.
 			const nav = page.getByRole('navigation', { name: 'Primary' });
-			await expect(nav.locator('svg.icon')).toHaveCount(TABS.length);
+			await expect(nav.locator('svg.icon:visible')).toHaveCount(navIconCount(page));
 			await captureScreen(page, testInfo, `icons${tab.path.replaceAll('/', '-')}`);
 		}
 
@@ -177,8 +186,8 @@ test.describe('icons', () => {
 		}
 		// Unlabelled icons stay decorative: hidden from assistive technology, no role.
 		await page.goto('/today');
-		const navIcons = page.getByRole('navigation', { name: 'Primary' }).locator('svg.icon');
-		await expect(navIcons).toHaveCount(TABS.length);
+		const navIcons = page.getByRole('navigation', { name: 'Primary' }).locator('svg.icon:visible');
+		await expect(navIcons).toHaveCount(navIconCount(page));
 		for (const icon of await navIcons.all()) {
 			await expect(icon).toHaveAttribute('aria-hidden', 'true');
 			await expect(icon).not.toHaveAttribute('role', /.*/);
@@ -210,7 +219,7 @@ test.describe('icons', () => {
 		// Not `load`: the held sprite would hold the load event too.
 		await page.goto('/today', { waitUntil: 'domcontentloaded' });
 		const nav = page.getByRole('navigation', { name: 'Primary' });
-		await expect(nav.locator('svg.icon')).toHaveCount(TABS.length);
+		await expect(nav.locator('svg.icon:visible')).toHaveCount(navIconCount(page));
 		const boxes = () =>
 			visibleIcons(page).evaluateAll((svgs) =>
 				svgs.map((svg) => {
@@ -284,6 +293,10 @@ test.describe('icons', () => {
 		).toBe(true);
 
 		await context.setOffline(true);
+		// Profile first: its avatar is on Today, which is still on screen. Offline, Today's own page
+		// is replaced by the offline state, which has no avatar.
+		await openProfile(page);
+		await expectEveryIconDrawn(page);
 		const nav = page.getByRole('navigation', { name: 'Primary' });
 		for (const tab of [...TABS.slice(1), TABS[0]]) {
 			await nav.getByRole('link', { name: tab.label }).click();
@@ -292,7 +305,6 @@ test.describe('icons', () => {
 			await expectEveryIconDrawn(page);
 		}
 		// A fresh document offline (the precached offline screen) draws from the precache too.
-		await nav.getByRole('link', { name: 'Profile' }).click();
 		await page.reload();
 		await expect(page.getByTestId('offline-state')).toBeVisible();
 		expect(await spriteUrlOf(page)).toBe(sprite);

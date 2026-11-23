@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Card from '#lib/ui/components/Card.svelte';
@@ -140,7 +141,16 @@
 
 <svelte:document onvisibilitychange={refreshIfStale} />
 
-<PageHeader title="Today" {eyebrow} />
+<PageHeader title="Today" {eyebrow}>
+	{#snippet trailing()}
+		<a
+			class="avatar-link today-avatar"
+			href={resolve('/(app)/profile')}
+			aria-label="Profile"
+			data-testid="today-avatar"><Icon name="profile" size={16} /></a
+		>
+	{/snippet}
+</PageHeader>
 
 {#if !active}
 	<ol class="week" aria-label="This week">
@@ -263,6 +273,17 @@
 </div>
 
 <style>
+	/*
+	 * The avatar (layout.css's .avatar-link, Profile's way in). Paper puts it on the date line,
+	 * above the title; PageHeader's trailing slot sits at the title's baseline. Close enough until
+	 * v2/06 rebuilds Today's top. From 1024 px the rail's foot has it, so it is hidden here.
+	 */
+	@media (width >= 64rem) {
+		.today-avatar {
+			display: none;
+		}
+	}
+
 	.week {
 		display: grid;
 		grid-template-columns: repeat(7, minmax(0, 1fr));

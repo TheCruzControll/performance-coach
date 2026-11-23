@@ -59,8 +59,8 @@
 <svelte:window ononline={() => (offline = false)} />
 
 <div data-layout="wide" class="screen" data-testid="exercise-detail">
-	<a class="back" href={resolve('/(app)/progress')}
-		><Icon name="chevron-left" size={18} strokeWidth={2} />Progress</a
+	<a class="back-link" href={resolve('/(app)/progress')}
+		><Icon name="chevron-left" size={16} />Progress</a
 	>
 	<PageHeader title={detail?.name ?? 'Exercise'} eyebrow="Exercise" />
 	{#if detail}
@@ -111,32 +111,6 @@
 	.screen {
 		display: grid;
 		gap: var(--space-4);
-	}
-
-	.back {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1);
-		justify-self: start;
-		min-height: var(--touch-target);
-		padding-inline: var(--space-2);
-		margin: var(--space-2) 0 calc(var(--space-6) * -1) calc(var(--space-2) * -1);
-		border-radius: var(--radius-sm);
-		color: var(--color-text-secondary);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		text-decoration: none;
-	}
-
-	.back:active {
-		background: var(--color-surface-2);
-	}
-
-	@media (hover: hover) and (pointer: fine) {
-		.back:hover {
-			background: var(--color-surface-2);
-			color: var(--color-text);
-		}
 	}
 
 	.meta {

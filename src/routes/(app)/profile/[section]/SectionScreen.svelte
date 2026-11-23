@@ -113,8 +113,8 @@
 </script>
 
 <div class="column" data-testid="section-column">
-	<a class="back" href={resolve('/(app)/profile')} data-testid="back-to-profile">
-		<Icon name="chevron-left" size={18} /> Profile
+	<a class="back-link" href={resolve('/(app)/profile')} data-testid="back-to-profile">
+		<Icon name="chevron-left" size={16} /> Profile
 	</a>
 	<PageHeader {title} eyebrow="Training profile" />
 
@@ -193,17 +193,6 @@
 </div>
 
 <style>
-	.back {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1);
-		min-height: var(--touch-target);
-		margin-top: var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		color: var(--color-text-secondary);
-	}
-
 	/* The room the skeleton reserves, so the editor that replaces it moves nothing below. */
 	.editor {
 		min-height: 28rem;
@@ -280,7 +269,7 @@
 			--editor-reserve-offset: 11rem;
 		}
 
-		.back {
+		.back-link {
 			display: none;
 		}
 

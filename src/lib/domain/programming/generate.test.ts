@@ -278,12 +278,14 @@ const GOLDEN: Record<ScenarioKey, readonly [monday: string, thursday: string]> =
  * plans ('perfo-programming/7') left them as they were: journey's secondary marathon is time-based,
  * so it keeps M3's week. generator-combat ('perfo-programming/8') changed journey's: its fight camp
  * keeps both strength sessions for their weekly sets and says which camp sessions, its sparring
- * among them, it left out. A later GENERATOR_ID bump changes them, and its PR lists each.
+ * among them, it left out. The schedule stage's own weeks against the week before as repaired
+ * ('perfo-programming/9') changed hybrid's Thursday start: its deload keeps no clash of the shared
+ * week's loads. A later GENERATOR_ID bump changes them, and its PR lists each.
  */
 const GOLDEN_SEASON: Record<ScenarioKey, readonly [monday: string, thursday: string]> = {
 	beginner: ['40ac8a97f8ac8304', 'afbafd92042977bf'],
 	powerlifter: ['53368325fc4eeb18', '7cce2ec2cd815ba0'],
-	hybrid: ['344b9f0adb2d9183', '6377fa3e68b4861f'],
+	hybrid: ['344b9f0adb2d9183', 'cf0ce29014fa4a19'],
 	injuredShoulder: ['a8f751370762b759', '1133ba47aeda08ec'],
 	dumbbellsOnly: ['4bb8ea19bb964a13', '6573125a5c871f5e'],
 	journey: ['2e987dd6a87c43af', 'e5a6be9ff2f68d30'],

@@ -14,9 +14,12 @@
  * - The week before is planned across the boundary. A block's first week has the week before as
  *   this generation plans it: the previous block's last week, or nothing for the plan's first week,
  *   since ProgrammingInput carries no logged history. A next block is planned without its previous
- *   block, so its first week has no week before (docs/known-issues.md). Every later week has the
- *   block's pattern, week t's repaired sessions, shifted back a week: the Sunday the block repeats
- *   precedes the Monday after it, so a hard Monday after a hard Sunday is repaired as it will be.
+ *   block, so its first week has no week before (docs/known-issues.md). Every later building week
+ *   has the block's pattern, week t's repaired sessions, shifted back a week: the Sunday the block
+ *   repeats precedes the Monday after it, so a hard Monday after a hard Sunday is repaired as it
+ *   will be. An OWN_WEEKS week has the week before it as repaired, the one the plan keeps, so the
+ *   week whose days the block shares never sets its load: a second run, which may share another
+ *   week's days, repairs it the same.
  * - Then every week, the OWN_WEEKS kinds included, is repaired on its own, in order, with that
  *   week before and the day before and the next Monday's commitments judged beside it, as placement
  *   judges a week. A building week's shared sessions stay pinned to their shared days and only what
@@ -481,12 +484,13 @@ export const schedule: Stage = (draft, { input, options, log }) => {
 
 		/**
 		 * Every week repaired on its own, in order, sharing week `t`'s days. The week before each week
-		 * is the block's real week before for its first week, and for every later week the pattern
-		 * (week `t`'s sessions) shifted back a week, so a Sunday the block repeats precedes the Monday
-		 * after it. A building week keeps its shared sessions pinned to the shared days, unless they
-		 * leave it an avoid finding no trade-off explains that the week as placed avoids, or one that
-		 * repair without the pins would fix: a `lapse`, as is a building week with no shared days whose
-		 * own repair moves a generated session.
+		 * is the block's real week before for its first week, for every later building week the
+		 * pattern (week `t`'s sessions) shifted back a week, so a Sunday the block repeats precedes the
+		 * Monday after it, and for an OWN_WEEKS week the week before it as repaired. A building week
+		 * keeps its shared sessions pinned to the shared days, unless they leave it an avoid finding no
+		 * trade-off explains that the week as placed avoids, or one that repair without the pins would
+		 * fix: a `lapse`, as is a building week with no shared days whose own repair moves a generated
+		 * session.
 		 * What it records is made by `commit`.
 		 */
 		const pass = (t: number | undefined) => {
@@ -497,12 +501,13 @@ export const schedule: Stage = (draft, { input, options, log }) => {
 			const moved: [PlanPath, PlanPath | null][] = [];
 			const weeks = placed.map((given, w): WeekPlan => {
 				const week = block.weeks[w]!;
-				// The week before: the real one for the block's first week, then the pattern shifted back a
-				// week (week t's days, dated into week w - 1); without a pattern, the week before as repaired.
+				// The week before: the real one for the block's first week, then for a building week the
+				// pattern shifted back a week (week t's days, dated into week w - 1). An OWN_WEEKS week, or
+				// any week without a pattern, has the week before as repaired: week t's loads are not its.
 				const prev =
 					w === 0
 						? before
-						: pattern
+						: pattern && !OWN_WEEKS.includes(week.kind)
 							? shiftDays(
 									pattern.sessions,
 									daysBetween(block.weeks[pattern.from]!.startsOn, block.weeks[w - 1]!.startsOn)

@@ -159,11 +159,11 @@
 	data-testid="inbox"
 >
 	<div class="top">
-		<a class="back to-coach" href={COACH} data-testid="back-to-coach">
-			<Icon name="chevron-left" size={18} /> Coach
+		<a class="back-link to-coach" href={COACH} data-testid="back-to-coach">
+			<Icon name="chevron-left" size={16} /> Coach
 		</a>
-		<a class="back to-list" href="{LIST}{search}" data-testid="all-proposals">
-			<Icon name="chevron-left" size={18} /> All proposals
+		<a class="back-link to-list" href="{LIST}{search}" data-testid="all-proposals">
+			<Icon name="chevron-left" size={16} /> All proposals
 		</a>
 		<PageHeader title="Proposals" eyebrow="Coach" />
 	</div>
@@ -300,8 +300,8 @@
 		opacity: 0.6;
 	}
 
-	/* Beside the list it has nothing to go back to; .back.to-list outranks .back's display. */
-	.back.to-list {
+	/* Beside the list it has nothing to go back to; .back-link.to-list outranks .back-link's display. */
+	.back-link.to-list {
 		display: none;
 	}
 
@@ -352,33 +352,18 @@
 		font-weight: var(--weight-semibold);
 	}
 
-	.back,
+	.back-link,
 	.filter {
 		-webkit-tap-highlight-color: transparent;
 	}
 
-	.back {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1);
-		min-height: var(--touch-target);
-		margin-top: var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		color: var(--color-text-secondary);
-	}
-
-	.back:focus-visible,
+	.back-link:focus-visible,
 	.filter:focus-visible {
 		outline: 2px solid var(--color-accent-ring);
 		outline-offset: 2px;
 	}
 
 	@media (hover: hover) and (pointer: fine) {
-		.back:hover {
-			color: var(--color-text);
-		}
-
 		.filter:not([aria-current='page']):hover {
 			border-color: var(--color-border-strong);
 			color: var(--color-text);

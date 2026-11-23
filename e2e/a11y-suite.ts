@@ -13,10 +13,10 @@ import { contrast } from '../src/lib/ui/charts/palette-check';
 import { COACH_A11Y } from './coach-a11y';
 import { answerHistory, openWorkoutPanel, pick } from './design-workout';
 import { isDesktopPage } from './desktop';
-import { gotoHydrated, signedOut, TABS } from './support';
+import { gotoHydrated, SCREENS as APP_ROOTS, signedOut } from './support';
 
 export const SCREENS = [
-	...TABS.map((t) => t.path),
+	...APP_ROOTS.map((t) => t.path),
 	'/profile/security',
 	'/profile/goals',
 	'/profile/equipment',

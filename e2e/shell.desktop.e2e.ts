@@ -11,7 +11,15 @@ import {
 	pixelAt,
 	tokenPx
 } from './desktop';
-import { captureScreen, gotoHydrated, TABS, toastWith, trackConsoleErrors } from './support';
+import {
+	captureScreen,
+	gotoHydrated,
+	PROFILE,
+	SCREENS,
+	TABS,
+	toastWith,
+	trackConsoleErrors
+} from './support';
 
 /**
  * The app shell in a desktop window (docs/design-system.md, Responsive layout → Shell): from
@@ -105,19 +113,33 @@ test.describe('the rail from 1024 px', () => {
 		expect(await fixedToBottom(page)).toEqual([]);
 	});
 
-	test('keeps the five destinations in order, one current, and moves between them', async ({
+	test('keeps the four tabs and Profile in order, one current, and moves between the tabs', async ({
 		page
 	}, testInfo) => {
 		const errors = trackConsoleErrors(page);
 		await gotoHydrated(page, '/today');
 		const rail = railOf(page);
 		const links = rail.getByRole('link');
-		await expect(links).toHaveText(TABS.map((tab) => tab.label));
-		for (const link of await links.all()) {
-			const box = await boxOf(link);
+		await expect(links).toHaveText([...TABS, PROFILE].map((tab) => tab.label));
+		for (const tab of TABS) {
+			const box = await boxOf(rail.getByRole('link', { name: tab.label }));
 			expect(box.width).toBeGreaterThanOrEqual(44);
 			expect(box.height).toBeGreaterThanOrEqual(44);
 		}
+		// The avatar is a 32 px circle; its ::after reaches 6 px past the edge, so a point 5 px
+		// outside the circle still lands on the link (a 44 px hit area).
+		const avatar = rail.getByTestId('rail-avatar');
+		const circle = await boxOf(avatar);
+		expect(Math.round(circle.width)).toBe(32);
+		expect(Math.round(circle.height)).toBe(32);
+		const hit = await avatar.evaluate(
+			(link, { x, y }) => {
+				const at = document.elementFromPoint(x, y);
+				return at !== null && link.contains(at);
+			},
+			{ x: circle.x + circle.width + 5, y: circle.y + circle.height / 2 }
+		);
+		expect(hit, 'a point 5 px outside the avatar hits its link').toBe(true);
 		await expect(rail.locator('[aria-current="page"]')).toHaveCount(1);
 
 		for (const tab of [...TABS.slice(1), TABS[0]]) {
@@ -135,15 +157,14 @@ test.describe('the rail from 1024 px', () => {
 		expect(errors).toEqual([]);
 	});
 
-	test('a mouse hover tints a destination that is not current', async ({ page }) => {
+	test('a mouse hover lifts the text of a destination that is not current', async ({ page }) => {
 		await page.goto('/today');
 		await page.waitForLoadState('networkidle');
 		const train = railOf(page).getByRole('link', { name: 'Train' });
-		const glyph = train.locator('.glyph');
-		const background = () => glyph.evaluate((el) => getComputedStyle(el).backgroundColor);
-		const resting = await background();
+		const colour = () => train.evaluate((el) => getComputedStyle(el).color);
+		const resting = await colour();
 		await train.hover();
-		await expect.poll(background).not.toBe(resting);
+		await expect.poll(colour).not.toBe(resting);
 	});
 });
 
@@ -161,14 +182,14 @@ test.describe('keyboard', () => {
 						el.matches('.skip-link')
 							? 'skip'
 							: el.closest('.app-nav')
-								? el.textContent!.trim()
+								? (el.getAttribute('aria-label') ?? el.textContent!.trim())
 								: el.closest('main#main')
 									? 'main'
 									: el.outerHTML.slice(0, 60)
 					),
 			TABBABLE
 		);
-		expect(order).toEqual(['skip', ...TABS.map((tab) => tab.label), 'main']);
+		expect(order).toEqual(['skip', ...TABS.map((tab) => tab.label), PROFILE.label, 'main']);
 	});
 
 	test('Tab goes from the skip link through the rail to the content, each with a ring', async ({
@@ -184,7 +205,7 @@ test.describe('keyboard', () => {
 					where: el.matches('.skip-link')
 						? 'skip'
 						: el.closest('.app-nav')
-							? el.textContent!.trim()
+							? (el.getAttribute('aria-label') ?? el.textContent!.trim())
 							: el.closest('main#main')
 								? 'main'
 								: el.tagName,
@@ -198,7 +219,7 @@ test.describe('keyboard', () => {
 			stops.push(where);
 			if (where !== 'main') expect(ring, `${where} shows a focus ring`).toBeGreaterThanOrEqual(2);
 		}
-		expect(stops).toEqual(['skip', ...TABS.map((tab) => tab.label), 'main']);
+		expect(stops).toEqual(['skip', ...TABS.map((tab) => tab.label), PROFILE.label, 'main']);
 	});
 
 	test('the skip link lands in the content, past the rail', async ({ page }) => {
@@ -406,7 +427,7 @@ test.describe('the content column and its chrome', () => {
 
 test.describe('every width and state', () => {
 	test('no tab scrolls sideways from 1024 to 1920 px', async ({ page }) => {
-		for (const tab of TABS) {
+		for (const tab of SCREENS) {
 			await page.goto(tab.path);
 			await page.evaluate(() => document.fonts.ready);
 			for (const width of DESKTOP_WIDTHS) {
@@ -417,17 +438,15 @@ test.describe('every width and state', () => {
 		}
 	});
 
-	test('just below 1024 px the glass bar is back at the bottom, full width', async ({ page }) => {
+	test('just below 1024 px the bar is back at the bottom, full width, and not glass', async ({
+		page
+	}) => {
 		await page.setViewportSize({ width: BELOW_DESKTOP_WIDTH, height: 900 });
 		await page.goto('/today');
 		const box = await boxOf(railOf(page));
 		expect(Math.round(box.y + box.height)).toBe(900);
 		expect(Math.round(box.width)).toBe(await layoutWidth(page));
-		const glass = await railOf(page).evaluate((el) => {
-			const style = getComputedStyle(el) as CSSStyleDeclaration & { webkitBackdropFilter?: string };
-			return style.backdropFilter || style.webkitBackdropFilter || 'none';
-		});
-		expect(glass).toContain('blur(');
+		await expect(railOf(page)).toHaveCSS('backdrop-filter', 'none');
 		await expectNoSideScroll(page);
 	});
 
@@ -438,7 +457,7 @@ test.describe('every width and state', () => {
 		await page.setViewportSize({ width: 800, height: 900 });
 		await page.goto('/today');
 		const readable = await tokenPx(page, '--content-readable');
-		for (const tab of TABS) {
+		for (const tab of SCREENS) {
 			await page.goto(tab.path);
 			await page
 				.locator('main#main > :last-child')

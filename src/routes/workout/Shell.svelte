@@ -312,6 +312,10 @@
 
 <style>
 	.workout {
+		/* v2/03: the workout keeps the 20 px gutter until v2/10 redesigns the set. At 28 px a 393 px
+		   phone gives the logger 337 px, under SetLogger's 22 rem one-row steppers, and the logger
+		   grows over the exercise header (docs/known-issues.md). */
+		--gutter: 1.25rem;
 		/* The two columns from 1024 px: the side list beside a readable column. */
 		--workout-width: calc(var(--content-list) + var(--space-8) + var(--content-readable));
 		display: grid;

@@ -4,6 +4,7 @@ import {
 	expect,
 	type APIRequestContext,
 	type ConsoleMessage,
+	type Locator,
 	type Page,
 	type TestInfo
 } from '@playwright/test';
@@ -32,13 +33,49 @@ export function sessionCookieName(baseURL: string = ORIGIN): string {
 /** A browser state with no session: for signed-out specs (`test.use({ storageState: signedOut })`). */
 export const signedOut = { cookies: [], origins: [] };
 
+/** The four tabs of the tab bar (and the rail, from 1024 px). */
 export const TABS = [
 	{ label: 'Today', path: '/today', heading: 'Today' },
 	{ label: 'Train', path: '/train', heading: 'Train' },
 	{ label: 'Progress', path: '/progress', heading: 'Progress' },
-	{ label: 'Coach', path: '/coach', heading: 'Coach' },
-	{ label: 'Profile', path: '/profile', heading: 'Profile' }
+	{ label: 'Coach', path: '/coach', heading: 'Coach' }
 ] as const;
+
+/** Profile: not a tab; opened from the avatar on Today (and the rail's foot from 1024 px). */
+export const PROFILE = { label: 'Profile', path: '/profile', heading: 'Profile' } as const;
+
+/** Every app screen with its own root: the tabs, then Profile. */
+export const SCREENS = [...TABS, PROFILE] as const;
+
+/**
+ * Profile's way in at this window's width: the rail's avatar from 1024 px, Today's avatar below
+ * (which shows only on Today, and is hidden from 1024 px).
+ */
+export function profileEntry(page: Page): Locator {
+	return page.getByTestId(
+		(page.viewportSize()?.width ?? 0) >= 1024 ? 'rail-avatar' : 'today-avatar'
+	);
+}
+
+/**
+ * Opens Profile from any app screen and waits for its heading: through Today's avatar on a phone
+ * (the tab bar goes to Today first), through the rail's avatar from 1024 px.
+ */
+export async function openProfile(page: Page): Promise<void> {
+	if ((page.viewportSize()?.width ?? 0) >= 1024) {
+		await profileEntry(page).click();
+	} else {
+		if (new URL(page.url()).pathname !== '/today') {
+			await page
+				.getByRole('navigation', { name: 'Primary' })
+				.getByRole('link', { name: 'Today', exact: true })
+				.click();
+			await expect(page).toHaveURL(/\/today$/);
+		}
+		await profileEntry(page).click();
+	}
+	await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
+}
 
 /** Run a query against the e2e database (the same one the server under test uses). */
 export async function query<T extends pg.QueryResultRow>(

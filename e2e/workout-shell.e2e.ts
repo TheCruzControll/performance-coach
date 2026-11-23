@@ -250,6 +250,8 @@ test.describe('the workout screen (IndexedDB only)', () => {
 		await gotoWorkout(page);
 		await expectNoSideScroll(page);
 		await expectTargets(page);
+		// The workout keeps the 20 px gutter (workout/Shell.svelte) until v2/10 redesigns the set.
+		await expect(page.locator('.workout > .body')).toHaveCSS('padding-left', '20px');
 		await captureScreen(page, testInfo, 'workout-active');
 
 		await page.evaluate(() => (document.documentElement.style.fontSize = '150%'));

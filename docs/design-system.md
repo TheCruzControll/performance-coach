@@ -45,7 +45,7 @@ automatic dark mode at sunset) the theme-color and status-bar metas follow the C
 | `--color-surface-3`       | `#222226`                 | `#e2e2dc`                 | a round icon button (the stepper's ±), a quiet button's hover          |
 | `--color-surface-inverse` | `#f2f2ee`                 | `#111113`                 | an inverted fill, with `--color-text-inverse` on it                    |
 | `--color-overlay`         | `rgb(10 10 11 / 0.7)`     | `rgb(244 244 240 / 0.7)`  | the scrim behind a sheet                                               |
-| `--color-glass`           | `rgb(10 10 11 / 0.92)`    | `rgb(244 244 240 / 0.92)` | the glass tab bar and the composer                                     |
+| `--color-glass`           | `rgb(10 10 11 / 0.92)`    | `rgb(244 244 240 / 0.92)` | the composer                                                           |
 | `--color-hairline`        | `rgb(255 255 255 / 0.07)` | `rgb(17 17 19 / 0.08)`    | between list rows, above the tab bar, the rail's right edge            |
 | `--color-border`          | `rgb(255 255 255 / 0.08)` | `rgb(17 17 19 / 0.08)`    | a sheet's top edge                                                     |
 | `--color-border-strong`   | `rgb(255 255 255 / 0.1)`  | `rgb(17 17 19 / 0.12)`    | focusable outlines; v2 has no bordered control                         |
@@ -334,8 +334,8 @@ brighten the text and the underline to `--color-text`, on a fine pointer only.
 
 - **Spacing** (4 px grid): `--space-0-5` 2 · `1` 4 · `1-5` 6 · `2` 8 · `2-5` 10 · `3` 12 · `3-5` 14 ·
   `4` 16 · `4-5` 18 · `5` 20 · `6` 24 · `7` 28 · `8` 32 · `9` 36 · `10` 40 · `11` 44 · `12` 48 ·
-  `14` 56 · `16` 64 · `20` 80 px. Page gutter `--gutter` 20 px for now. Every v2 phone board pads its
-  content 28 px (`--space-7`); the gutter takes it with the shell in `v2/03`.
+  `14` 56 · `16` 64 · `20` 80 px. Page gutter `--gutter` 28 px (`--space-7`). The workout keeps
+  20 px until `v2/10`: its logger's one-row steppers need 22 rem, which a 393 px phone loses at 28 px.
 - **Radii:** 2 handle and segments · 14 fields · 16 buttons and toasts · 18 the workout's Done ·
   20 bubbles and legacy cards (`Surface`/`Card`, until their screen rows) · 28 sheets and the
   composer · full avatar and dots.
@@ -348,14 +348,14 @@ brighten the text and the underline to `--color-text`, on a fine pointer only.
   `--ease-standard`, `--ease-out`, `--ease-in`, and `--ease-spring` (CSS `linear()` spring) for
   thumbs and indicators. `prefers-reduced-motion` sets durations to 0 and disables shimmer.
 - **Glass:** `--color-glass` (92% canvas) + `backdrop-filter: saturate(180%) blur(32px)` on the
-  bottom nav and the coach composer (opaque and blurred enough that text scrolling behind a tab
-  label cannot be read). The sheet scrim has none: a blur under its fade is redrawn every frame.
+  coach composer (blurred enough that text scrolling behind it cannot be read). The tab bar is a
+  solid canvas since `v2/03a`. The sheet scrim has none: a blur under its fade is redrawn every frame.
   Write only the standard `backdrop-filter`; Lightning CSS adds `-webkit-backdrop-filter` for the
   Safari build targets.
   (Writing both, standard first, makes the minifier keep only the prefixed one, which Chromium
   ignores.) `pnpm budgets` fails if a
   built rule ships a `-webkit-` property without its standard twin, and e2e asserts the nav's
-  computed `backdrop-filter`. Judge glass on a device, not on e2e screenshots, which can show
+  computed `backdrop-filter` (`none` on the bar). Judge glass on a device, not on e2e screenshots, which can show
   text through the nav (see docs/testing.md).
 - **Layers:** `--z-raised 10 · sticky 50 · nav 100 · overlay 200 · sheet 210 · toast 300`.
 - **Safe areas:** `--safe-top/right/bottom/left` from `env(safe-area-inset-*)`;
@@ -367,9 +367,12 @@ brighten the text and the underline to `--color-text`, on a fine pointer only.
 ## Layout
 
 - App shell: content column `--content-column` (34 rem on a phone, 40 rem from 640 px) with
-  safe-area-aware gutters; fixed **bottom navigation** (Today · Train · Progress · Coach ·
-  Profile), glass background, 58 px tall + home-indicator inset, a left rail from 1024 px
-  (Responsive layout → Shell); `aria-current="page"` on the active tab; tabs cross-fade with the
+  safe-area-aware gutters; fixed **bottom navigation** (Today · Train · Progress · Coach), a
+  canvas bar with a hairline above it: 12 px, then the 46 px tabs (`--nav-height`, 58 px), then a
+  foot of 12 px or the home indicator's room, whichever is more (`--nav-foot`), and the 1 px
+  hairline (71 px with no home indicator, 93 px with a 34 px one); Profile opens from the
+  avatar on Today (the rail's foot from 1024 px); detail pages have a back link; a left rail from
+  1024 px (Responsive layout → Shell); `aria-current="page"` on the active tab; tabs cross-fade with the
   View Transitions API (the `root` snapshot fades while the named nav stays put).
   Never put a `view-transition-name` on an ancestor of a glass surface: it becomes a backdrop
   root and the blur silently stops working.
@@ -416,8 +419,10 @@ that specs verify the rest with.
   - `--rail-mark` 2.25 rem: the brand mark atop the rail.
   - `--content-column`: the shell's column, which screen chrome is centred over: `--content-max`,
     and `--content-readable` from 640 px.
-  - `--nav-inset-bottom`: what fixed chrome clears at the bottom: in the shell, the bottom bar and
-    the home indicator (`--nav-height` + `--safe-bottom`), and the home indicator alone from
+  - `--nav-foot`: the bottom bar's foot, `max(--space-3, --safe-bottom)`: 12 px, or the home
+    indicator's room where that is more.
+  - `--nav-inset-bottom`: what fixed chrome clears at the bottom: in the shell, the whole bottom
+    bar (`--nav-height` + `--nav-foot` + its 1 px hairline), and the home indicator alone from
     1024 px; `0px` outside the shell (set under `:root:has(.app-nav)`).
   - `--nav-inset-left`: what it clears at the left: `0px`, and in the shell the rail and the left
     safe area from 1024 px.
@@ -436,17 +441,28 @@ A screen declares its width with `data-layout` on its root element:
 
 ### Shell
 
-`AppNav` is one `<nav>` at every width, restyled by CSS, so its five destinations, their order,
-links and `aria-current` cannot differ between widths. `e2e/shell.desktop.e2e.ts` verifies the
-shell at 1440 × 900 and the widths around it.
+`AppNav` is one `<nav>` at every width, restyled by CSS, so its links, their order and
+`aria-current` cannot differ between widths (Profile's avatar link shows only from 1024 px).
+`e2e/shell.desktop.e2e.ts` verifies the shell at 1440 × 900 and the widths around it.
 
-- **Below 1024 px** the glass bottom bar, unchanged. On a tablet (640–1023 px) only the column
+- **Below 1024 px** a canvas tab bar, with no blur: the four tabs (Today, Train, Progress, Coach),
+  24 px icons and 12 px labels, current in text colour and 600 with no pill, and a hairline above
+  it. Profile is not a tab: Today's avatar opens it. On a tablet (640–1023 px) only the column
   widens, from 34 to 40 rem.
 - **From 1024 px** a solid left rail, `--rail-width` (88 px) plus the left safe area, on
   `--color-surface-1` with a hairline right border and no blur. Items are stacked icon above
-  label, each at least 56 px tall, with a hover tint for fine pointers and the focus ring inside
-  the item. Nothing is fixed to the bottom edge. A rail rather than a labelled sidebar: the five
-  labels are short, and it leaves the most width at 1024 px (a sidebar would be CSS only).
+  label, each at least 56 px tall, with the text lifted for fine pointers. Profile's avatar link
+  sits at the rail's foot. Nothing is fixed to the bottom edge. A rail rather than a labelled
+  sidebar: the labels are short, and it leaves the most width at 1024 px (a sidebar would be CSS
+  only).
+- **The avatar** (`layout.css`, `.avatar-link`) is Profile's way in: a 32 px `--color-surface-2`
+  circle with the `profile` glyph, not an initial (the shell has no layout load for one), and a
+  44 px hit area. Current on Profile, it takes a 1.5 px text ring. On Today it sits at the end of
+  the page header, and is hidden from 1024 px, where the rail's foot has it.
+- **Back links** (`layout.css`, `.back-link`): a detail page's way back is the parent's name after
+  a 16 px chevron, 15 px secondary, 44 px tall, with 12 px above it. Each page keeps its own
+  desktop behaviour: `SectionScreen` and Profile hide theirs from 1024 px, where the rail is the
+  way back.
 - **The brand mark** tops the rail: two masked pseudo-elements of the nav (`layout.css`) fill
   `static/brand/mark-track.svg` with `--color-text` at 18% and `static/brand/mark-arc.svg` with
   `--color-accent`. They are the favicon's two strokes on no background, in amber here while the favicon is still lime (see known issues); the favicon's opaque
@@ -670,7 +686,8 @@ later-pass screen).
 | `BottomSheet`       | Native `<dialog>` + `showModal()` (platform focus trap, inert background), Escape/backdrop close, focus returns to opener, touch swipe-to-dismiss (distance or velocity), content mounted only while open. The title (Hubot 26/32) and the quiet ghost × are v2 at every width. Only the spacing and the handle are phone-only: a 36 × 4 handle with 28 px under it, 16 px before the content, and a bottom of the home indicator’s inset plus 10 px (at least 16 or 24 px; an iPhone with an inset gets 44). A centred dialog from 1024 px, with its spacing unchanged. |
 | `SegmentedControl`  | Legacy in v2: `radiogroup` with roving tabindex and arrow keys; an inverse thumb on a surface-2 track, no outline; `sm` (36 px track) options extend their hit area to 44 px.                                                                                                                                                                                                                                                                                                                                                                                            |
 | `Tabs`              | Legacy in v2: WAI-ARIA tabs (automatic activation, arrows/Home/End), an animated text-coloured indicator (never amber), renders active panel.                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `AppNav`            | Primary navigation (real links, preload on tap): the glass bottom bar, a solid left rail from 1024 px under the brand mark; one `<nav>`, so destinations, order and `aria-current` match at every width (Responsive layout → Shell).                                                                                                                                                                                                                                                                                                                                     |
+| `AppNav`            | Primary navigation (real links, preload on tap): four tabs, 24 px icons and 12 px labels, current in text colour and 600 with no pill, on a canvas bar with a hairline; from 1024 px a solid left rail under the brand mark, with the avatar link to Profile at its foot; one `<nav>`, so the links, their order and `aria-current` match at every width (Responsive layout → Shell).                                                                                                                                                                                    |
+| `.avatar-link`      | Global (layout.css). `.avatar-link`: Profile's 32 px surface-2 avatar link with a 44 px hit area, current with a 1.5 px text ring. `.back-link`: a detail page's way back, the parent's name after a 16 px chevron, 15 px secondary, 44 px tall (Responsive layout → Shell).                                                                                                                                                                                                                                                                                             |
 | `Skeleton`          | Shimmer placeholder (static under reduced motion); pair with `aria-busy` on the region.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `EmptyState`        | Medallion glyph (tone-tinted), title, guidance, optional actions; `compact` variant.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `Toaster` + `toast` | Polite live region; `neutral · positive · danger`; optional action; auto-dismiss. A surface-2 line of 52 px with 16 px corners; only `danger` has a leading alert icon; an action is a strong text link (Undo); a 44 px quiet dismiss. Screen chrome at the top, centred over the column (beside the rail from 1024 px), or in the window outside the shell.                                                                                                                                                                                                             |

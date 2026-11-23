@@ -3,7 +3,7 @@
 What is built, what is in flight, and what is next. Acceptance criteria and evidence stay in
 [milestones.md](milestones.md). Update this file in the change that moves a line.
 
-Last updated: 2026-11-23, from `main` at the merge of #625.
+Last updated: 2026-11-23, from `main` at the merge of #628.
 
 ## Milestones
 
@@ -34,6 +34,9 @@ updates milestones.md.
 
 ## Recently merged
 
+- Running the schedule stage on its own plan changes nothing, for every scenario: a deload, taper or
+  other week that keeps its own days is repaired against the week before it as planned, not against
+  the week whose days the block shares. journeyHybrid is back in the run-twice check.
 - The owner can enter max, resting and threshold heart rate in Profile → Running & Muay Thai and in
   onboarding, and a run session shows each segment's zone in beats per minute ('Zone 2 · 134–148 bpm',
   or 'Zone 2' with none told). A plan built with a heart rate records the zones and the method
@@ -142,13 +145,15 @@ updates milestones.md.
   marathon pace. m7r/08 too: marathon and half blocks follow their race plan's long runs, cutbacks
   and race work, and a running goal that does not lead holds its dose. m7r/10 and m7r/09 too: heart
   rate on Profile and run sessions in bpm, and Muay Thai that follows the fight camp's sessions,
-  sparring cap, conditioning rounds and fight week. m7/58 and m7/59 build on them. The old M7 pull
+  sparring cap, conditioning rounds and fight week. m7r/03b too: the schedule stage is a fixed point,
+  so a second run changes no session. m7/58 and m7/59 build on them. The old M7 pull
   requests stay open until their rows merge.
 - **Instrument v2 tokens (`v2/01a`).** The colours, surfaces, borders, spacing, radii and the theme
   colour follow Instrument v2 in `src/lib/ui/styles/tokens.css`, in dark and
-  light; `docs/design-system.md` and `/design` show them. The 28 px gutter moves with the shell in `v2/03`: at 28 px the workout's
-  logger grew over the exercise header, so v2/03 re-measures it (the effort chips now keep one line). The rest of
-  the Instrument v2 rows are queued in `plan/queue.md` and wait on the tokens.
+  light; `docs/design-system.md` and `/design` show them. The 28 px gutter arrived with `v2/03a`;
+  the workout keeps 20 px until `v2/10`, since at 28 px its logger grew over the exercise header
+  (the effort chips now keep one line). The rest of the Instrument v2 rows are queued in
+  `plan/queue.md` and wait on the tokens.
 - **Instrument v2 type (`v2/01b`).** Mona Sans sets all text and every numeral, Hubot Sans the one
   display line on a screen, and the mono and uppercase labels are gone (`src/lib/ui/styles/tokens.css`,
   `base.css`, `fonts.css`). The fonts are self-hosted `@fontsource-variable/mona-sans` and
@@ -176,6 +181,12 @@ updates milestones.md.
   an inset), and a quiet ghost close.
   Toasts are a surface-2 line that stays at the top until `v2/03`. The `/design` Data and Feedback
   tabs and `docs/design-system.md` show them. Phone layouts and sheet heights are CI’s to prove.
+- **Instrument v2 shell, phone (`v2/03a`).** Four tabs (Today, Train, Progress, Coach) on a canvas
+  bar with a hairline, the current one in text colour and 600 with no pill. Profile is not a tab:
+  Today's avatar opens it, and the rail's foot does from 1024 px. Detail pages share one back link
+  (`.back-link`), and Profile has one to Today. The page gutter is 28 px everywhere but the
+  workout, which keeps 20 px until `v2/10`. The resume line, the rail's look and the desktop column
+  and sheets are `v2/03b` and `v2/03c`.
 - **Instrument v2 legacy components (`v2/02d`), which completes `v2/02`.** Cards, chips, badges,
   segmented controls, stat tiles, tabs and section headings lose their pills, fills, tint and amber
   and keep their padding and sizes, so no screen moves. A card keeps a hairline outline until its
