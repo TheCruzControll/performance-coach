@@ -57,7 +57,7 @@ describe('tokens.css', () => {
 		}
 		expect(TOKENS.get(FURNITURE.surface)).toEqual({ ref: '--color-surface-1' });
 		expect(colourOf(TOKENS, FURNITURE.surface, 'light')).toBe('#ffffff');
-		expect(colourOf(TOKENS, FURNITURE.surface, 'dark')).toBe('#121214');
+		expect(colourOf(TOKENS, FURNITURE.surface, 'dark')).toBe('#1b1814');
 	});
 
 	it('keeps the light series on M1’s discipline values and steps the dark ones into the band', () => {
@@ -96,13 +96,14 @@ describe('tokens.css', () => {
 		expect(round(dark.poleCvd)).toBe(17.3);
 		// The midpoint.
 		expect(round(light.midpointContrast, 2)).toBe(3.66);
-		expect(round(dark.midpointContrast, 2)).toBe(4.03);
+		expect(round(dark.midpointContrast, 2)).toBe(3.81);
 		// The closest a pole comes to a status or series colour.
+		// Light danger moved to #b3361c (from #bb2c28), so the nearest colour is now combat.
 		expect(light.closestPole).toMatchObject({
 			pole: '--chart-diverge-warm',
-			token: '--color-danger'
+			token: '--chart-combat'
 		});
-		expect(round(light.closestPole.deltaE)).toBe(8.6);
+		expect(round(light.closestPole.deltaE)).toBe(9);
 		expect(dark.closestPole).toMatchObject({
 			pole: '--chart-diverge-warm',
 			token: '--chart-combat'
@@ -175,10 +176,15 @@ describe('the checks fail by name', () => {
 			at('chart furniture', 'light')
 		]);
 		expect(failing(withTokens({ [FURNITURE.surface]: 'var(--color-surface-2)' }))).toEqual([
+			// The dark grid is translucent (rgb 255 236 200 / 8%): over surface-2 it lifts above
+			// the axis, so the ordering holds on surface-1 (the chart surface) only.
+			at('chart furniture', 'dark'),
 			// The light context series drops to 2.89:1 on surface-2.
 			at('chart furniture', 'light'),
 			at('chart surface', 'dark'),
 			at('chart surface', 'light'),
+			// Light surface-2 is warmer (#ebe6da): the light midpoint drops to 2.94:1.
+			at('diverging midpoint contrast', 'light'),
 			// Light conditioning is 2.95:1 on surface-2.
 			at('series mark contrast', 'light')
 		]);

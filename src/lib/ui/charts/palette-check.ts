@@ -65,6 +65,27 @@ const MACHADO = {
 } as const;
 export type Deficiency = keyof typeof MACHADO;
 
+/** A colour as the stylesheet writes it: `#rrggbb` or `rgb(r g b / a)` (furniture is translucent). */
+const COLOUR = String.raw`(#[0-9a-f]{6}|rgb\([^)]*\))`;
+
+/**
+ * A translucent colour painted over an opaque backdrop, as `#rrggbb`. Chart furniture is drawn
+ * over the chart surface, so that is the backdrop the checks measure it against. Opaque input is
+ * returned unchanged.
+ */
+export function composite(colour: string, backdrop: string): string {
+	const rgba = /^rgb\(\s*(\d+)\s+(\d+)\s+(\d+)\s*(?:\/\s*([\d.]+)\s*)?\)$/.exec(colour);
+	if (!rgba) return colour;
+	if (!/^#[0-9a-f]{6}$/i.test(backdrop)) throw new Error(`not a #rrggbb backdrop: ${backdrop}`);
+	const alpha = Number(rgba[4] ?? 1);
+	const channels = [0, 2, 4].map((i) => {
+		const under = parseInt(backdrop.slice(1 + i, 3 + i), 16);
+		const over = Number(rgba[1 + i / 2]);
+		return Math.round(over * alpha + under * (1 - alpha));
+	});
+	return '#' + channels.map((c) => c.toString(16).padStart(2, '0')).join('');
+}
+
 function linearRgb(hex: string): Rgb {
 	const match = /^#([0-9a-f]{6})$/i.exec(hex);
 	if (!match) throw new Error(`not a #rrggbb colour: ${hex}`);
@@ -130,7 +151,8 @@ export type Tokens = ReadonlyMap<string, TokenValue>;
 
 /**
  * The colour tokens declared in the first `:root` block of a tokens stylesheet: `#rrggbb`,
- * `light-dark(#rrggbb, #rrggbb)` or `var(--other)`. Other values are left out.
+ * `light-dark(<colour>, <colour>)` (where a colour may be `rgb(r g b / a)`) or `var(--other)`.
+ * Other values are left out.
  */
 export function readTokens(css: string): Tokens {
 	const root = /:root\s*\{([^}]*)\}/.exec(css.replace(/\/\*[\s\S]*?\*\//g, ''));
@@ -138,7 +160,9 @@ export function readTokens(css: string): Tokens {
 	const tokens = new Map<string, TokenValue>();
 	for (const [, name, raw] of root[1]!.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
 		const value = raw!.trim();
-		const pair = /^light-dark\(\s*(#[0-9a-f]{6})\s*,\s*(#[0-9a-f]{6})\s*\)$/i.exec(value);
+		const pair = new RegExp(`^light-dark\\(\\s*${COLOUR}\\s*,\\s*${COLOUR}\\s*\\)$`, 'i').exec(
+			value
+		);
 		const ref = /^var\(\s*(--[\w-]+)\s*\)$/.exec(value);
 		if (pair) tokens.set(name!, { light: pair[1]!, dark: pair[2]! });
 		else if (/^#[0-9a-f]{6}$/i.test(value)) tokens.set(name!, { light: value, dark: value });
@@ -226,7 +250,9 @@ export function checkPalette(
 
 	for (const mode of MODES) {
 		const fail = (check: Check, detail: string) => problems.push({ check, mode, detail });
-		const hex = (name: string) => colourOf(tokens, name, mode);
+		// Translucent furniture is measured as it renders: composited over the chart surface.
+		const hex = (name: string) =>
+			composite(colourOf(tokens, name, mode), colourOf(tokens, FURNITURE.surface, mode));
 		const bg = hex(FURNITURE.surface);
 		const series = order.map((tone) => ({
 			name: SERIES_TOKEN[tone],

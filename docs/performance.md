@@ -785,9 +785,9 @@ every route 0.1 KB more than the toasts themselves. They slide with CSS animatio
 Deleting all of the root layout's and the client hooks' own code takes 5.5 KB off the shared JS
 and 3.6 KB off `/(app)/today` (measured, not shipped): that is the ceiling for the app's code.
 The rest is framework, and the router's modulepreload hints (vite.config.ts) stay.
-Fonts: only Mona Sans latin (39.8 KB) is preloaded (`src/lib/ui/fonts.ts`); Hubot Sans latin
-(48.3 KB) loads when a heading uses it. One preloaded font per route (#394). Both are woff2 and
-cached immutably.
+Fonts: Geist latin (29.4 KB) and Geist Mono latin (23.1 KB) are preloaded (`src/lib/ui/fonts.ts`),
+two per route (the budget is ≤ 2). Both are woff2 and cached immutably. The earlier one-font
+figures above (#394, Mona Sans) predate the Instrument type (docs/design-system.md#typography).
 
 Start-up chunks: Rolldown groups in `vite.config.ts` (#394). `payload` comes first
 (SvelteKit's `client/payload.js` and the preload helper), then `framework` (Svelte, SvelteKit's

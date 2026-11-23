@@ -40,7 +40,20 @@
 		['strength', 'running', 'combat', 'hypertrophy', 'conditioning'],
 		['positive', 'warning', 'danger', 'info']
 	];
-	const typeScale = ['6xl', '5xl', '4xl', '3xl', '2xl', 'xl', 'lg', 'base', 'sm', 'xs'];
+	const typeScale = [
+		'6xl',
+		'5xl',
+		'4xl',
+		'3xl',
+		'2xl',
+		'xl',
+		'lg',
+		'base',
+		'ui',
+		'sm',
+		'meta',
+		'xs'
+	];
 </script>
 
 <svelte:head>
@@ -75,6 +88,15 @@
 					<span class={step.match(/xl|[3-6]xl/) ? 'display' : ''}>142.5 kg Squat</span>
 				</p>
 			{/each}
+			<!-- Geist Mono carries every number, time and unit; labels are lowercase by style. -->
+			<p class="type-row">
+				<span class="type-step">mono</span>
+				<span class="mono">82,620 kg · 1/4</span>
+			</p>
+			<p class="type-row">
+				<span class="type-step">label</span>
+				<span class="eyebrow">up next · section label</span>
+			</p>
 		</Surface>
 	</section>
 
@@ -262,9 +284,15 @@
 
 	.display {
 		font-family: var(--font-display);
-		font-weight: var(--weight-bold);
+		font-weight: var(--weight-medium);
 		letter-spacing: var(--tracking-display);
 		font-variant-numeric: tabular-nums;
+	}
+
+	.mono {
+		font-family: var(--font-mono);
+		font-size: var(--text-2xl);
+		font-weight: var(--weight-medium);
 	}
 
 	.grid {

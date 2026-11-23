@@ -404,7 +404,7 @@ test.describe('app shell on an iPhone viewport', () => {
 		await page.goto('/profile');
 		const canvas = () =>
 			page.evaluate(() => getComputedStyle(document.body).backgroundColor.replace(/\s/g, ''));
-		expect(await canvas()).toBe('rgb(10,10,11)'); // dark by default
+		expect(await canvas()).toBe('rgb(12,11,9)'); // dark by default
 
 		await page.getByTestId('theme-control').getByRole('radio', { name: 'Light' }).click();
 		await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
@@ -412,8 +412,8 @@ test.describe('app shell on an iPhone viewport', () => {
 		// After a reload the inline script (allowed by its CSP hash) applies it before paint.
 		await page.reload();
 		await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-		expect(await canvas()).toBe('rgb(244,244,240)');
-		await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#f4f4f0');
+		expect(await canvas()).toBe('rgb(245,242,234)');
+		await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#f5f2ea');
 		await expect(
 			page.locator('meta[name="apple-mobile-web-app-status-bar-style"]')
 		).toHaveAttribute('content', 'default');
@@ -428,16 +428,16 @@ test.describe('app shell on an iPhone viewport', () => {
 		const themeColor = page.locator('meta[name="theme-color"]');
 		await page.emulateMedia({ colorScheme: 'dark' });
 		await page.getByTestId('theme-control').getByRole('radio', { name: 'Auto' }).click();
-		await expect(themeColor).toHaveAttribute('content', '#0a0a0b');
+		await expect(themeColor).toHaveAttribute('content', '#0c0b09');
 		await page.emulateMedia({ colorScheme: 'light' });
-		await expect(themeColor).toHaveAttribute('content', '#f4f4f0');
-		expect(await canvas()).toBe('rgb(244,244,240)');
+		await expect(themeColor).toHaveAttribute('content', '#f5f2ea');
+		expect(await canvas()).toBe('rgb(245,242,234)');
 		await page.emulateMedia({ colorScheme: 'dark' });
-		await expect(themeColor).toHaveAttribute('content', '#0a0a0b');
+		await expect(themeColor).toHaveAttribute('content', '#0c0b09');
 		// Leaving Auto stops following the OS.
 		await page.getByTestId('theme-control').getByRole('radio', { name: 'Dark' }).click();
 		await page.emulateMedia({ colorScheme: 'light' });
-		await expect(themeColor).toHaveAttribute('content', '#0a0a0b');
+		await expect(themeColor).toHaveAttribute('content', '#0c0b09');
 		expect(errors).toEqual([]);
 	});
 

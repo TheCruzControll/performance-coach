@@ -7,9 +7,10 @@ Dark-first, iPhone-first, built by hand on CSS custom properties (ADR 0005). Liv
 
 1. **Glanceable under load.** Mid-set, sweaty, one hand: big numerals, high contrast, ≥ 44 px
    targets, primary actions in the thumb zone.
-2. **Quiet surfaces, one loud accent.** Near-black layers, hairline borders, a single volt accent
-   for the next action. Discipline colours appear only as small signals (dots, tags, series).
-3. **Depth from light, not shadow.** Dark UIs read elevation from tone and a 1 px top highlight.
+2. **Quiet surfaces, one loud accent.** Warm near-black layers, hairline borders, a single amber
+   accent for the next action. Discipline colours appear only as small signals (dots, tags, series).
+3. **Flat, from tone.** No shadows and no gradients: depth comes from the surface tones and the
+   hairline borders, and the design's type does the rest (the "Instrument" design).
 4. **Motion explains.** Short, spring-eased transitions that show where things came from; all
    motion collapses under `prefers-reduced-motion`.
 5. **Every state is designed.** Empty, loading (skeletons, streamed data), error, offline.
@@ -32,18 +33,33 @@ automatic dark mode at sunset) the theme-color and status-bar metas follow the C
 
 ## Colour
 
-| Token                    | Dark      | Light     | Use                                                |
-| ------------------------ | --------- | --------- | -------------------------------------------------- |
-| `--color-canvas`         | `#0a0a0b` | `#f4f4f0` | page background                                    |
-| `--color-surface-1`      | `#121214` | `#ffffff` | cards                                              |
-| `--color-surface-2`      | `#19191c` | `#ecece7` | inputs, segmented tracks, nested surfaces          |
-| `--color-surface-3`      | `#222226` | `#e2e2dc` | pressed states                                     |
-| `--color-text`           | `#f2f2ee` | `#111113` | primary text                                       |
-| `--color-text-secondary` | `#a3a3a8` | `#55555c` | supporting text                                    |
-| `--color-text-tertiary`  | `#86868e` | `#66666e` | captions, eyebrows (≥ 4.5:1 on canvas/surface-1/2) |
-| `--color-accent`         | `#c8f031` | `#c8f031` | **the** accent: primary CTA, active nav, focus     |
-| `--color-accent-text`    | `#d2f25a` | `#4b6400` | accent used as text (contrast-safe)                |
-| `--color-on-accent`      | `#0c0e03` | `#0c0e03` | text on accent (14.8:1)                            |
+| Token                     | Dark      | Light     | Use                                                                          |
+| ------------------------- | --------- | --------- | ---------------------------------------------------------------------------- |
+| `--color-canvas`          | `#0c0b09` | `#f5f2ea` | page background                                                              |
+| `--color-surface-1`       | `#1b1814` | `#ffffff` | cards, sheets, the workout panel                                             |
+| `--color-surface-2`       | `#24201b` | `#ebe6da` | nested surfaces, one step beyond surface-1                                   |
+| `--color-surface-3`       | `#2d2822` | `#e0dacb` | pressed states                                                               |
+| `--color-text`            | `#ece6d8` | `#1a1712` | page titles, row titles, values                                              |
+| `--color-text-secondary`  | `#a39c8c` | `#5c5547` | subtitles, body copy, text links                                             |
+| `--color-text-tertiary`   | `#908878` | `#655d4e` | labels, units, placeholders (≥ 4.5:1 on canvas/surface-1/2)                  |
+| `--color-accent`          | `#ffb224` | `#ffb224` | **the** accent (amber): primary CTA, selected state, active tab              |
+| `--color-accent-text`     | `#ffb224` | `#7a4e00` | accent used as text (bronze in light; 4.94:1 on its own tint over surface-2) |
+| `--color-accent-ring`     | `#ffb224` | `#9a6400` | keyboard focus ring (≥ 3:1 on every surface)                                 |
+| `--color-on-accent`       | `#0c0b09` | `#0c0b09` | text on accent (10.9:1)                                                      |
+| `--color-on-accent-muted` | `#3d2a00` | `#3d2a00` | secondary text on an accent fill, e.g. the selected day's letter (7.6:1)     |
+
+Neutrals are warm: every border is a cream alpha on dark (`--color-border` 14%,
+`--color-border-strong` 20%, `--color-hairline` 10%) and an ink alpha on light. The light theme is
+proposed, not in the design: a warm paper canvas on the same hue, with accent text darkened to bronze
+so it stays readable.
+
+Two contrast limits are accepted, not met, and the design draws them the same way. The accent
+fill is about 1.6:1 against the light canvas: amber cannot reach 3:1 on a light ground and stay
+amber. Primary buttons carry their own label at 10.9:1, and selected segments sit inside a bordered
+group, so the state is never carried by fill alone. Control borders (`--color-border-strong`) are
+about 1.7:1 against the canvas in both themes, as the design draws them: inputs and secondary
+buttons are identified by their label and placeholder, so the text meets WCAG 1.4.11. The outline
+itself is faint.
 
 Discipline colours (signals only — never large fills):
 
@@ -56,10 +72,11 @@ Discipline colours (signals only — never large fills):
 | `--color-conditioning` | `#3fd6b5` | `#0e9b7c` |
 
 Status: `--color-positive`, `--color-warning`, `--color-danger` (+ `-subtle`), `--color-info`.
-All four are text-safe: ≥ 4.5:1 on canvas, surface-1 and surface-2 in both themes (the light
-values were darkened in M1 review round 2: positive `#0f7a40`, warning `#955a09`, danger
-`#bb2c28`, info `#1b66b3`). On their own 12% tint (badges) the light theme darkens the text a
-further 18%.
+All four are text-safe: ≥ 4.5:1 on canvas, surface-1 and surface-2 in both themes. Dark is
+positive `#7fd49a`, warning `#ffb224`, danger `#ff6b57`, info `#6cb6ff`; light is positive
+`#1b7340`, warning `#7a4e00`, danger `#b3361c`, info `#1b66b3`. Warning is its own token even
+though it equals the accent in dark: the design's only warning is amber, and it is always paired
+with a text label. On their own 12% tint (badges) the light theme darkens the text a further 18%.
 Plate colours in the plate calculator follow the physical IWF convention on purpose.
 
 ## Data visualisation
@@ -110,14 +127,14 @@ warm above, a grey with no hue at zero, so on target reads as nothing to see.
 
 **Furniture** (everything that is not data):
 
-| Token              | Dark      | Light     | Use                                                    |
-| ------------------ | --------- | --------- | ------------------------------------------------------ |
-| `--chart-surface`  | surface-1 | surface-1 | what every chart sits on                               |
-| `--chart-muted`    | `#6b6b71` | `#8b8b85` | a context series beside the one in colour (≥ 3:1)      |
-| `--chart-grid`     | `#1f1f23` | `#ebebe6` | hairline gridlines                                     |
-| `--chart-axis`     | `#2e2e33` | `#d4d4ce` | axis rules and ticks                                   |
-| `--chart-baseline` | `#55555c` | `#a3a39d` | the zero line marks stand on                           |
-| `--chart-band`     | `#19191c` | `#f4f4f0` | the fill behind a target range or a highlighted period |
+| Token              | Dark                      | Light     | Use                                                    |
+| ------------------ | ------------------------- | --------- | ------------------------------------------------------ |
+| `--chart-surface`  | surface-1                 | surface-1 | what every chart sits on                               |
+| `--chart-muted`    | `#6b6b71`                 | `#8b8b85` | a context series beside the one in colour (≥ 3:1)      |
+| `--chart-grid`     | `rgb(255 236 200 / 0.08)` | `#ebebe6` | hairline gridlines                                     |
+| `--chart-axis`     | `#2e2b24`                 | `#d4d4ce` | axis rules and ticks                                   |
+| `--chart-baseline` | `#55555c`                 | `#a3a39d` | the zero line marks stand on                           |
+| `--chart-band`     | `#221e19`                 | `#f4f4f0` | the fill behind a target range or a highlighted period |
 
 All greys. Grid, axis and baseline stand out in that order and stay below 3:1, so they never read
 as data.
@@ -160,43 +177,77 @@ as data.
 
 ## Typography
 
-| Role               | Family                    | Notes                                                                                                         |
-| ------------------ | ------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Display / headings | **Hubot Sans** (variable) | Mechanical, athletic grotesk; large titles at weight 720–840, tight tracking                                  |
-| UI / body          | **Mona Sans** (variable)  | Refined grotesk; body at weight 420                                                                           |
-| Data numerals      | **Mona Sans** figures     | `.numeric`: proportional lining figures for standalone values; `.tabular`: tabular figures for timers/columns |
+| Role                      | Family                    | Notes                                                                                                                |
+| ------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Titles, UI, body, buttons | **Geist** (variable)      | Titles at weight 500 (not a second family); body 400; primary button and selected segment 600                        |
+| Labels, tab bar, numbers  | **Geist Mono** (variable) | Every number, time, unit and stat; the label style (below); the tab bar                                              |
+| Numerals                  | **Geist Mono**            | `.numeric`: standalone values, hero numerals; `.tabular`: timers and columns that update in place (`--font-numeric`) |
 
-Why numerals are not Hubot: Hubot's zero is barred, and both families' tabular figures use a
-slashed zero — legible in columns, but noisy for one big number read at a glance in the gym. Big
-standalone values (target weight, stats) therefore use Mona's proportional lining figures.
+Every number, time and unit is set in Geist Mono, so a value reads the same wherever it sits, and
+columns line up without a tabular toggle. Inter appears on one Paper board (Progress views) and is
+not shipped; Mona Sans and Hubot Sans, the previous families, are removed.
 
-Scale (`--text-*`): 2xs 11 · xs 12 · sm 14 · base 16 · lg 18 · xl 22 · 2xl 28 · 3xl 34 · 4xl 44 ·
-5xl 56 · 6xl 72 px. Inputs are never below 16 px (prevents iOS zoom). Weights:
-`--weight-regular 420`, `medium 520`, `semibold 620`, `bold 720`, `black 840`.
-Tracking: `--tracking-display -0.032em`, `--tracking-tight -0.016em`, `--tracking-caps 0.08em`
-(uppercase eyebrows).
+Scale (`--text-*`): 2xs 11 · xs 12 · meta 13 · sm 14 · ui 15 · base 16 · lg 17 · xl 20 · 2xl 22 ·
+3xl 34 · 4xl 48 · 5xl 64 · 6xl 72 px. `--text-meta` (13) is mono tab labels, back links and row
+indices; `--text-ui` (15) is sans rows and secondary buttons. Inputs are never below 16 px (prevents
+iOS zoom). Line heights: `--leading-none 1` (hero numerals), `--leading-tight 1.12` (34 px titles),
+`--leading-snug 1.2` (20 px titles), `--leading-normal 1.45` (paragraphs).
+
+Weights: `--weight-regular 400`, `medium 500` (titles, row titles, stat values, hero numerals),
+`semibold 600` (primary button, selected segment and day). `bold 700` and `black 800` are unused.
+Tracking: `--tracking-display -0.03em` (34 px titles), `--tracking-tight -0.02em` (20 px titles),
+`--tracking-hero -0.04em` (48 px headline, 64 px numerals), `--tracking-normal` and `--tracking-label` 0. `--tracking-caps` is retired (0): labels are lowercase, not tracked capitals.
+
+### Labels
+
+A label is mono 12/16, weight 400, tertiary, and **lowercase**. It is the `.eyebrow` class
+(`src/lib/ui/styles/base.css`):
+
+```css
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 16px;
+  font-weight: var(--weight-regular);
+  letter-spacing: var(--tracking-label);
+  text-transform: lowercase;
+  color: var(--color-text-tertiary);
+}
+```
+
+Copy is authored in lowercase and the transform guards it, so a label never needs a copy change.
+Variants the design uses (built with the components): accent ("proposed change", "block
+complete"), secondary (a key-figure label, "half steps"), and a 13 px secondary line for the date
+above a title. The `/design` page shows the base style.
 
 ### Fonts: loading strategy
 
-- Self-hosted from `@fontsource-variable/{mona-sans,hubot-sans}`; only the **latin** `wght`
-  woff2 files are declared for the main ranges (39.8 KB + 48.3 KB); Mona latin-ext is declared
-  with a `unicode-range` and only fetched when needed.
-- Only **Mona Sans latin** is **preloaded** (the text and numbers of every screen; policy in
-  `src/lib/ui/fonts.ts`, applied in `hooks.server.ts`; budget ≤ 2 files). Hubot Sans loads once
-  a heading uses it, so it does not share the connection with the app's start-up. Both use
-  `font-display: swap`.
-- Metric-matched fallbacks (`Mona Sans Fallback`, `Hubot Sans Fallback` → local Arial/Helvetica
-  with `size-adjust` / `ascent-override` / `descent-override`) computed from the font files with
-  fontTools; measured CLS is 0.000 on audited routes (docs/performance.md).
+- Self-hosted from `@fontsource-variable/{geist,geist-mono}` (5.3.0, OFL-1.1, devDependencies). Vite
+  emits the woff2 files that `src/lib/ui/styles/fonts.css` references. Only the **latin** `wght`
+  woff2 files are declared for the main ranges: Geist 29.4 KB, Geist Mono 23.1 KB. Their latin-ext
+  files (Geist 16.5 KB, Geist Mono 14.7 KB) sit behind a `unicode-range` and are fetched only when
+  needed. The weight axis is declared as `100 900`, though the design uses 400–600.
+- Both latin files are **preloaded** (52.5 KB together): every screen paints its text in Geist and
+  its labels and numbers in Geist Mono. The policy is in `src/lib/ui/fonts.ts` and applied in
+  `hooks.server.ts`; the budget is ≤ 2 preloaded files (`pnpm budgets`).
+- Metric-matched fallbacks: `Geist Fallback` → local Arial/Helvetica (`size-adjust` 105%,
+  `ascent-override` 95.7%, `descent-override` 28.1%, `line-gap-override` 0%), and `Geist Mono
+Fallback` → local Menlo/Courier New (`size-adjust` 99.7%, `ascent-override` 100.8%,
+  `descent-override` 29.6%, `line-gap-override` 0%). They are computed with fontTools at weight 400:
+  the average advance over an English sample, and the hhea ascent, descent and line gap. The new
+  faces are not yet re-measured for CLS: re-measure on the audited routes (docs/performance.md).
 
 ## Space, shape, depth, motion
 
 - **Spacing** (4 px grid): `--space-0-5` 2 · `1` 4 · `1-5` 6 · `2` 8 · `3` 12 · `4` 16 · `5` 20 ·
   `6` 24 · `8` 32 · `10` 40 · `12` 48 · `16` 64 · `20` 80 px. Page gutter `--gutter` 20 px.
-- **Radii:** `xs` 6 · `sm` 10 · `md` 14 · `lg` 20 · `xl` 28 · `full`. Buttons and segmented
-  controls are pills; cards use `lg`/`xl`.
-- **Elevation:** `--elevation-1/2/3` = top highlight + soft ambient shadow; `--glow-accent` only
-  on the primary CTA.
+- **Radii:** one radius for every card, button, input, chip, segmented control, checkbox and sheet:
+  `sm`, `md`, `lg` and `xl` are all 4 px. `xs` is 2 px (the switch thumb and the sheet grab handle).
+  Inner fills that touch a 4 px parent use 3 px on the touching corners. `full` is unused: there are
+  no pills and no circles.
+- **Elevation:** flat. `--elevation-1/2/3` and `--glow-accent` are transparent zero shadows
+  (`0 0 0 0 transparent`), so components can list them in a longer `box-shadow`. Depth comes from the
+  surface tones and the hairline borders; the primary CTA has no glow.
 - **Motion:** `--duration-instant 90ms · fast 160 · base 240 · slow 380 · slower 560`;
   `--ease-standard`, `--ease-out`, `--ease-in`, and `--ease-spring` (CSS `linear()` spring) for
   thumbs and indicators. `prefers-reduced-motion` sets durations to 0 and disables shimmer.
@@ -302,7 +353,7 @@ shell at 1440 × 900 and the widths around it.
   labels are short, and it leaves the most width at 1024 px (a sidebar would be CSS only).
 - **The brand mark** tops the rail: two masked pseudo-elements of the nav (`layout.css`) fill
   `static/brand/mark-track.svg` with `--color-text` at 18% and `static/brand/mark-arc.svg` with
-  `--color-accent`. They are the favicon's two strokes on no background; the favicon's opaque
+  `--color-accent`. They are the favicon's two strokes on no background, in amber here while the favicon is still lime (see known issues); the favicon's opaque
   dark tile can be neither a mask nor a themed image. The mark follows the theme with no markup
   and no script, and the service worker precaches both files with the other static files, so it
   renders offline.
@@ -521,7 +572,7 @@ later-pass screen).
 | `Toaster` + `toast` | Polite live region; `neutral · positive · danger`; optional action; auto-dismiss. Screen chrome at the top, centred over the column (beside the rail from 1024 px), or in the window outside the shell.                                                                            |
 | `PageHeader`        | Eyebrow + large title + trailing slot; a `badge` sits on the eyebrow line, clear of the title.                                                                                                                                                                                     |
 | `BrandMark`         | The performance-gauge mark (also the PWA icon).                                                                                                                                                                                                                                    |
-| `Stat`              | The one metric tile: label, big value + inline unit, optional rating (word + dot), caption. `level 1` on the canvas (28 px value), `level 2` nested in a card (22 px). No value → a dash announced as "No data yet", never a made-up number.                                       |
+| `Stat`              | The one metric tile: label, big value + inline unit, optional rating (word + dot), caption. `level 1` on the canvas (22 px value), `level 2` nested in a card (20 px). No value → a dash announced as "No data yet", never a made-up number.                                       |
 | `Badge`             | Uppercase status pill: `neutral` (default; the only tone for "Soon"), `accent` (the next step, sparingly), `positive · warning · danger`; optional icon. Words carry the meaning.                                                                                                  |
 | `Chip`              | Quiet outlined label (e.g. a discipline) with an optional discipline-colour dot; static, not a control.                                                                                                                                                                            |
 | `ListRow`           | Tool/destination row: tinted icon tile, title, subtitle, chevron or `trailing` snippet; renders a link (`href`), a button (`onclick`) or a dashed, non-interactive row (`disabled`, for "Soon").                                                                                   |
@@ -757,7 +808,7 @@ both themes, hover, tap, scrub, forced colours, loading and failed). The screen 
 
 ## Iconography & brand
 
-- Mark: a 270° gauge track with a volt arc stopping short of full ("progress, not perfection").
+- Mark: a 270° gauge track with a lime arc stopping short of full ("progress, not perfection").
 - App icons are rendered from `static/icons/*.svg` by `pnpm icons` (Playwright Chromium):
   `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` (content inside the 80% safe zone),
   `apple-touch-icon.png` (180 px); `favicon.svg` for browsers.

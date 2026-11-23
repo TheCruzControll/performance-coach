@@ -1,6 +1,6 @@
 # 0005 — Hand-built design system on CSS custom properties
 
-- **Status:** Accepted (M1)
+- **Status:** Accepted (M1). Fonts changed 2026-11-22 to Geist and Geist Mono: see [design-system.md](../design-system.md#typography).
 - **Context:** Design quality is a first-class requirement: premium, distinctive, dark-first,
   iPhone-first; explicitly not a stock component-library look (PRD §16). Performance budgets
   limit CSS to 20 KB gzip and initial JS to 60 KB gzip per route.
