@@ -37,7 +37,7 @@ import {
 	type ExerciseMuscles
 } from '../training/metrics.ts';
 import { PRESCRIPTION_LIMITS } from '../training/schemas.ts';
-import type { AddedKind, AddIntent } from '../training/edits.ts';
+import { DEFAULT_INTENT, type AddedKind, type AddIntent } from '../training/edits.ts';
 import type {
 	BaselineLift,
 	ExerciseRef,
@@ -210,18 +210,6 @@ const INTENT_WORDS: Record<AddIntent, string> = {
 	moderate: 'Moderate',
 	hard: 'Hard'
 };
-/**
- * The intent an add takes when none is named: the builder's DEFAULT_INTENT (programming/rules/
- * added.ts). Copied here because this module never imports domain/programming; a test pins the two.
- */
-export const DEFAULT_ADDED_INTENT: Record<AddedKind, AddIntent> = {
-	run: 'easy',
-	strength: 'moderate',
-	hypertrophy: 'moderate',
-	muay_thai: 'moderate',
-	conditioning: 'moderate'
-};
-
 const detailWords = ({ details }: OtherSessionPlan) =>
 	details.targetRpe === null
 		? `${details.durationMinutes} min`
@@ -308,7 +296,7 @@ const given = <T>(op: object) =>
  * The impact leaves it out (v1), so the plan's weeks never hold it.
  */
 function addedRow(op: Extract<AdjustmentOp, { op: 'add_session' }>): DiffRow {
-	const intent = op.intent ?? DEFAULT_ADDED_INTENT[op.kind];
+	const intent = op.intent ?? DEFAULT_INTENT[op.kind];
 	const length =
 		op.durationMinutes === undefined ? 'your usual length' : `${op.durationMinutes} min`;
 	const after = [

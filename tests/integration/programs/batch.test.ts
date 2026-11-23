@@ -479,7 +479,7 @@ describe('applyProgramEdits', () => {
 		});
 	});
 
-	it('adds a session beside a move elsewhere as one version, and refuses an add and a move to one day as OPS_OVERLAP', async () => {
+	it('adds a session beside a skip elsewhere as one version, and refuses an add and a move to one day as OPS_OVERLAP', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
 			const programId = await store(db, owner);

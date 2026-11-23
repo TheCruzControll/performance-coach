@@ -117,6 +117,15 @@ export type AddedKind = (typeof ADDED_KINDS)[number];
 export const ADD_INTENTS = ['easy', 'moderate', 'hard'] as const;
 export type AddIntent = (typeof ADD_INTENTS)[number];
 
+/** The intent a session takes when the owner or the coach names none: easy for a run. */
+export const DEFAULT_INTENT = {
+	run: 'easy',
+	strength: 'moderate',
+	hypertrophy: 'moderate',
+	muay_thai: 'moderate',
+	conditioning: 'moderate'
+} as const satisfies Record<AddedKind, AddIntent>;
+
 const wholeBetween = (min: number, max: number, message: string) =>
 	z.int(message).check(z.minimum(min, message), z.maximum(max, message));
 

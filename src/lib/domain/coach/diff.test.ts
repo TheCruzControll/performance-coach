@@ -11,12 +11,10 @@ import {
 	PLANNED,
 	SESSION
 } from '../../../../tests/fixtures/coach-proposals';
-import { DEFAULT_INTENT } from '../programming/rules/added';
 import { describeChanges, type PlanChanges } from '../programming/replan/changes';
 import { plannedHardSets, sessionLoadOf } from '../training/metrics';
 import type { ProgramPlan, SessionPlan, SetPrescription } from '../training/types';
 import {
-	DEFAULT_ADDED_INTENT,
 	describeImpact,
 	describeProposal,
 	LOAD_WORDS,
@@ -499,7 +497,6 @@ describe('describeProposal rows', () => {
 	});
 
 	it('takes the builder’s default intent when an add names none', () => {
-		expect(DEFAULT_ADDED_INTENT).toEqual(DEFAULT_INTENT);
 		const { rows } = describeProposal(
 			adjustment({ op: 'add_session', date: '2026-11-12', kind: 'run' }),
 			CONTEXT

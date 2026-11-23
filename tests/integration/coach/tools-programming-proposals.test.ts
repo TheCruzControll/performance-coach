@@ -40,6 +40,7 @@ import {
 import { programs, programVersions } from '../../../src/lib/server/db/schema/programs';
 import { acceptProposal, rejectProposal } from '../../../src/lib/server/services/coach/proposals';
 import type { ResolvedCoachDeps } from '../../../src/lib/server/services/coach/shared';
+import { OPS_OVERLAP } from '../../../src/lib/server/services/programs/batch';
 import {
 	completeOnboarding,
 	createGoal,
@@ -223,6 +224,16 @@ const addScript = (op: object): MockScript => ({
 	]
 });
 
+/** The coach's turn for `text`, which passes `ops` to propose_program_adjustment as they are. */
+const opsScript = (text: string, ops: object[]): MockScript => ({
+	name: `ops: ${text}`,
+	matches: (said) => said === text,
+	steps: [
+		{ tools: [{ name: 'propose_program_adjustment', input: { request: text, ops } }] },
+		{ text: '[note] I have not stored that change, so tell me what you want instead.' }
+	]
+});
+
 describe('propose_program_adjustment', () => {
 	it('stores “add an easy 30-minute run Thursday” as an add_session with what it brings up, and drafts nothing', async () => {
 		await withRollback(async (db) => {
@@ -245,7 +256,7 @@ describe('propose_program_adjustment', () => {
 						{
 							date: THURSDAY,
 							title: { untrusted_text: expect.any(String) },
-							warnings: expect.any(Array)
+							warnings: []
 						}
 					]
 				}
@@ -271,6 +282,100 @@ describe('propose_program_adjustment', () => {
 			const accepted = await acceptProposal(s.owner, proposal!.id, { db, now: () => NOW });
 			expect(accepted.proposal).toMatchObject({ status: 'applied', appliedVersion: { number: 2 } });
 			expect((await rows(db)).versions).toBe(before.versions + 1);
+		});
+	});
+
+	it('stores “add a tempo run Thursday morning” with the warning its week brings up, on the card and in added', async () => {
+		await withRollback(async (db) => {
+			const s = await seed(db);
+			const text = 'add a tempo run Thursday morning';
+			const add = {
+				op: 'add_session',
+				date: THURSDAY,
+				kind: 'run',
+				intent: 'moderate',
+				durationMinutes: 40,
+				timeOfDay: 'morning'
+			};
+			// Wednesday's hard sessions (the fixture's strength, intervals and class) sit back to back
+			// with a tempo run on Thursday: that finding warns, and never blocks the add.
+			const finding =
+				'Hard days back to back, though the week has room to keep them apart: Lower body & pull, Intervals and Muay Thai class on Wednesday, then Tempo run on Thursday.';
+			const t = await turn(db, s.owner, text, [opsScript(text, [add])]);
+			const call = t.calls.find((c) => c.name === 'propose_program_adjustment')!;
+			expect(call).toMatchObject({
+				status: 'succeeded',
+				output: {
+					added: [
+						{
+							date: THURSDAY,
+							title: { untrusted_text: 'Tempo run' },
+							warnings: [{ untrusted_text: finding }]
+						}
+					]
+				}
+			});
+
+			const [proposal] = await proposalsOf(db, s.owner);
+			expect(proposal!.diff).toMatchObject({ warnings: [finding] });
+		});
+	});
+
+	it('refuses an add the builder refuses at its field, as INVALID_OP, storing nothing', async () => {
+		await withRollback(async (db) => {
+			const s = await seed(db);
+			const before = await rows(db);
+			const cases: [string, object, string][] = [
+				[
+					'a moderate 20-minute run',
+					{
+						op: 'add_session',
+						date: THURSDAY,
+						kind: 'run',
+						intent: 'moderate',
+						durationMinutes: 20
+					},
+					'ops.0.durationMinutes'
+				],
+				[
+					'a day outside the program',
+					{ op: 'add_session', date: '2028-06-05', kind: 'run', intent: 'easy' },
+					'ops.0.date'
+				]
+			];
+			for (const [name, op, at] of cases) {
+				const text = `add ${name}`;
+				const t = await turn(db, s.owner, text, [opsScript(text, [op])]);
+				const call = t.calls.find((c) => c.name === 'propose_program_adjustment')!;
+				expect(call).toMatchObject({ status: 'failed', errorCode: 'INVALID_OP' });
+				expect(await toolResult(db, t.threadId!, call.toolUseId)).toMatchObject({ at });
+			}
+			expect(await rows(db)).toEqual(before);
+		});
+	});
+
+	it('refuses an op that takes a day an earlier op took, as INVALID_OP at that op, storing nothing', async () => {
+		await withRollback(async (db) => {
+			const s = await seed(db);
+			const before = await rows(db);
+			const add = { op: 'add_session', date: THURSDAY, kind: 'run', intent: 'easy' };
+			const move = { op: 'move', sessionLineage: s.intervals.lineage, toDate: THURSDAY };
+			const cases: [string, object[]][] = [
+				['an add, then a move to its day', [add, move]],
+				['a move, then an add on its day', [move, add]],
+				['two adds on one day', [add, { ...add, kind: 'hypertrophy' }]]
+			];
+			for (const [name, ops] of cases) {
+				const text = `ops: ${name}`;
+				const t = await turn(db, s.owner, text, [opsScript(text, ops)]);
+				const call = t.calls.find((c) => c.name === 'propose_program_adjustment')!;
+				expect(call).toMatchObject({ status: 'failed', errorCode: 'INVALID_OP' });
+				expect(await toolResult(db, t.threadId!, call.toolUseId)).toMatchObject({
+					at: 'ops.1',
+					message: OPS_OVERLAP
+				});
+			}
+			expect(await rows(db)).toEqual(before);
 		});
 	});
 

@@ -59,6 +59,7 @@ import {
 	getProgramVersion,
 	type StoredSession
 } from '../../services/programs/index.ts';
+import { OPS_OVERLAP } from '../../services/programs/batch.ts';
 import { TrainingInputError } from '../../services/training/shared.ts';
 import { draftInTool } from '../proposals/draft.ts';
 import type { ToolContext } from './context.ts';
@@ -227,6 +228,21 @@ async function previewAdds(
 }
 
 /**
+ * The ops that take a day, in order: a move's target and an add's date. An op that takes a day an
+ * earlier op already took is INVALID_OP at its index, as applyProgramEdits would refuse it: the two
+ * would each number that day on its own.
+ */
+function checkOpDays(ops: readonly AdjustmentOp[]) {
+	const taken = new Set<string>();
+	for (const [i, op] of ops.entries()) {
+		const day = op.op === 'move' ? op.toDate : op.op === 'add_session' ? op.date : null;
+		if (day === null) continue;
+		if (taken.has(day)) throw toolError('INVALID_OP', OPS_OVERLAP, { at: `ops.${i}` });
+		taken.add(day);
+	}
+}
+
+/**
  * The title of ops passed as they are: 'Move Lower A to Friday', 'Add Easy run on Thursday', or how
  * many changes.
  */
@@ -250,12 +266,14 @@ function opsTitle(
 const draftedOutput = z.object({ proposal: proposalOutput });
 /** The adds' previews, in the order of ops: what each brings up in its week. */
 const adjustmentOutput = z.extend(draftedOutput, {
-	added: z.array(z.object({ date: isoDate, title: untrustedSchema, warnings: z.array(z.string()) }))
+	added: z.array(
+		z.object({ date: isoDate, title: untrustedSchema, warnings: z.array(untrustedSchema) })
+	)
 });
 
 const proposeProgramAdjustmentTool = defineTool({
 	name: 'propose_program_adjustment',
-	description: `Propose a change to the owner's active program from today on: move or skip sessions, swap an exercise (scope never_again only after the owner said in this message that they dislike it), adjust sets, run segments or a session's details, or add a session. Describe the change in request (up to ${RATIONALE_MAX} characters); it is drafted against the program's sessions and each exercise's alternatives, and stored as a proposal the owner accepts or rejects, so nothing changes yet. sessionLineages (from get_current_training_week or get_training_schedule, up to ${ADJUSTMENT_SESSIONS_MAX}) narrows it to those sessions; left out, the drafter sees the next ${ADJUSTMENT_DAYS} days. revises names the open proposal the owner asked you to change: it is replaced. For today's session before it starts use update_workout; inside a workout, substitute_exercise. ops (up to ${MAX_PROPOSAL_OPS}) takes moves and adds, and nothing is drafted: each { op: 'move', sessionLineage, toDate, timeOfDay? } is one of the moves evaluate_week_interference's suggestedRepair.ops suggests, passed exactly as returned. Each { op: 'add_session', kind (strength|hypertrophy|run|muay_thai|conditioning), date, timeOfDay?, intent? (easy|moderate|hard), durationMinutes? (10 to 300), reason? } is a new session from today on, inside a planned week of the program, built by the app's session builders from the owner's profile and never written by you. Ops are stored as given, with request as the reason. added lists what each add brings up in its week (evaluate_week_interference's findings); they never block it. Skip, swap and other changes are not taken here: draft them without ops.`,
+	description: `Propose a change to the owner's active program from today on: move or skip sessions, swap an exercise (scope never_again only after the owner said in this message that they dislike it), adjust sets, run segments or a session's details, or add a session (only through ops: add_session). Describe the change in request (up to ${RATIONALE_MAX} characters); it is drafted against the program's sessions and each exercise's alternatives, and stored as a proposal the owner accepts or rejects, so nothing changes yet. sessionLineages (from get_current_training_week or get_training_schedule, up to ${ADJUSTMENT_SESSIONS_MAX}) narrows it to those sessions; left out, the drafter sees the next ${ADJUSTMENT_DAYS} days. revises names the open proposal the owner asked you to change: it is replaced. For today's session before it starts use update_workout; inside a workout, substitute_exercise. ops (up to ${MAX_PROPOSAL_OPS}) takes moves and adds, and nothing is drafted: each { op: 'move', sessionLineage, toDate, timeOfDay? } is one of the moves evaluate_week_interference's suggestedRepair.ops suggests, passed exactly as returned. Each { op: 'add_session', kind (strength|hypertrophy|run|muay_thai|conditioning), date, timeOfDay?, intent? (easy|moderate|hard), durationMinutes? (10 to 300), reason? } is a new session from today on, inside a planned week of the program, built by the app's session builders from the owner's profile and never written by you. Ops are stored as given, with request as the reason. added lists what each add brings up in its week (evaluate_week_interference's findings); they never block it. Skip, swap and other changes are not taken here: draft them without ops.`,
 	input: z.object({
 		request: text(RATIONALE_MAX),
 		sessionLineages: z.optional(
@@ -287,6 +305,7 @@ const proposeProgramAdjustmentTool = defineTool({
 			});
 		const planned = sessions.flatMap((s) => (s.kind === 'strength' ? s.exercises : []));
 		// Ops the engine computed are stored as they are: no draft, and checkProposal still runs.
+		if (ops) checkOpDays(ops);
 		const adds = ops ? await previewAdds(ctx, current.version.number, ops) : [];
 		const draft = ops
 			? { title: opsTitle(ops, upcoming, adds), rationale: request, payload: { ops } }
@@ -313,7 +332,11 @@ const proposeProgramAdjustmentTool = defineTool({
 		const proposal = { kind: 'program_adjustment', ...draft };
 		return {
 			proposal: await store(ctx, proposal, revises ?? null, { request }),
-			added: adds.map(({ date, title, warnings }) => ({ date, title: untrusted(title), warnings }))
+			added: adds.map(({ date, title, warnings }) => ({
+				date,
+				title: untrusted(title),
+				warnings: warnings.map((w) => untrusted(w))
+			}))
 		};
 	}
 });

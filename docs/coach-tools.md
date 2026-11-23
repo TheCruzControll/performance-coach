@@ -1900,7 +1900,7 @@ Propose a taper for one of the owner's event goals (goal, its id from explain\_s
 - **Effect:** propose: stores a coach_proposals row, which changes nothing until the owner accepts it
 - **Drafts:** yes: a structured-output draft, so its deadline adds the draft time
 
-Propose a change to the owner's active program from today on: move or skip sessions, swap an exercise (scope never\_again only after the owner said in this message that they dislike it), adjust sets, run segments or a session's details, or add a session. Describe the change in request (up to 1000 characters); it is drafted against the program's sessions and each exercise's alternatives, and stored as a proposal the owner accepts or rejects, so nothing changes yet. sessionLineages (from get\_current\_training\_week or get\_training\_schedule, up to 12) narrows it to those sessions; left out, the drafter sees the next 14 days. revises names the open proposal the owner asked you to change: it is replaced. For today's session before it starts use update\_workout; inside a workout, substitute\_exercise. ops (up to 12) takes moves and adds, and nothing is drafted: each { op: 'move', sessionLineage, toDate, timeOfDay? } is one of the moves evaluate\_week\_interference's suggestedRepair.ops suggests, passed exactly as returned. Each { op: 'add\_session', kind (strength\|hypertrophy\|run\|muay\_thai\|conditioning), date, timeOfDay?, intent? (easy\|moderate\|hard), durationMinutes? (10 to 300), reason? } is a new session from today on, inside a planned week of the program, built by the app's session builders from the owner's profile and never written by you. Ops are stored as given, with request as the reason. added lists what each add brings up in its week (evaluate\_week\_interference's findings); they never block it. Skip, swap and other changes are not taken here: draft them without ops.
+Propose a change to the owner's active program from today on: move or skip sessions, swap an exercise (scope never\_again only after the owner said in this message that they dislike it), adjust sets, run segments or a session's details, or add a session (only through ops: add\_session). Describe the change in request (up to 1000 characters); it is drafted against the program's sessions and each exercise's alternatives, and stored as a proposal the owner accepts or rejects, so nothing changes yet. sessionLineages (from get\_current\_training\_week or get\_training\_schedule, up to 12) narrows it to those sessions; left out, the drafter sees the next 14 days. revises names the open proposal the owner asked you to change: it is replaced. For today's session before it starts use update\_workout; inside a workout, substitute\_exercise. ops (up to 12) takes moves and adds, and nothing is drafted: each { op: 'move', sessionLineage, toDate, timeOfDay? } is one of the moves evaluate\_week\_interference's suggestedRepair.ops suggests, passed exactly as returned. Each { op: 'add\_session', kind (strength\|hypertrophy\|run\|muay\_thai\|conditioning), date, timeOfDay?, intent? (easy\|moderate\|hard), durationMinutes? (10 to 300), reason? } is a new session from today on, inside a planned week of the program, built by the app's session builders from the owner's profile and never written by you. Ops are stored as given, with request as the reason. added lists what each add brings up in its week (evaluate\_week\_interference's findings); they never block it. Skip, swap and other changes are not taken here: draft them without ops.
 
 ### Input
 
@@ -1937,7 +1937,9 @@ Propose a change to the owner's active program from today on: move or skip sessi
   - `title` (object, required)
     - `untrusted_text` (string, required)
     - `truncated` (`true`)
-  - `warnings` (array of string, required)
+  - `warnings` (array of object, required)
+    - `untrusted_text` (string, required)
+    - `truncated` (`true`)
 
 ## save_workout_analysis
 

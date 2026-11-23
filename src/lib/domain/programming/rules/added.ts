@@ -1,10 +1,14 @@
 /**
  * The numbers an added session (../added.ts) is built by, beyond the generator's own: the RPE
- * each intent is held to, the conditioning session's length and effort, and which run, Muay Thai
- * format and default intent each intent names. Each number lives here and nowhere else.
+ * each intent is held to, the conditioning session's length and effort, and which run and Muay
+ * Thai format each intent names. Each number lives here and nowhere else. The default intent
+ * lives beside ADD_INTENTS (training/edits.ts), where the coach's diff reads it too; it is
+ * re-exported here for the builder and the Train week view.
  */
-import type { AddedKind, AddIntent } from '../../training/edits.ts';
+import type { AddIntent } from '../../training/edits.ts';
 import type { OtherSessionKind, SessionType } from '../../training/vocabulary.ts';
+
+export { DEFAULT_INTENT } from '../../training/edits.ts';
 
 /** A strength or hypertrophy session's RPE by its intent, before the week's cap. */
 export const STRENGTH_RPE: Readonly<Record<AddIntent, number>> = {
@@ -39,12 +43,3 @@ export const MUAY_THAI_KIND = {
 	AddIntent,
 	Extract<OtherSessionKind, 'technical' | 'pad_work' | 'sparring'>
 >;
-
-/** The intent a session takes when the owner or the coach names none: easy for a run. */
-export const DEFAULT_INTENT = {
-	run: 'easy',
-	strength: 'moderate',
-	hypertrophy: 'moderate',
-	muay_thai: 'moderate',
-	conditioning: 'moderate'
-} as const satisfies Record<AddedKind, AddIntent>;
