@@ -19,20 +19,20 @@
  *   its lineage, so it is still judged by the input that first planned it
  * - the decisions, a replanned one first, name the new version's plan paths and are stored as
  *   the lineages of the rows they name.
- * The in_place mechanism (a deload, M7's reviseDeload through M3's reviseProgram) is refused here
- * with REFUSALS.not_applicable until its store lands (m7r/29): the mechanism is kept in the type
- * and the dispatch, so that store can take its place.
+ * reviseDeload (in place) goes through M3's reviseProgram: one revision copies only the target
+ * week, marks it a deload with its targets and changes the values of its sessions still ahead,
+ * with deload_triggered first and one load_eased per eased session.
  * Version N, its weeks and every workout logged against them are never touched.
  */
 import * as z from 'zod/mini';
 import { addDays, mondayOf, type IsoDate } from '../../../domain/calendar';
+import { REPLAN_GENERATOR_ID } from '../../../domain/programming/rules/replan';
 import {
-	REFUSALS,
-	REPLAN_GENERATOR_ID,
-	type ReplanMechanism
-} from '../../../domain/programming/rules/replan';
-import { decisionPlanSchema, programPlanSchema } from '../../../domain/training/schemas';
-import type { BlockPlan, DecisionPlan } from '../../../domain/training/types';
+	decisionPlanSchema,
+	periodisedWeekTargetsSchema,
+	programPlanSchema
+} from '../../../domain/training/schemas';
+import type { BlockPlan, DecisionPlan, WeekTargets } from '../../../domain/training/types';
 import type { Decider } from '../../../domain/training/vocabulary';
 import type { FieldErrors } from '../../../domain/validation';
 import { createPeriodiseRepository } from '../../db/repositories/program-periodise';
@@ -48,12 +48,17 @@ import {
 	type TrainingDeps
 } from '../training/shared';
 import { planRows, toProgramVersion, type StoredBlock } from './mapping';
-import type { RevisedVersion } from './revise';
+import {
+	reviseProgram,
+	type CopyChanges,
+	type RevisedVersion,
+	type RevisionDecision
+} from './revise';
 import { MAX_VERSION, resolveExercises, type ProgramOrigin } from './store';
 
 export interface ReplanStorage {
-	/** A regenerate (priorities, block), a taper's splice, or in_place (a deload: refused here). */
-	mechanism: ReplanMechanism;
+	/** A regenerate (priorities, block) or a full taper's splice. */
+	mechanism: 'regenerate' | 'splice';
 	/** The version re-planned: it must still be current. */
 	baseVersionNumber: number;
 	/** The owner's local today. */
@@ -73,15 +78,38 @@ export interface ReplanStorage {
 	origin: Omit<ProgramOrigin, 'source' | 'generator'>;
 }
 
+export interface DeloadRevision {
+	/** The version deloaded: it must still be current. */
+	baseVersionNumber: number;
+	/** The owner's local today: no session before it changes. */
+	today: IsoDate;
+	/** The deloaded week's Monday. */
+	week: IsoDate;
+	/** The deload week's targets (deloadWeek's). */
+	targets: WeekTargets;
+	/** How its sessions still ahead change, by lineage: values only (deloadSessions'). */
+	changes: Omit<CopyChanges, 'weeks'>;
+	/** deload_triggered first, then one load_eased per eased session, naming it alone. */
+	decisions: RevisionDecision[];
+	/** The version's summary in History; the deload_triggered decision's when left out. */
+	summary?: string;
+}
+
 const monday = z.iso
 	.date('Use a real date')
 	.check(z.refine((d) => mondayOf(d) === d, 'Start on a Monday'));
 
 const storageSchema = z.object({
-	mechanism: z.enum(['regenerate', 'splice', 'in_place'], 'Pick a mechanism'),
+	mechanism: z.enum(['regenerate', 'splice'], 'Pick a mechanism'),
 	today: z.iso.date('Use a real date'),
 	from: monday,
 	summary: decisionPlanSchema.shape.summary
+});
+
+const deloadSchema = z.object({
+	today: z.iso.date('Use a real date'),
+	week: monday,
+	targets: periodisedWeekTargetsSchema
 });
 
 const isVersionNumber = (n: unknown): n is number =>
@@ -163,8 +191,6 @@ export async function storeReplan(
 	if (!isVersionNumber(number)) throw new TrainingNotFoundError('program version');
 	const added = [...storage.blocks, ...storage.outline];
 	fail({
-		// The deload store (in_place) is not built yet: refused before anything is read or written.
-		...(mechanism === 'in_place' && { mechanism: REFUSALS.not_applicable }),
 		// The week in progress is never rewritten: the first Monday from today (the plan's decision).
 		...(from < today && { from: `Start on ${mondayOf(addDays(today, 6))} or later` }),
 		...(!added.length && { blocks: 'Plan a block' }),
@@ -324,5 +350,94 @@ export async function storeReplan(
 			}
 			return { programId: head.id, versionId, number: number + 1 };
 		})
+	);
+}
+
+/**
+ * Deload one week of the owner's active program in place, through reviseProgram: only that week
+ * is copied, as kind deload with `targets`, its sessions still ahead changed by value.
+ * TrainingInputError for a change to a session already passed or logged, or decisions that do not
+ * name every eased session once.
+ */
+export async function reviseDeload(
+	ownerId: string,
+	deload: DeloadRevision,
+	deps: TrainingDeps = {}
+): Promise<RevisedVersion> {
+	const { today, week, targets } = parseWith(deloadSchema, deload);
+	const [first, ...eased] = deload.decisions;
+	fail({
+		// A week already over is history: it is never re-labelled a deload.
+		...(addDays(week, 6) < today && { week: 'That week is already over' }),
+		...(first?.kind !== 'deload_triggered' && {
+			'decisions.0.kind': 'Start with the deload_triggered decision'
+		}),
+		...Object.fromEntries(
+			eased.flatMap((d, i) =>
+				d.kind === 'load_eased' && d.affected.length === 1
+					? []
+					: [[`decisions.${i + 1}`, 'One load_eased decision per eased session']]
+			)
+		)
+	});
+	if (!isVersionNumber(deload.baseVersionNumber))
+		throw new TrainingNotFoundError('program version');
+	const { db } = resolveDeps(deps);
+	const found = await createProgramsRepository(db).currentProgram(
+		ownerId,
+		deload.baseVersionNumber
+	);
+	if (!found) throw new TrainingNotFoundError('program');
+	const weeks = await createProgramsRepository(db).versionWeeks(found.version.id);
+	const lineage = weeks.find((w) => w.startsOn === week)?.lineageId;
+	if (!lineage) throw new TrainingNotFoundError('program week');
+	const { changes } = deload;
+
+	return reviseProgram(
+		ownerId,
+		{
+			baseVersionNumber: deload.baseVersionNumber,
+			weekLineages: [lineage],
+			apply: async (copies, tx) => {
+				const repo = createProgramsRepository(tx);
+				const rows = await repo.weekSessions([copies.weeks.get(lineage)!.from]);
+				const byId = new Map(rows.sessions.map((s) => [s.id, s]));
+				const sessionOf = new Map(
+					rows.exercises.map((e) => [e.lineageId, byId.get(e.sessionId)!.lineageId])
+				);
+				const changed = new Set([
+					...Object.keys(changes.sessions ?? {}),
+					...Object.keys(changes.details ?? {}),
+					...Object.keys(changes.segments ?? {}),
+					...[...Object.keys(changes.exercises ?? {}), ...Object.keys(changes.sets ?? {})].map(
+						(x) => sessionOf.get(x) ?? x
+					)
+				]);
+				const byLineage = new Map(rows.sessions.map((s) => [s.lineageId, s]));
+				const logged = await repo.completedLineages(ownerId, [...changed]);
+				const errors: FieldErrors = {};
+				for (const at of changed) {
+					const s = byLineage.get(at);
+					if (!s) errors[`changes.${at}`] = 'Not a session of that week';
+					else if (s.scheduledOn < today)
+						errors[`changes.${at}`] = `${s.title} on ${s.scheduledOn} has passed`;
+					else if (logged.has(at)) errors[`changes.${at}`] = `${s.title} is already logged`;
+				}
+				const named = new Set(eased.map((d) => d.affected[0]));
+				if (
+					named.size !== eased.length ||
+					named.size !== changed.size ||
+					[...changed].some((c) => !named.has(c))
+				) {
+					errors.decisions = 'One load_eased decision per eased session';
+				}
+				fail(errors);
+				return { ...changes, weeks: { [lineage]: { kind: 'deload', targets: { ...targets } } } };
+			},
+			decision: first!,
+			moreDecisions: eased,
+			...(deload.summary !== undefined && { summary: deload.summary })
+		},
+		deps
 	);
 }

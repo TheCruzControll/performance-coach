@@ -1,8 +1,8 @@
 /**
  * Storing a re-plan on real Postgres (src/lib/server/services/programs/replan.ts): a regenerate or
  * a taper's splice is version N + 1 with everything before `from` kept, a block running across it
- * cut on the Sunday before under its lineage, and after a taper every later block shared. A
- * deload (in_place) is refused until its store lands. Version N and its workouts never change.
+ * cut on the Sunday before under its lineage, and after a taper every later block shared; a
+ * deload copies one week in place through reviseProgram. Version N and its workouts never change.
  *
  * Version 1 runs from Monday 2 November 2026 with a Monday strength session and a Wednesday run
  * each week: block A (two weeks), block B (three weeks from 16 November), then outline C (three
@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { addDays, type IsoDate } from '../../../src/lib/domain/calendar';
 import { CATALOGUE } from '../../../src/lib/domain/exercises/index';
 import { buildProgrammingInput } from '../../../src/lib/domain/programming/input';
-import { REFUSALS, REPLAN_GENERATOR_ID } from '../../../src/lib/domain/programming/rules/replan';
+import { REPLAN_GENERATOR_ID } from '../../../src/lib/domain/programming/rules/replan';
 import { SCENARIOS } from '../../../src/lib/domain/programming/scenarios';
 import { chooseSplit } from '../../../src/lib/domain/programming/splits';
 import { hardSetBand } from '../../../src/lib/domain/programming/volume';
@@ -40,7 +40,13 @@ import {
 	type StoredBlock,
 	type StoredSession
 } from '../../../src/lib/server/services/programs/index';
-import { storeReplan, type ReplanStorage } from '../../../src/lib/server/services/programs/replan';
+import {
+	reviseDeload,
+	storeReplan,
+	type DeloadRevision,
+	type ReplanStorage
+} from '../../../src/lib/server/services/programs/replan';
+import { reviewableBlock } from '../../../src/lib/server/services/reviews/cycle';
 import {
 	ProgramConflictError,
 	TrainingInputError,
@@ -532,6 +538,26 @@ describe('storeReplan: refusals and guards', () => {
 		});
 	});
 
+	it('refuses a from before the version starts, and writes nothing', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			await store(db, owner);
+			const before = await writes(db);
+			// The Monday before version 1 starts, planned from that day: only the start check refuses it.
+			const early = regenerate({
+				today: day(-7),
+				from: day(-7),
+				blocks: [plannedBlock('Block N', day(-7), 3)],
+				outline: [outline('Block O', day(14), 2)],
+				decisions: [replanned(['blocks.0'])]
+			});
+			expect(await errorsOf(storeReplan(owner, early, { db }))).toEqual({
+				from: `Start on ${MONDAY} or later`
+			});
+			expect(await writes(db)).toEqual(before);
+		});
+	});
+
 	it('refuses a from with a session logged or skipped on or after it', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
@@ -587,18 +613,6 @@ describe('storeReplan: refusals and guards', () => {
 		});
 	});
 
-	it('refuses the in_place mechanism (a deload, until its store lands) and writes nothing', async () => {
-		await withRollback(async (db) => {
-			const owner = await makeOwner(db);
-			await store(db, owner);
-			const before = await writes(db);
-			expect(
-				await errorsOf(storeReplan(owner, regenerate({ mechanism: 'in_place' }), { db }))
-			).toEqual({ mechanism: REFUSALS.not_applicable });
-			expect(await writes(db)).toEqual(before);
-		});
-	});
-
 	it('refuses a stale base as a conflict', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
@@ -641,7 +655,7 @@ describe('storeReplan: refusals and guards', () => {
 		});
 	});
 
-	it('judges the new block by its input, and the cut block by the input that planned it', async () => {
+	it('judges the new block by its input, and the cut block gets no cycle review', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
 			const { programId, v1 } = await store(db, owner);
@@ -659,6 +673,13 @@ describe('storeReplan: refusals and guards', () => {
 					(await getProgramVersion(owner, programId, 2, { db })).blocks[2]!.lineage
 				]
 			]);
+
+			// On Tuesday 24 November B (cut on 22 November) has ended, but A is the block to review.
+			expect(await reviewableBlock(owner, day(22), { db })).toEqual({
+				programId,
+				blockLineage: v1.blocks[0]!.lineage,
+				reason: 'ended'
+			});
 		});
 	});
 
@@ -686,6 +707,107 @@ describe('storeReplan: refusals and guards', () => {
 			await store(db, owner);
 			const error = await refusal(storeReplan(crypto.randomUUID(), regenerate(), { db }));
 			expect(error).toBeInstanceOf(TrainingNotFoundError);
+		});
+	});
+});
+
+describe('reviseDeload', () => {
+	/** B's first week (16 November) deloaded on its Monday: its Wednesday run eased. */
+	function deload(v1: ProgramVersion, over: Partial<DeloadRevision> = {}): DeloadRevision {
+		const run = v1.blocks[1]!.weeks[0]!.sessions[1]!;
+		return {
+			baseVersionNumber: 1,
+			today: day(14),
+			week: day(14),
+			targets: { ...TARGETS, rpeCap: 7, volumeFactor: 0.6, runVolumeFactor: 0.6 },
+			changes: {
+				sessions: { [run.lineage]: { estMinutes: 30, targetRpe: 4 } },
+				segments: { [run.lineage]: { 1: { durationSeconds: 1200 } } }
+			},
+			decisions: [
+				{
+					kind: 'deload_triggered',
+					ruleKey: 'replan.in_place',
+					summary: 'Deload in week 3',
+					why: 'Fatigue is high. So week 3 becomes a deload.',
+					affected: []
+				},
+				{
+					kind: 'load_eased',
+					ruleKey: 'replan.in_place',
+					summary: 'Easy run eased to RPE 4',
+					why: 'The deload eases it.',
+					affected: [run.lineage]
+				}
+			],
+			...over
+		};
+	}
+
+	it('copies only the target week, as a deload, its logged session and later weeks kept', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const { programId, v1 } = await store(db, owner);
+			const week = v1.blocks[1]!.weeks[0]!;
+			const [squat, run] = week.sessions as [StoredSession, StoredSession];
+			await log(db, owner, programId, squat);
+
+			await reviseDeload(owner, deload(v1), { db, source: 'rules' });
+			const v2 = await getProgramVersion(owner, programId, 2, { db });
+			const copied = v2.blocks[1]!.weeks[0]!;
+			// Every other week is shared; the target week is a copy with its lineage.
+			const ids = new Set(weekIds(v1));
+			expect(weekIds(v2).filter((id) => !ids.has(id))).toEqual([copied.id]);
+			expect(copied).toMatchObject({ lineage: week.lineage, kind: 'deload' });
+			expect(copied.targets).toEqual(deload(v1).targets);
+			// The Monday session done earlier is unchanged and keeps its workout link.
+			expect(values(copied.sessions[0]!)).toEqual(values(squat));
+			expect(await statusOn(owner, day(14), db)).toEqual(['completed']);
+			const eased = copied.sessions[1]!;
+			expect(eased).toMatchObject({ lineage: run.lineage, estMinutes: 30, targetRpe: 4 });
+			expect(eased.kind === 'run' && eased.segments[0]!.durationSeconds).toBe(1200);
+			expect(v2.blocks[1]!.weeks.slice(1)).toEqual(v1.blocks[1]!.weeks.slice(1));
+			expect(v2.decisions.map((d) => [d.kind, d.affected])).toEqual([
+				['deload_triggered', []],
+				['load_eased', [run.lineage]]
+			]);
+		});
+	});
+
+	it('refuses a logged or passed session, and decisions that miss an eased session', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const { programId, v1 } = await store(db, owner);
+			const [squat, run] = v1.blocks[1]!.weeks[0]!.sessions as [StoredSession, StoredSession];
+			await log(db, owner, programId, squat);
+			const before = await writes(db);
+
+			const loggedChange = deload(v1, {
+				changes: { sessions: { [squat.lineage]: { estMinutes: 30 } } },
+				decisions: [
+					deload(v1).decisions[0]!,
+					{ ...deload(v1).decisions[1]!, affected: [squat.lineage] }
+				]
+			});
+			expect(await errorsOf(reviseDeload(owner, loggedChange, { db }))).toEqual({
+				[`changes.${squat.lineage}`]: 'Squat day is already logged'
+			});
+			expect(await errorsOf(reviseDeload(owner, deload(v1, { today: day(17) }), { db }))).toEqual({
+				[`changes.${run.lineage}`]: `Easy run on ${day(16)} has passed`
+			});
+			const over = deload(v1, {
+				today: day(21),
+				changes: {},
+				decisions: [deload(v1).decisions[0]!]
+			});
+			expect(await errorsOf(reviseDeload(owner, over, { db }))).toEqual({
+				week: 'That week is already over'
+			});
+			const unnamed = deload(v1, { decisions: [deload(v1).decisions[0]!] });
+			expect(await errorsOf(reviseDeload(owner, unnamed, { db }))).toEqual({
+				decisions: 'One load_eased decision per eased session'
+			});
+			expect(await writes(db)).toEqual(before);
 		});
 	});
 });
