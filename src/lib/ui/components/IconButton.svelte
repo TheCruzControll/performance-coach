@@ -1,10 +1,11 @@
 <!--
   @component
-  Circular icon-only button. `label` is required: it becomes the accessible name. With `tooltip`,
-  a mouse or keyboard user on a desktop also sees the label, in a caption under the button
-  aligned to its end (for a header's trailing buttons) while it is hovered or focused; a touch
-  screen never shows it. Escape hides it until the button is left or hovered again. The caption
-  is hidden from assistive technology, which reads the name.
+  Round icon-only button, Instrument v2. `label` is required: it becomes the accessible name. With
+  `tooltip`, a mouse or keyboard user on a desktop also sees the label, in a caption under the
+  button aligned to its end (for a header's trailing buttons) while it is hovered or focused; a
+  touch screen never shows it. Escape hides it until the button is left or hovered again. The
+  caption is hidden from assistive technology, which reads the name. `filled` is the stepper's
+  round surface-3 control; `pressed` shows the inverse fill.
 -->
 <script lang="ts">
 	import type { IconName } from '../icons/icons';
@@ -44,7 +45,7 @@
 
 	/** Escape hid the caption (WCAG 1.4.13); leaving or hovering the button again resets it. */
 	let dismissed = $state(false);
-	const iconSize = $derived(size === 'lg' ? 26 : size === 'sm' ? 18 : 22);
+	const iconSize = $derived(size === 'sm' ? 16 : 18);
 </script>
 
 <button
@@ -104,13 +105,16 @@
 		--size: 2.25rem;
 	}
 	.icon-btn[data-size='lg'] {
-		--size: 3.5rem;
+		--size: 3.75rem;
 	}
 
+	/* ---- Variants ---- */
+	.icon-btn[data-variant='ghost'] {
+		background: transparent;
+		color: var(--color-text-secondary);
+	}
 	.icon-btn[data-variant='filled'] {
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-		box-shadow: inset 0 1px 0 0 var(--color-highlight);
+		background: var(--color-surface-3);
 	}
 	.icon-btn[data-variant='accent'] {
 		background: var(--color-accent);
@@ -121,9 +125,11 @@
 		transform: scale(0.92);
 		transition-duration: var(--duration-instant);
 	}
-	.icon-btn[data-variant='ghost']:active:not(:disabled),
+	.icon-btn[data-variant='ghost']:active:not(:disabled) {
+		background: var(--color-surface-2);
+	}
 	.icon-btn[data-variant='filled']:active:not(:disabled) {
-		background: var(--color-surface-3);
+		background: color-mix(in srgb, var(--color-surface-3), var(--color-text) 8%);
 	}
 	.icon-btn[data-variant='accent']:active:not(:disabled) {
 		background: var(--color-accent-pressed);
@@ -134,12 +140,18 @@
 			background: var(--color-surface-2);
 		}
 		.icon-btn[data-variant='filled']:hover:not(:disabled) {
-			background: var(--color-surface-3);
-			border-color: var(--color-border-strong);
+			background: color-mix(in srgb, var(--color-surface-3), var(--color-text) 8%);
 		}
 		.icon-btn[data-variant='accent']:hover:not(:disabled) {
 			background: var(--color-accent-hover);
 		}
+	}
+
+	/* Pressed (aria-pressed) is the inverse fill, as the effort scale's selected circle. It comes
+	   after the variants and hover so it wins over them, and it never applies while disabled. */
+	.icon-btn[aria-pressed='true'][data-variant]:not(:disabled) {
+		background: var(--color-surface-inverse);
+		color: var(--color-text-inverse);
 	}
 
 	/* Out of layout until shown, so a caption at a screen's edge never scrolls it sideways. */
@@ -156,21 +168,24 @@
 			z-index: var(--z-raised);
 			display: block;
 			padding: var(--space-1) var(--space-2);
-			border: 1px solid var(--color-border-strong);
 			border-radius: var(--radius-sm);
 			background: var(--color-surface-2);
 			box-shadow: var(--elevation-2);
 			color: var(--color-text);
-			font-size: var(--text-xs);
-			font-weight: var(--weight-medium);
-			line-height: var(--leading-snug);
+			font: var(--type-caption);
 			white-space: nowrap;
 			pointer-events: none;
 		}
 	}
 
+	/* Last, so a disabled button takes the disabled glyph and fill, whatever its variant or pressed
+	   state. No opacity: the quiet tokens carry it. */
 	.icon-btn:disabled {
-		opacity: 0.35;
 		cursor: not-allowed;
+		color: var(--color-text-disabled);
+	}
+	.icon-btn[data-variant='filled']:disabled,
+	.icon-btn[data-variant='accent']:disabled {
+		background: var(--color-surface-2);
 	}
 </style>

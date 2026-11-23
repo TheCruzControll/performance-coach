@@ -437,6 +437,25 @@ test.describe('logging a set (IndexedDB only)', () => {
 		expect(chip!.height).toBeGreaterThanOrEqual(44);
 	});
 
+	// v2/02 pins the logger's controls at their pre-v2 56 px (SetLogger.svelte, known-issues.md).
+	// Button and IconButton lg are 60 px everywhere else: a change here is a phone layout change
+	// (the sticky logger has broken CI three times). Lift this with the v2/10 set screen.
+	test('the logger keeps 56 px controls on a phone: Complete set and each Increase', async ({
+		page
+	}) => {
+		await open(page, PULL_UP);
+		const complete = await logger(page).getByTestId('complete-set').boundingBox();
+		expect(complete!.height).toBeCloseTo(56, 0);
+		const increases = logger(page).getByRole('button', { name: /^Increase / });
+		const count = await increases.count();
+		expect(count).toBe(2);
+		for (let i = 0; i < count; i += 1) {
+			const box = await increases.nth(i).boundingBox();
+			expect(box!.width, `increase ${i} width`).toBeCloseTo(56, 0);
+			expect(box!.height, `increase ${i} height`).toBeCloseTo(56, 0);
+		}
+	});
+
 	for (const theme of ['dark', 'light'] as const) {
 		test(`no WCAG A/AA violations while logging (${theme} theme)`, async ({ page }) => {
 			await page.addInitScript(

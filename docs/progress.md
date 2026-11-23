@@ -107,6 +107,13 @@ runs the criteria and updates milestones.md.
   `base.css`, `fonts.css`). The fonts are self-hosted `@fontsource-variable/mona-sans` and
   `hubot-sans` (5.3.0), with only Mona Sans latin preloaded. `/design` shows the type scale and the
   `--type-*` roles. The 390 px layouts still need the CI e2e run and a look in a browser.
+- **Instrument v2 buttons, links and icon buttons (`v2/02a`).** Button's `lg` is the 60 px amber
+  primary with 16 px corners; `secondary` and `danger` are quiet surface-2 buttons, `ghost` a text
+  button and the new `link` an underlined text action. IconButton is round, with `filled` on
+  surface-3. `.text-link` (`src/lib/ui/styles/base.css`) styles links in running text. The workout
+  logger and the set edit sheet keep their 56 px controls until `v2/10` (known-issues). The
+  `/design` Buttons tab and `docs/design-system.md` show them; PR 586's ghost-hover specs are carried
+  over. Phone layouts and the axe run are CI's to prove.
 - **Adding a session to a program.** The builder, the storage
   (`src/lib/server/services/programs/add.ts`), Train's Add session sheet and the coach's proposal
   are built: `propose_program_adjustment` takes an `add_session` op, and accepting it is one new

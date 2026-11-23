@@ -188,22 +188,34 @@
 			{#snippet panel(id)}
 				{#if id === 'buttons'}
 					<div class="grid">
-						<Button icon="bolt">Start workout</Button>
-						<Button variant="secondary" icon="plate">Plate calculator</Button>
-						<Button variant="ghost" iconEnd="chevron-right">View history</Button>
-						<Button variant="danger" icon="close">Skip exercise</Button>
+						<Button size="lg" block icon="bolt">Start workout</Button>
+						<Button size="lg" block variant="secondary" icon="plate">Plate calculator</Button>
+						<Button size="lg" block variant="danger" icon="close">Skip exercise</Button>
+						<Button size="lg" block loading>Waiting for your passkey</Button>
+						<Button size="lg" block disabled>Disabled</Button>
+						<div class="inline">
+							<Button variant="ghost">Keep it</Button>
+							<Button variant="ghost" iconEnd="chevron-right">View history</Button>
+							<Button variant="link">Add a goal</Button>
+						</div>
 						<div class="inline">
 							<Button size="sm">Small</Button>
 							<Button size="md" variant="secondary">Medium</Button>
+							<Button size="sm" variant="secondary">Edit</Button>
+							<Button size="md">Done</Button>
 						</div>
-						<Button size="lg" block loading>Saving</Button>
-						<Button size="lg" block disabled>Disabled</Button>
 						<div class="inline">
 							<IconButton icon="plus" label="Add set" variant="accent" />
 							<IconButton icon="timer" label="Rest timer" variant="filled" />
 							<IconButton icon="close" label="Close" />
+							<IconButton icon="sun" label="Light theme" pressed />
 							<IconButton icon="minus" label="Remove" variant="filled" size="lg" />
+							<IconButton icon="plus" label="Add" variant="filled" size="lg" />
+							<IconButton icon="lock" label="Locked" variant="filled" size="lg" disabled />
 						</div>
+						<p class="muted">
+							A sentence with <a class="text-link" href="#design">a link in it</a> keeps its own underline.
+						</p>
 					</div>
 				{:else}
 					{#await PANELS[id]()}

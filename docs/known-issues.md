@@ -34,6 +34,17 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   `src/lib/domain/programming/generate-schedule.test.ts` fail. That check leaves journeyHybrid out
   until this closes. Closes when the search is a fixed point, so a second run changes no session,
   and journeyHybrid goes back into the check.
+- **The workout logger and the set edit sheet keep 56 px controls (v2 is 60) until v2/10.** Button
+  and IconButton `lg` are 60 px everywhere else. The sticky logger (`src/lib/ui/workout/SetLogger.svelte`)
+  and the set edit sheet (`src/routes/workout/SetEditSheet.svelte`) pin their controls at 56 px,
+  because a phone has no room to grow the logger: it has broken CI three times. The phone test
+  "the logger keeps 56 px controls" in `e2e/workout-log.e2e.ts` holds the pin. Closes when v2/10
+  redesigns the set screen and removes both pins and that test's 56 px expectation.
+- **Thirteen files still style their own underlined links; screen rows move them to `.text-link`.**
+  The links in running text are styled by each file: ProposalCard, RichText, Notice, Toaster,
+  ReplanNotice, ProgramHeader, ArchivedSheet, KnowsSheet, ThreadList, the proposal detail, and the
+  three Train pages.
+  Closes when each screen row adopts `.text-link` (or `Button variant="link"` for a standalone action).
 
 ## Stale documentation
 
