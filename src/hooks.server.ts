@@ -7,6 +7,8 @@ import { building, version } from '$app/env';
 import { emailLinkConfigured, emailLinkLogFields } from '#lib/server/auth/email-link-config.ts';
 import { backupLogFields } from '#lib/server/backup/config.ts';
 import { guardRequest } from '#lib/server/auth/guard.ts';
+import { routeAccess } from '#lib/server/auth/routes.ts';
+import { oversizedBodyResponse } from '#lib/server/body-limit.ts';
 import { getEnv } from '#lib/server/env.ts';
 import { createContext, runWithContext } from '#lib/server/observability/context.ts';
 import { instance } from '#lib/server/observability/instance.ts';
@@ -63,11 +65,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const ctx = createContext(requestId);
 	return runWithContext(ctx, async () => {
 		// Every route needs a session unless src/lib/server/auth/routes.ts says otherwise.
-		// Prerendering (build time) renders only public, data-free pages and has no database.
+		// A body over its cap is refused before the guard reads a session, and before any route
+		// parses it (body-limit.ts). Prerendering (build time) renders only public, data-free
+		// pages and has no database.
 		let denied: Response | null = null;
 		if (!building) {
 			try {
-				denied = await guardRequest(event);
+				denied =
+					oversizedBodyResponse(event.request, event.url.pathname, routeAccess(event.route.id)) ??
+					(await guardRequest(event));
 			} catch (error) {
 				// SvelteKit's fallback for a throwing handle would skip every header below.
 				const body = await handleError({ kind: 'unknown', error, event });

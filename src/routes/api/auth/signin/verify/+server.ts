@@ -9,6 +9,7 @@ import {
 	safeReturnPath,
 	setSessionCookie
 } from '#lib/server/auth/index.ts';
+import { BODY_LIMITS } from '#lib/server/body-limit.ts';
 import type { RequestHandler } from './$types';
 
 /**
@@ -17,7 +18,10 @@ import type { RequestHandler } from './$types';
  */
 export const POST: RequestHandler = async (event) => {
 	try {
-		const body = (await readJsonBody(event.request)) as { response?: unknown; next?: unknown };
+		const body = (await readJsonBody(event.request, BODY_LIMITS.public)) as {
+			response?: unknown;
+			next?: unknown;
+		};
 		const issued = await completeSignIn(
 			body?.response,
 			readSessionToken(event.cookies, event.url),

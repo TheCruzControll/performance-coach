@@ -37,7 +37,7 @@ export interface TurnRequest {
 export type StreamEnd =
 	/** The stream ended with `done`. */
 	| { kind: 'done'; status: RunStatus | null }
-	/** The endpoint answered without a stream: 429, 400 or another error. */
+	/** The endpoint answered without a stream: 429, 400, 413 or another error. */
 	| { kind: 'refused'; error: CoachErrorKind; retryAfterS?: number }
 	/** The caller's signal: Stop, or the page was left. */
 	| { kind: 'aborted' }
@@ -55,7 +55,8 @@ function refusal(response: Response): StreamEnd {
 			...(Number.isFinite(after) && after > 0 ? { retryAfterS: after } : {})
 		};
 	}
-	return { kind: 'refused', error: response.status === 400 ? 'invalid_request' : 'provider' };
+	const invalid = response.status === 400 || response.status === 413;
+	return { kind: 'refused', error: invalid ? 'invalid_request' : 'provider' };
 }
 
 /** Send one turn and hand each event to `onEvent`, in order, as it arrives. */

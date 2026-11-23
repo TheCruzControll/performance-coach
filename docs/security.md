@@ -233,24 +233,39 @@ Three independent layers:
 (`src/lib/server/services/workouts/sync.ts`). A recovery session's request answers 403 and the
 device keeps everything.
 
+## Request body caps
+
+`hooks.server.ts` refuses a request whose declared `Content-Length` is over its cap with `413`
+before the guard reads a session and before any route parses the body (`body-limit.ts`): 64 KB on
+every route, 16 KB on a public route (a WebAuthn response or a recovery code is a few KB). A
+`/api/*` path answers `413 {"error":"too_large"}`, a form action (`x-sveltekit-action: true`) answers
+an action failure that `deserialize` reads, and any other path plain text. Routes keep their own caps,
+the same or tighter, with their own messages (coach turns 64 KB, client errors and vitals 16 KB, the
+coach's undo and thread edits 4 KB). A chunked body with no `Content-Length` is not checked by the
+hook: the adapter's limit applies instead (`BODY_SIZE_LIMIT` under adapter-node, the platform's limit
+on Vercel). The public auth routes that read a JSON body (setup, sign-in) hold their own body to 16 KB
+with `readJsonBody`, so that cap holds without a length too. Proven by
+`src/lib/server/body-limit.test.ts`, `src/hooks.server.test.ts` and `src/routes/api/auth/public-bodies.test.ts`.
+
 ## Rate limits (Postgres, no Redis)
 
 One row per bucket in `auth_rate_limits`, updated by a single atomic upsert (fixed windows), so
 every server instance shares the counters. The first refusal of a window is audited.
 
-| Bucket            | Limit           | Keyed on |
-| ----------------- | --------------- | -------- |
-| `signin.options`  | 30 / minute     | client   |
-| `signin.verify`   | 10 / minute     | client   |
-| `setup`           | 10 / 15 minutes | client   |
-| `recovery`        | 5 / 15 minutes  | client   |
-| `recovery.global` | 20 / hour       | all      |
-| `register`        | 20 / 15 minutes | session  |
-| `reauth`          | 20 / 15 minutes | session  |
-| `manage`          | 60 / minute     | session  |
-| `signout`         | 30 / minute     | client   |
-| `coach.turn`      | 30 / 10 minutes | all      |
-| `coach.action`    | 60 / minute     | all      |
+| Bucket            | Limit             | Keyed on |
+| ----------------- | ----------------- | -------- |
+| `signin.options`  | 30 / minute       | client   |
+| `signin.verify`   | 10 / minute       | client   |
+| `setup`           | 10 / 15 minutes   | client   |
+| `recovery`        | 5 / 15 minutes    | client   |
+| `recovery.global` | 20 / hour         | all      |
+| `register`        | 20 / 15 minutes   | session  |
+| `reauth`          | 20 / 15 minutes   | session  |
+| `manage`          | 60 / minute       | session  |
+| `signout`         | 30 / minute       | client   |
+| `coach.turn`      | 30 / 10 minutes   | all      |
+| `coach.action`    | 60 / minute       | all      |
+| `test.session`    | 1000 / 15 minutes | client   |
 
 The client address is the platform's (`getClientAddress()`: `x-forwarded-for` as set by Vercel).
 A client bucket keys on the whole address for IPv4 and on the /64 for IPv6 (`client-network.ts`):
@@ -281,6 +296,30 @@ bound on distributed guessing, which rests on the per-client limit and the 80-bi
 never refused (the session is revoked, the cookie deleted), so someone sharing the owner's
 address (the same NAT or Wi-Fi) cannot fill the bucket and keep the owner signed in. A token ends
 its session only once, so this cannot be used to flood.
+
+Every public POST route has a bucket. `PUBLIC_POST_BUCKETS` (`rate-limit.ts`) maps each one: the
+setup, sign-in and sign-out endpoints, `/api/test-support/session` (`test.session`, counted before it
+mints anything) and the recovery-code form action on `/recover`. `rate-limit.test.ts` lists the
+public POST routes from the file system and the `ROUTE_ACCESS` policy, fails on a route without an
+entry, and checks that each handler reaches `enforceRateLimit` with its own bucket and answers `429`
+with `Retry-After`.
+
+## Abuse limits: where each guarantee is enforced and tested
+
+| Guarantee                           | Enforced in                                                                                              | Proven by                                                                                                                                                                                  |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Every public POST is rate-limited   | `PUBLIC_POST_BUCKETS` (`rate-limit.ts`); each handler's service calls `enforceRateLimit` with its bucket | `src/lib/server/auth/rate-limit.test.ts` (unit: routes on disk against the map, and each handler's 429); `tests/integration/auth/rate-limit.test.ts` (counter, window, reset)              |
+| Every declared body is capped       | `hooks.server.ts` through `body-limit.ts`, before the guard and any parse                                | `src/lib/server/body-limit.test.ts`; `src/hooks.server.test.ts` (an oversized public or owner POST is refused before the guard)                                                            |
+| Every cookie write is hardened      | `sessionCookie()` and `expiredSessionCookie()` (`cookies.ts`), called only from `http.ts` and `guard.ts` | `scripts/cookie-writes.test.ts` (the real `src/`, and fixture trees with a planted write that must fail); `src/lib/server/auth/cookies.test.ts` (the `__Host-session` and `session` flags) |
+| Deny by default for every route     | `guard.ts` and `ROUTE_ACCESS` (`routes.ts`)                                                              | `src/lib/server/auth/routes.test.ts` (walks `src/routes`); `e2e/access.e2e.ts` (over HTTP)                                                                                                 |
+| `Set-Cookie` survives the TLS proxy | the production build behind `scripts/e2e-tls`                                                            | `scripts/e2e-tls.test.ts` (a 303 with two `Set-Cookie` headers passes unchanged)                                                                                                           |
+
+There is no e2e sweep of every public POST, and no TLS-mode e2e run of the cookie: both were
+dropped for CI cost. The unit guards prove the same invariants without a browser: a public POST
+route added later without a bucket, or a cookie written outside `http.ts` and `guard.ts`, fails
+`pnpm test:unit`. The body cap needs no per-route code, so every new route has it from the start.
+The `__Host-session` attributes are asserted in their HTTPS form by `cookies.test.ts`, not in a live
+TLS browser run.
 
 ## Audit log
 
