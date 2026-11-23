@@ -6,7 +6,8 @@
  * The method:
  *
  * 1. Every weigh-in is converted into the owner's unit first (convertWeight), so kg and lb entries
- *    mix in one series. Outputs are rounded to 2 decimals (cleanFloat); the arithmetic is not.
+ *    mix in one series. Outputs are rounded to 2 decimals (cleanFloat). The trend is carried
+ *    unrounded; the figures read from it (rates, changes) use the trend as shown.
  * 2. The series has one point a day, from the first weigh-in to the last. A skipped day takes a
  *    weight by linear interpolation between the weigh-ins either side (filled: true, weight null),
  *    so a weekly weigher and a daily one see the same path. The series is never extended past the
