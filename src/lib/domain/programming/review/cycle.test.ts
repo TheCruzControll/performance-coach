@@ -7,7 +7,7 @@ import type { RecoveryEntry } from '../../analytics/workload';
 import { catalogueByKey } from '../../exercises/index';
 import { hardSets, plannedHardSets } from '../../training/metrics';
 import type { SetPrescription, WeekPlan } from '../../training/types';
-import type { SessionType, SetRole } from '../../training/vocabulary';
+import type { SessionType, SetRole, WeekKind } from '../../training/vocabulary';
 import { SUMMARY_MAX } from './brief';
 import type { Finding } from './brief';
 import { evaluateCycle, racePaceTarget, strengthTarget } from './cycle';
@@ -344,6 +344,52 @@ describe('evaluateCycle', () => {
 		expect(review.fatigue.deloadPlanned).toBe(true);
 		expect(review.deloadNeed.reasons).toContain(
 			'Your next block already opens with a lighter week'
+		);
+	});
+
+	it('flags a recovery week already planned to open the next block as a lighter week', () => {
+		const review = evaluateCycle(
+			input(block(), {
+				next: {
+					name: 'Block 2',
+					phase: 'intensification',
+					startsOn: addDays(END, 1),
+					firstWeekKind: 'recovery'
+				}
+			})
+		);
+		expect(review.fatigue.deloadPlanned).toBe(true);
+		expect(review.deloadNeed.reasons).toContain(
+			'Your next block already opens with a lighter week'
+		);
+	});
+
+	it('counts a recovery week in the block as a lighter week, so no "without a lighter week" reason', () => {
+		// Five accumulation weeks with no light week is the reason's threshold (DELOAD_AFTER_WEEKS).
+		const fiveWeeks = (third: WeekKind): CycleReviewInput['block'] => ({
+			lineage: 'block-1',
+			name: 'Block 1',
+			phase: 'accumulation',
+			weeks: Array.from({ length: 5 }, (_, n) => ({
+				startsOn: addDays(MONDAY, 7 * n),
+				kind: n === 2 ? third : 'accumulation',
+				targets: TARGETS
+			}))
+		});
+		const more = {
+			today: addDays(MONDAY, 35),
+			next: {
+				name: 'Block 2',
+				phase: 'intensification' as const,
+				startsOn: addDays(MONDAY, 35),
+				firstWeekKind: 'intensification' as const
+			}
+		};
+		const without = evaluateCycle(input(block(), { ...more, block: fiveWeeks('accumulation') }));
+		expect(without.deloadNeed.reasons).toContain('5 weeks without a lighter week');
+		const withRecovery = evaluateCycle(input(block(), { ...more, block: fiveWeeks('recovery') }));
+		expect(withRecovery.deloadNeed.reasons.some((r) => r.includes('without a lighter week'))).toBe(
+			false
 		);
 	});
 
