@@ -80,7 +80,7 @@ h2,
 h3,
 h4 {
 	font-family: var(--font-display);
-	font-weight: var(--weight-bold);
+	font-weight: var(--weight-medium);
 	letter-spacing: var(--tracking-tight);
 	line-height: var(--leading-snug);
 	text-wrap: balance;
@@ -131,14 +131,13 @@ p {
 }
 
 /*
- * Numerals. `.numeric` = clean proportional lining figures for standalone values (weights,
- * scores). `.tabular` = tabular figures for anything that updates in place or aligns in
- * columns (timers, set tables); Mona's tabular set carries a slashed zero by design.
+ * Numerals. Every number, time, unit and stat is Geist Mono (`--font-numeric`). `.numeric` =
+ * the standalone value (weights, scores, hero numerals). `.tabular` = anything that updates in
+ * place or aligns in columns (timers, set tables); a monospace face is tabular by nature.
  */
 .numeric {
 	font-family: var(--font-numeric);
 	font-variant-numeric: lining-nums proportional-nums;
-	letter-spacing: var(--tracking-tight);
 }
 
 .tabular {
@@ -146,10 +145,16 @@ p {
 	font-variant-numeric: lining-nums tabular-nums;
 }
 
+/*
+ * The label style (docs/design-system.md#labels). Authored in lowercase and kept lowercase: the
+ * text-transform lowercases any copy, so no string changes. Variants: accent, secondary.
+ */
 .eyebrow {
-	font-size: var(--text-2xs);
-	font-weight: var(--weight-semibold);
-	letter-spacing: var(--tracking-caps);
-	text-transform: uppercase;
+	font-family: var(--font-mono);
+	font-size: var(--text-xs);
+	line-height: 16px;
+	font-weight: var(--weight-regular);
+	letter-spacing: var(--tracking-label);
+	text-transform: lowercase;
 	color: var(--color-text-tertiary);
 }

@@ -322,13 +322,13 @@ test('stopped at schedule: a new browser context picks up there, from /onboardin
 		expect(await audit(again)).toEqual([]);
 		await again.evaluate(() => document.documentElement.removeAttribute('data-theme'));
 		await captureScreen(again, testInfo, 'onboarding-resume');
-		// The card: 20 px corners, flat on the page.
+		// The card: 4 px corners (--radius-lg), flat on the page.
 		expect(
 			await card.evaluate((el) => {
 				const style = getComputedStyle(el);
 				return { radius: style.borderTopLeftRadius, raised: style.boxShadow !== 'none' };
 			})
-		).toEqual({ radius: '20px', raised: false });
+		).toEqual({ radius: '4px', raised: false });
 
 		await card.getByRole('link', { name: 'Pick up there' }).click();
 		await expect(again).toHaveURL('/onboarding/schedule');

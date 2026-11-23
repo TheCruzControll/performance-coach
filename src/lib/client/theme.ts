@@ -5,7 +5,7 @@
  */
 import { preferences, type ThemePreference } from './preferences.svelte.ts';
 
-const THEME_COLORS = { dark: '#0a0a0b', light: '#f4f4f0' } as const;
+const THEME_COLORS = { dark: '#0c0b09', light: '#f5f2ea' } as const;
 
 let systemScheme: MediaQueryList | undefined;
 const followSystem = () => applyTheme('system');

@@ -101,15 +101,20 @@ test.describe('platform: health, PWA, observability', () => {
 		expect(outcome).toMatch(/^blocked:script-src/);
 	});
 
-	test('preloads one font file, the Mona Sans latin face', async ({ page }) => {
-		// Hubot Sans (headings) loads when a heading uses it (src/lib/ui/fonts.ts).
+	test('preloads two font files, the Geist and Geist Mono latin faces', async ({ page }) => {
+		// The latin-ext files wait for their unicode-range (src/lib/ui/fonts.ts).
 		for (const path of ['/', '/today']) {
 			await page.goto(path);
 			const fonts = page.locator('link[rel="preload"][as="font"]');
-			await expect(fonts, path).toHaveCount(1);
-			await expect(fonts, path).toHaveAttribute(
-				'href',
-				/mona-sans-latin-wght-normal\.[\w-]+\.woff2$/
+			await expect(fonts, path).toHaveCount(2);
+			const hrefs = await fonts.evaluateAll((links) =>
+				links.map((link) => link.getAttribute('href') ?? '')
+			);
+			expect(hrefs, path).toEqual(
+				expect.arrayContaining([
+					expect.stringMatching(/geist-latin-wght-normal\.[\w-]+\.woff2$/),
+					expect.stringMatching(/geist-mono-latin-wght-normal\.[\w-]+\.woff2$/)
+				])
 			);
 		}
 	});

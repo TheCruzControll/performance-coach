@@ -39,9 +39,23 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
 - **environment.md has seven accepted gaps**, listed in `scripts/docs-known-gaps.json`: five
   variables without a row and two rows that are not schema keys. The docs tests stay lenient
   until these are closed.
+- **The app icons and favicon still use the old lime and canvas.** `static/favicon.svg`,
+  `static/icons/*.svg` and the PNGs in `static/icons/` carry the volt lime `#c8f031`.
+  `favicon.svg` and `icons/icon.svg` also keep the old canvas `#0a0a0b`, while the theme colour and
+  manifest now follow the new canvas `#0c0b09`. The in-app brand mark (`static/brand/mark-arc.svg`,
+  `--color-accent`) is amber, so it no longer matches them either. Closes when an icons row
+  regenerates them with `pnpm icons` and the mark is decided.
+- **Components still set uppercase.** Badge, Stat, TextField and 19 other files still set
+  `text-transform: uppercase`, so their labels render in capitals, not the lowercase
+  label style of the Instrument design (docs/design-system.md, Labels). Closes when ui/02 rebuilds
+  them on the label style.
 
 ## Verification gaps
 
+- **The new fonts' CLS is not re-measured.** Geist and Geist Mono, with their metric-matched
+  fallbacks, replace Mona Sans and Hubot Sans. The CLS of the audited routes has not been measured
+  on them, so the expected value of about 0 is unproven. Closes when the routes in
+  docs/performance.md are measured again.
 - **M4 is not signed off.** The owner's screenshot review is pending and the real-device
   checklist's workout item (docs/testing.md, item 8) has not been run.
 - **Glass effects are judged only on a real device.** Neither browser paints `backdrop-filter` in
