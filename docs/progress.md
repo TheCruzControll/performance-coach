@@ -55,6 +55,8 @@ runs the criteria and updates milestones.md.
 
 ## In flight
 
+- **Weight tracking, started.** The trend, weekly rate, stats and log book are in the domain
+  (`src/lib/domain/analytics/weight.ts`). The data, goal, coach and screen slices come next.
 - **M7, re-sliced.** On 2026-11-22 the parked M7 pull requests were re-sliced into 38 `m7r/`
   rows in `plan/m7-reslice.md`. By the end of that day every row that does not wait on m7r/03
   had merged, along with m7/47 to m7/51. That covers the generator's stages and season, Train's
