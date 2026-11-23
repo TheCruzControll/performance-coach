@@ -8,7 +8,7 @@ import { PROFILE_APPLIERS } from './profile';
 import { PROGRAM_APPLIERS } from './program';
 import { PROGRAM_CREATE_APPLIERS } from './program-create';
 import { SESSION_APPLIERS } from './session';
-import type { Appliers } from './types';
+import { unavailable, type Appliers } from './types';
 
 export { ApplierUnavailableError } from './types';
 export type { Applier, Appliers, ApplyInput, ApplyOutcome } from './types';
@@ -18,5 +18,7 @@ export const APPLIERS: Appliers = {
 	...PROGRAM_CREATE_APPLIERS,
 	...NEXT_CYCLE_APPLIERS,
 	...PROFILE_APPLIERS,
-	...SESSION_APPLIERS
+	...SESSION_APPLIERS,
+	// m7r/32 applies an accepted re-plan; until then accepting one is refused and writes nothing.
+	replan: unavailable('replan')
 };

@@ -330,7 +330,7 @@ The changes proposed to the owner, by you or by a review's rules, and what becam
     - `untrusted_text` (string, required)
     - `truncated` (`true`)
   - `appliedVersion` (integer | null, required)
-  - `supersededReason` (`"program_changed"` | `"revised"` | `"review_refreshed"` | `"folded_into_review"` | `"sessions_passed"` | `"cycle_planned"` | null, required)
+  - `supersededReason` (`"program_changed"` | `"revised"` | `"review_refreshed"` | `"folded_into_review"` | `"sessions_passed"` | `"cycle_planned"` | `"profile_changed"` | `"plan_changed"` | `"start_passed"` | null, required)
   - `createdAt` (string (date-time), required)
   - `decidedAt` (string (date-time) | null, required)
   - `decisionNote` (object | null, required)

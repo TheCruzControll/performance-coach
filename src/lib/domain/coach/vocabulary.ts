@@ -109,7 +109,11 @@ export const SUPERSEDED_REASON_LABEL = {
 	review_refreshed: 'Replaced by a refreshed review',
 	folded_into_review: 'Folded into your cycle review',
 	sessions_passed: 'Some sessions have passed',
-	cycle_planned: 'Your next block is already planned'
+	cycle_planned: 'Your next block is already planned',
+	// M7's re-plans, found stale at accept (services/coach/apply/replan.ts).
+	profile_changed: 'Your profile changed since',
+	plan_changed: 'Your plan would come out differently now',
+	start_passed: 'Its start date has passed'
 };
 export type SupersededReason = keyof typeof SUPERSEDED_REASON_LABEL;
 export const SUPERSEDED_REASONS = keysOf(SUPERSEDED_REASON_LABEL);
