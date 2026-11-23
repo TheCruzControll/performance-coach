@@ -243,6 +243,22 @@
 	}
 
 	/*
+	 * v2/02b keeps the logger's stepper text at its pre-v2 size until v2/10 (docs/known-issues.md).
+	 * A 390 px phone gives the logger 350 px, under the 22 rem row below, so the value would stack at
+	 * 64 px and the label at 15 px: about 16 px more per stepper. The caption is 18 px tall, as the
+	 * 12 px label was; a 56 px value at line-height 1 is the 64 px box it was. The 22 rem row below
+	 * still sets 32 px, and it comes later, so it wins where it applies.
+	 */
+	.steppers :global(.stepper > .label) {
+		font: var(--type-caption);
+	}
+
+	.steppers :global(.value) {
+		font-size: var(--text-5xl);
+		line-height: 1;
+	}
+
+	/*
 	 * Below 640 px each stepper is one row where the logger has room for it (the label beside the
 	 * controls, the hint under both), so the logger stays short in the thumb zone; at a larger text
 	 * size it has none, and they stack as usual. Here rather than in NumberStepper, so no other

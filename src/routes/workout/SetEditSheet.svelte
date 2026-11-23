@@ -234,6 +234,20 @@
 	}
 
 	/*
+	 * v2/02b keeps the stepper text at its pre-v2 size here too, until v2/10: under the 21 rem row
+	 * below (a 375 px phone) the value would stack at 64 px and the label at 15 px. The 21 rem row
+	 * still sets 32 px, and it comes later, so it wins where it applies.
+	 */
+	.fields :global(.stepper > .label) {
+		font: var(--type-caption);
+	}
+
+	.fields :global(.value) {
+		font-size: var(--text-5xl);
+		line-height: 1;
+	}
+
+	/*
 	 * Each stepper on one row where the sheet has room (the label beside the controls, the hint
 	 * under both), as the logger's are on a phone, so the whole set fits without scrolling; at a
 	 * larger text size they stack as usual.
