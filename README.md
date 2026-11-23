@@ -35,6 +35,15 @@ log every set and talk to the coach.
 > 400s that failed every production turn. The owner's screenshot review (#405) is still open, as a
 > review after launch rather than a merge gate; `LLM_PROVIDER=off` switches the coach off again
 > ([docs/environment.md](docs/environment.md)).
+>
+> **Milestone 6 — Analytics & reviews is in progress**: the Progress tab has strength, running and
+> general dashboards, exercise detail and weekly and cycle reviews, merged as 61 slice PRs (#119 to
+> #482). A weekly review proposes next week's changes, which you accept, change or reject, and a
+> cycle review generates the next block, which you choose when to start. The coach writes up each
+> review in a hidden thread. Open: the overview at 'all' has a median of 192 ms against a 150 ms
+> target, and the performance slice was closed unmerged, so Progress and the reviews have no
+> main-thread or Lighthouse budget yet ([docs/milestones.md](docs/milestones.md),
+> [docs/performance.md](docs/performance.md)).
 
 ## Stack
 

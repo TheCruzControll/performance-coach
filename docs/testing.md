@@ -1445,6 +1445,72 @@ conversation 2 assumes the model drafts a proposal rather than calling `substitu
 conversation 1 that the answer quotes the month's top bench set. Not yet run against the real
 model.
 
+## Analytics and reviews (M6)
+
+This is the M6 test inventory, by layer, so each claim in milestones.md can be traced to a file.
+Counts are test files. Performance is not in CI (see "CI"), so the M6 screens have no performance
+test on `main`; the numbers in docs/performance.md come from the runs it names.
+
+### Domain and components (unit)
+
+- `src/lib/domain/analytics/*.test.ts` (13 files): the periods and windows, the metric catalogue,
+  the strength, running, adherence, workload, prescribed-versus-actual and weight figures, the
+  weight goal, the strength-week rollups, and the trend classifier. Trend verdicts are tested on
+  synthetic series: 12 weeks around 100 with uniform ±3 % noise, and a flat series with normal
+  noise, which is not called a trend.
+- `scripts/analytics-client-imports.test.ts`: only the client-safe modules of the analytics domain
+  reach the browser. It walks the runtime imports with `scripts/import-graph.ts`.
+- `scripts/chart-body-imports.test.ts`: a chart body is imported only by the SSR-guarded registry
+  (`src/lib/ui/charts/bodies.ts`), and only through `import()`.
+- `src/lib/ui/charts/*.test.ts` (6 files): the chart geometry, scales, palette, line and bar models,
+  and the focus ring.
+- `src/lib/domain/programming/review/*.test.ts` (6 files), `next-block/*.test.ts` (4 files),
+  `progression.test.ts`, `periodisation/deload.test.ts` and `periodisation/replan.test.ts`: the
+  review snapshot, the weekly and cycle reviews, the next-week and cycle directives, the
+  progression steps, and the next block's input, dates and generator.
+- `src/lib/server/services/analytics/format.test.ts` and
+  `src/lib/server/services/reviews/store.test.ts`.
+- `src/routes/api/reviews/narrate/config.test.ts`: the write-up endpoint may run as long as a coach
+  turn, and a turn stops before that limit.
+
+### Integration (real Postgres)
+
+- `tests/integration/analytics/` (11 files): the fact queries (completed, undeleted workouts only),
+  the muscle-group targets read from each block's stored input, the strength-week rollups, the
+  strength, running and general dashboards, the overview, the exercise analytics, and the fixtures.
+- `tests/integration/reviews/` (16 files): the review schema and store, weekly and cycle reviews,
+  superseded revisions, the deload that is proposed again, the weekly conflicts, the next-week and
+  next-cycle proposals, the cycle review's screen, the write-up (`narrate.test.ts`) and the write-up
+  load.
+- `tests/integration/coach/analytics-parity.test.ts`: the coach's records and analytics tools return
+  the same figures as the screens, because they call the same functions.
+
+### End to end (Playwright, serial)
+
+- The journeys, `e2e/journey-weekly-review.serial.e2e.ts` and `e2e/journey-cycle-review.serial.e2e.ts`,
+  each on an iPhone and in a desktop window (`e2e/desktop.ts`, `DESKTOP`). The weekly one runs a
+  logged week to Today's review, the decision on next week, Train's notice and History. The cycle
+  one runs the end of a block to its cycle review, the next block, Train's week 1, History and the
+  coach inbox.
+- The Progress views: `progress.serial`, `progress-strength`, `progress-running`,
+  `progress-general`, `progress-exercise` and `exercise-trends-link`. The figures are checked
+  against the SQL oracles in `e2e/oracles/strength.ts`, and axe is clean in both themes on each
+  view. `offline.e2e.ts` checks Progress's designed offline state.
+- The reviews: `reviews`, `reviews-sections`, `review-entry`, `review-next-week`,
+  `review-narrative`, `review-proposal-origin`, `cycle-review`, `next-cycle` and
+  `train-review-notice`.
+- The seeding route: `e2e/analytics-support.ts` posts to `/api/test-support/analytics`, and
+  `e2e/analytics-support.selftest.serial.e2e.ts` checks that seeding. `e2e/review-support.ts` seeds
+  a review scenario through that route, at dates the server works out from the owner's today.
+
+### Query plans and budgets
+
+- `pnpm db:explain` (`scripts/explain/analytics.cases.ts`, `analytics-dataset.ts` and `page-load.ts`)
+  explains the M6 fact and review queries on two years of data, and times the page loads with
+  serialisation. A median over 300 ms or page data over 32 KB gzip fails the run. Its unit tests are
+  `scripts/explain/analytics-dataset.test.ts` and `scripts/explain/page-load.test.ts`.
+- `pnpm budgets` checks each M6 route's initial JS and route CSS (docs/performance.md, "Budgets").
+
 ## CI
 
 `.github/workflows/ci.yml` runs on every pull request and every push to `main`: lint, type-check, the

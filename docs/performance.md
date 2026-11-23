@@ -686,6 +686,94 @@ live run has recorded `cache_read_input_tokens` or real TTFT.
   The seeding failure was fixed in 61d467b9, with #395; no inbox audit number has been recorded
   since.
 
+## M6 (analytics and reviews) — measured 2026-11-23
+
+Every number here comes from a CI run, the budget script's output, or the explain report that CI
+keeps for a pull request run, each named below. Nothing was measured for this section, and nothing
+comes from the performance slice that was closed unmerged (m6/59). Each figure is for the head
+named with it.
+
+- **Budgets** (`pnpm build && pnpm budgets`): the "Build (Vercel + Node) & budgets" job of push run
+  [45222564000](https://github.com/TheCruzControll/performance-coach/actions/runs/45222564000), job
+  137860447501, on `33daa812`, which is `main` at the merge of #618. It ran at 16:59 UTC on
+  2026-11-23.
+- **Page loads and query plans** (`pnpm db:explain`): the `explain-45220282661` artifact of pull
+  request run [45220282661](https://github.com/TheCruzControll/performance-coach/actions/runs/45220282661),
+  on commit `57526c1`. That commit is GitHub's merge of `3b74a2a1` into `4fd47ba7`, so it is
+  `main` at `4fd47ba7` with a pull request on top, not the current `main`. It ran at 16:46 UTC on
+  2026-11-23 on CI's runner (AMD EPYC 9V74 80-Core Processor × 4, Linux) against Postgres 18.7.
+  The push run on `33daa812` skipped the query-plan job as a light run (docs/testing.md, "CI"), so
+  no explain run exists for `main`'s current head. The explain run has not been repeated here.
+
+### Route budgets and runways
+
+| Route                             | Initial JS (gzip) | Of which awaited by `load` | Route CSS (gzip) | Status |
+| --------------------------------- | ----------------: | -------------------------: | ---------------: | :----: |
+| `/(app)/progress/reviews/[[key]]` |           60.8 KB |                     6.5 KB |          12.4 KB |  pass  |
+| `/(app)/progress`                 |           57.2 KB |                     4.1 KB |          14.1 KB |  pass  |
+| `/(app)/progress/exercises/[id]`  |           54.2 KB |                          – |          13.2 KB |  pass  |
+
+Limits: initial JS ≤ 62 KB, route CSS ≤ 14.5 KB, preloaded fonts ≤ 2.
+
+- The heaviest route's initial JS is `/(app)/progress/reviews/[[key]]` at 60.8 KB, 1.2 KB under the
+  limit. The M6 plan set 60 KB, which this route is 0.8 KB over.
+- The heaviest route CSS is `/(app)/today` at 14.2 KB, 0.3 KB under the limit. `/(app)/progress`
+  is at 14.1 KB.
+- The whole build's CSS is 91.3 KB across 162 files, and no route loads all of it. The service
+  worker's precache is 280 files, 1,074.2 KB decoded (475.6 KB gzip), within 300 files and 1,100 KB.
+- Every route passes, and the script ends with "budgets: all within budget".
+- The budget output reports per route, not per chart chunk, so chart chunk sizes are not recorded.
+
+### Two-year page loads, server time and page data
+
+The analytics owner (`scripts/explain/analytics-dataset.ts`) has two years of history to
+2026-10-14, with the strength week rollups for 105 closed weeks. Each load runs 3 warm-ups and then
+15 timed runs, with devalue's serialisation included. The target is 150 ms, and a median over
+300 ms or page data over 32 KB gzip fails the run. These are the gated loads from the M6 analytics
+section of the report:
+
+| Load                                                  |   Median |      p95 | Against 150 ms | Page data, gzip (raw) |
+| ----------------------------------------------------- | -------: | -------: | :------------: | --------------------: |
+| `/progress` overview, all                             | 192.0 ms | 204.9 ms |      over      |     10.2 KB (37.6 KB) |
+| `/progress` strength, all                             |  72.5 ms |  76.4 ms |     within     |     12.4 KB (45.0 KB) |
+| `/progress` running, all                              |  62.6 ms |  87.4 ms |     within     |      6.5 KB (25.9 KB) |
+| `/progress` general, all                              |  82.3 ms |  95.2 ms |     within     |     16.4 KB (62.7 KB) |
+| `/progress` overview, 12 weeks                        |  94.0 ms | 101.4 ms |     within     |      7.4 KB (25.8 KB) |
+| `/progress` strength, 12 weeks                        |  57.1 ms |  64.4 ms |     within     |      9.2 KB (31.1 KB) |
+| `/progress` running, 12 weeks                         |  19.1 ms |  23.0 ms |     within     |      4.4 KB (15.4 KB) |
+| `/progress` general, 12 weeks                         |  23.6 ms |  24.5 ms |     within     |      8.6 KB (30.3 KB) |
+| `/progress/reviews/w-2026-10-05`, the weekly review   |  56.2 ms |  96.3 ms |     within     |      9.5 KB (30.2 KB) |
+| The cycle review, with the next block for each start  |  85.8 ms |  95.6 ms |     within     |     13.5 KB (56.5 KB) |
+| `/progress/exercises/[id]`, the most-logged lift, all | 116.4 ms | 141.1 ms |     within     |      8.8 KB (26.2 KB) |
+
+- One of the eleven gated loads is over the 150 ms target: `/progress` overview at 'all', with a
+  median of 192.0 ms. The other ten are within it, and all eleven are under the 300 ms bar.
+- The largest page data is 16.4 KB gzip (general, all), against the 32 KB cap.
+- Four more loads were recorded without a gate, for the reads before the strength week rollups
+  (commit `29e22a91`, on `main`). Each summed every week from the facts: the overview at 'all' took
+  271.7 ms (p95 287.4 ms), the strength view at 'all' 246.2 ms (281.1 ms), the overview at 12 weeks
+  123.9 ms (171.8 ms), and the strength view at 12 weeks 167.6 ms (191.9 ms).
+- The first write of the 105 closed weeks' rollups took 279 ms, and none of them was split.
+
+Plans, indexes and buffers are in the artifact's `## M6 analytics` section, which lists each
+builder's plan with its index, nodes, time and buffers. For example, `setFacts` for 12 weeks is an
+aggregate over a hash join of `set_records` and `workouts`, with 93 buffers hit and none read, in
+4.6 ms. The whole report has 147 passing gates and none failing.
+
+### Not measured on `main`
+
+- Main-thread blocking at 4× CPU, and Lighthouse on mobile and desktop, for the Progress, exercise
+  detail and review screens. The perf project and Lighthouse run locally only (docs/testing.md,
+  "CI"). The slice that would have added these screens to them was closed unmerged on 2026-11-22.
+- Real-user numbers for the M6 routes: none is recorded in this section.
+- Chart chunk sizes, as above.
+
+### How to reproduce
+
+- `pnpm build && pnpm budgets`, for the route table and the runways.
+- `pnpm db:setup && pnpm db:explain`, which needs a local Postgres and writes the M6 section of
+  `test-results/explain.md`. The page-load gate is the same as in CI.
+
 ## Budgets (enforced)
 
 `pnpm budgets` (`scripts/check-budgets.ts`) reads the SvelteKit build output and fails CI when a
