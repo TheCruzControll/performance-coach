@@ -256,7 +256,7 @@ describe('getPlacementWhy', () => {
 			const data = program(
 				await loadTrainWeek(owner, { now: NOW, week: null, origin: origin() }, { db })
 			);
-			expect(data.days.flatMap((d) => d.cards.filter((c) => c.why))).toEqual([]);
+			expect(data.noteParts.why).toEqual([]);
 		});
 	});
 
@@ -321,21 +321,20 @@ describe('a priority trade-off', () => {
 				{ now: monday, week: null, origin: origin() },
 				{ db }
 			);
-			const card = program(data).days[0]!.cards[0]!;
-			expect(card.note).toMatchObject({
+			// Monday's Full body: the week's first finding and first why (v2/07, the week's note).
+			const { noteParts } = program(data);
+			expect(noteParts.findings[0]).toMatchObject({
 				label: 'Trade-off, explained',
-				text: expect.stringMatching(
-					/^Trade-off, explained · Heavy lower body the day before hard Muay Thai · /
-				),
+				text: 'Trade-off, explained · Heavy lower body the day before hard Muay Thai',
 				why: expect.stringMatching(
 					/Your strength goal ranks above Muay Thai, so its Full body keeps Monday\.$/
 				)
 			});
 			// With the evaluation context (m7/22), Monday to Wednesday is also three hard days in a
 			// row, which shares the Monday trade-off's sentence.
-			expect(program(data).weekLine).toMatch(/2 trade-offs, explained$/);
-			expect(card.why).toEqual({
-				title: 'Why Monday?',
+			expect(noteParts.summary).toMatch(/2 trade-offs, explained$/);
+			expect(noteParts.why[0]).toEqual({
+				title: 'Why Full body on Monday?',
 				lines: [
 					'Priority trade-off (Programming rules, version 1): Your strength goal ranks above Muay Thai, so its Full body keeps Monday.'
 				]
@@ -351,14 +350,15 @@ describe('a priority trade-off', () => {
 				{ now: monday, week: null, origin: origin() },
 				{ db }
 			);
-			const card = program(data).days[0]!.cards[0]!;
-			expect(card.note).toMatchObject({
+			const { noteParts } = program(data);
+			expect(noteParts.findings[0]).toMatchObject({
 				label: 'Heads-up',
-				text: expect.stringMatching(/^Heads-up · Heavy lower body the day before hard Muay Thai · /)
+				text: 'Heads-up · Heavy lower body the day before hard Muay Thai'
 			});
-			expect(program(data).weekLine).not.toMatch(/trade-off/);
-			// It still says why in the disclosure.
-			expect(card.why?.lines).toEqual([expect.stringMatching(/^Priority trade-off /)]);
+			expect(noteParts.summary).not.toMatch(/trade-off/);
+			// It still says why, in the week's note.
+			const mondayWhy = noteParts.why.find((w) => w.title === 'Why Full body on Monday?');
+			expect(mondayWhy?.lines).toEqual([expect.stringMatching(/^Priority trade-off /)]);
 		});
 	});
 
@@ -370,19 +370,19 @@ describe('a priority trade-off', () => {
 				{ now: monday, week: null, origin: origin() },
 				{ db }
 			);
-			const card = program(data).days[0]!.cards[0]!;
-			expect(card.note).toMatchObject({
+			const { noteParts } = program(data);
+			expect(noteParts.findings[0]).toMatchObject({
 				label: 'Heads-up',
-				text: expect.stringMatching(/^Heads-up · Heavy lower body the day before hard Muay Thai · /)
+				text: 'Heads-up · Heavy lower body the day before hard Muay Thai'
 			});
-			expect(card.why).toBeUndefined();
-			expect(program(data).weekLine).not.toMatch(/trade-off/);
+			expect(noteParts.why.find((w) => w.title === 'Why Full body on Monday?')).toBeUndefined();
+			expect(noteParts.summary).not.toMatch(/trade-off/);
 		});
 	});
 });
 
 describe('Train’s load with the why', () => {
-	it('puts each session’s why on its card, as plain lines, the owner’s move first', async () => {
+	it('puts each session’s why in the week’s note, as plain lines, the owner’s move first', async () => {
 		await withRollback(async (db) => {
 			const { owner, seeded } = await seed(db);
 			const data = program(
@@ -392,21 +392,18 @@ describe('Train’s load with the why', () => {
 					{ db }
 				)
 			);
-			const cards = data.days.flatMap((d) => d.cards);
-			// The cards of the sessions a decision names, and only those, say why.
-			expect(cards.filter((c) => c.why).map((c) => c.title)).toEqual([
-				'Lower A',
-				'Muay Thai class',
-				'Muay Thai class'
-			]);
-			const moved = cards.find((c) => c.lineage === seeded.lineages.moved)!;
-			expect(moved.why!.title).toBe('Why Monday?');
-			expect(moved.why!.lines).toEqual([
+			// The sessions a decision names, and only those, say why: Lower A (moved to Monday, the
+			// week's first line) and the two classes, in the week's order.
+			expect(data.noteParts.why).toHaveLength(3);
+			expect(data.lines[0]!.session?.lineage).toBe(seeded.lineages.moved);
+			const [moved] = data.noteParts.why;
+			expect(moved!.title).toBe('Why Lower A on Monday?');
+			expect(moved!.lines).toEqual([
 				expect.stringMatching(new RegExp(`^Session moved \\(You, version 2\\): ${MOVED_WHY}`)),
 				`Interference avoided (Programming rules, version 1): ${RULE_WHY}`
 			]);
 			// The finding still shows beside it.
-			expect(moved.note?.label).toBe('Heads-up');
+			expect(data.noteParts.findings[0]?.label).toBe('Heads-up');
 		});
 	});
 
@@ -423,13 +420,16 @@ describe('Train’s load with the why', () => {
 						{ db, errorsDb: db, periodisation: { why: { db: broken.db } } }
 					)
 				);
-				const cards = data.days.flatMap((d) => d.cards);
-				expect(cards.filter((c) => c.why)).toEqual([]);
-				expect(data.weekLine).toBe('1 heads-up this week');
-				expect(cards.filter((c) => c.note).map((c) => c.lineage)).toEqual([
-					seeded.lineages.moved,
-					seeded.lineages.hardMuayThai
-				]);
+				expect(data.noteParts.why).toEqual([]);
+				expect(data.noteParts.summary).toBe('1 heads-up this week');
+				// The one finding on the moved session and the class, listed once.
+				expect(data.noteParts.findings).toHaveLength(1);
+				expect(data.noteParts.findings[0]!.text).toBe(
+					'Heads-up · Heavy lower body the day before hard Muay Thai'
+				);
+				expect(data.lines.map((l) => l.session?.lineage)).toEqual(
+					expect.arrayContaining([seeded.lineages.moved, seeded.lineages.hardMuayThai])
+				);
 				const recorded = await findErrorsByRequestId(request.requestId, { db });
 				expect(recorded).toHaveLength(1);
 				expect(recorded[0]).toMatchObject({
@@ -454,7 +454,7 @@ describe('Train’s load with the why', () => {
 					{ db, periodisation: false }
 				)
 			);
-			expect(data.days.flatMap((d) => d.cards.filter((c) => c.why))).toEqual([]);
+			expect(data.noteParts.why).toEqual([]);
 		});
 	});
 
@@ -466,7 +466,7 @@ describe('Train’s load with the why', () => {
 				const data = program(
 					await loadTrainWeek(owner, { now: NOW, week, origin: origin() }, { db })
 				);
-				expect(data.days.length).toBe(7);
+				expect(data.week.planned && data.week.days.length).toBe(7);
 			}
 		});
 	});

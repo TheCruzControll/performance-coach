@@ -391,11 +391,12 @@ The desktop specs (most also run axe and take screenshots in both themes):
   review with the keyboard alone; Back, Skip and Continue in view under the form; no shift between
   steps (card and action row); the offline and no-goal notices in the card above the actions,
   taking focus; the review in two columns, its Edit returning to it.
-- `train-desktop.serial.e2e.ts`: Train wide. Header and strip span the content; the day's sessions
-  sit beside the brief and the tools; arrow keys and Tab across the columns; the plan as a
-  centred dialog. Every designed state: a week loading (`expectNoShift`), a failed load and Try
-  again, offline, no program, rest day, not started, beyond the plan, block complete, and both
-  lazy chunks failing with Retry.
+- `train-desktop.serial.e2e.ts`: Train readable. The top line, the week's lines, its one line
+  and More share the column's left edge, nothing right of it; a line's hover and focus ring, Tab
+  from the arrows through each session to the week's line and More; the plan as a centred dialog.
+  Every designed state at the column's top: a week loading (`expectNoShift`), a failed load and
+  Try again, offline, no program, rest day, not started, beyond the plan, block complete, and both
+  lazy chunks failing with Retry under their rows in More.
 - `train-detail-desktop.serial.e2e.ts`: the session detail (wide: the side column beside the main
   one, centred edit sheets) and History (split: the list beside the version in the URL), with
   every designed state.
@@ -984,27 +985,28 @@ The Train week, the plan overview, session detail and the edit sheets.
   aria-disabled); both pass axe in dark and light. `e2e/a11y-suite.ts` audits the Plan tab in both
   themes.
 - **Train week** (`e2e/train-week.serial.e2e.ts`, Chromium + WebKit, `PROGRAM_TZ`, hybrid and
-  one-week fixtures): sessions on their days, rest day, baseline brief, week navigation with ?week
-  and focus kept (pills, arrows and the state card's link), the pending week (aria-busy, no layout
-  shift), the shell's error view when a week's data answers 500, offline, ?week=99 and ?week=abc,
-  not started, first block complete, no program, 1440 × 900, axe dark and light.
+  one-week fixtures): one line per session on its day, Rest lines, week 1's brief behind the
+  week's one line, the tools behind More, week navigation with ?week and focus kept (arrows, Back
+  to this week and the state's link), the pending week (aria-busy, dimmed, no layout shift), the shell's error view when a week's data answers 500, offline, ?week=99 and ?week=abc,
+  not started, first block complete, no program, 1440 × 900 (the readable column, 60 px lines,
+  More under a hairline), axe dark and light.
   `tests/integration/training/train-load.test.ts`: `loadTrainWeek`'s current and asked weeks,
   malformed ?week, not planned, block complete, no program with an incomplete and a complete
-  profile, the week's words composed on the server, the fail-soft error payload recorded as a server
+  profile, the week's words composed on the server (its place, title, status and lines), the fail-soft error payload recorded as a server
   error, and the whole plan for the plan overview (each block's weeks, this week whatever `?week`
   shows, the outline weeks, and only the served goal's event).
   `tests/integration/training/form-actions.test.ts`: forms/program.ts answers 400 with dotted paths,
   409 with its reason, 404, 400 for malformed JSON and 401 without a session.
 - **Plan overview** (`e2e/train-plan.serial.e2e.ts`, Chromium + WebKit, `PROGRAM_TZ`, hybrid and
-  one-week fixtures): Plan, in ProgramHeader's actions row, opens a sheet that lists every block
+  one-week fixtures): See the whole plan, in Train's More, opens a sheet that lists every block
   with its phase, dates and weeks, with this week marked (`aria-current="date"`, 'This week'). With
   the one-week fixture, the outline's phases reach the event date: each outline week says 'Not
   planned yet' and none is a link, and the dated goal sits in its week as an Event. A tapped week
   closes the sheet and shows on Train through the week change's pending state. Close and Escape give
-  the focus back to Plan. The sheet's chunk is not in Train's load, and a tap made before it arrives
-  opens it. With the chunk aborted, 'Couldn't open your plan' offers Retry (≥ 44 px) beside Plan;
-  back online, Retry opens the sheet, in place or by reloading Train with `?tool=plan` (Chromium).
-  At 1440 × 900: Plan's hover and focus states, and the timeline at a readable width with no
+  the focus back to its row in More. The sheet's chunk is not in Train's load, and a tap made
+  before it arrives opens it. With the chunk aborted, 'Couldn't open your plan' offers Retry
+  (≥ 44 px) under its row; back online, Retry opens the sheet, in place or by reloading Train with
+  `?tool=plan` (Chromium). At 1440 × 900: the row's hover and focus states, and the timeline at a readable width with no
   sideways scroll. axe in dark and light with the sheet open. `src/lib/ui/program/timeline.test.ts`
   (unit): `timelineView` lists every block with its dates and length, and its weeks numbered from
   week 1 (Train's `?week`); it names the phase only where the block's name does not already say it,
@@ -1433,9 +1435,9 @@ by integration tests and the three e2e specs below.
 ### End to end (Playwright, serial)
 
 - `e2e/train-findings.serial.e2e.ts`: the periodisation week on Train. The heads-up on the moved
-  card and on Tuesday's matches the evaluation computed in SQL (`e2e/periodisation-support.ts`,
-  `weekEvaluation`), 'No clashes this week' shows when there are none, and it works without
-  JavaScript. It runs on the iPhone, and one test in a desktop window (`DESKTOP`).
+  session and on Tuesday's, listed once behind the week's one line, matches the evaluation computed
+  in SQL (`e2e/periodisation-support.ts`, `weekEvaluation`), 'No clashes this week' shows when there
+  are none, and it works without JavaScript. It runs on the iPhone, and one test in a desktop window (`DESKTOP`).
 - `e2e/design-program.e2e.ts`: the week finding and 'Why Saturday?' on `/design` → Plan.
 - `e2e/reviews-sections.serial.e2e.ts`: the hard sparring's conflict in a weekly review shows its
   why, judged by M7's evaluator.

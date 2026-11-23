@@ -16,7 +16,13 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { longDate } from '../src/lib/ui/program/words';
 import { DESKTOP, expectNoSideScroll } from './desktop';
-import { PROGRAM_TZ, seedProgram, type SeededProgram, type SeededSession } from './program-support';
+import {
+	PROGRAM_TZ,
+	seedProgram,
+	sessionLine,
+	type SeededProgram,
+	type SeededSession
+} from './program-support';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -101,14 +107,10 @@ test.describe('a program that starts next week', () => {
 	const titled = (title: string, n = 0): SeededSession =>
 		seeded.sessions.filter((s) => s.title === title)[n]!;
 	const open = (session: SeededSession) => `/train/session/${session.lineage}`;
-	/** Train on the session's day: its cards. */
+	/** Train's line for the session, on its day. */
 	async function trainCard(page: Page, session: SeededSession) {
 		await gotoHydrated(page, '/train');
-		await page
-			.getByTestId('week-strip')
-			.getByRole('radio', { name: new RegExp(`^${longDate(session.date)}\\b`) })
-			.click();
-		return page.getByTestId('session-card').filter({ hasText: session.title });
+		return sessionLine(page, session.title, session.date);
 	}
 
 	test.beforeEach(async ({ request }) => {
@@ -195,7 +197,10 @@ test.describe('a program that starts next week', () => {
 		await expect(facts(page).first()).toHaveText(/^Duration\s*60\s*min\s*$/);
 		expect(await ownerDecisions()).toMatchObject([{ number: 2, kind: 'prescription_adjusted' }]);
 
-		await expect(await trainCard(page, thai)).toContainText('Muay Thai · 60 min');
+		await expect(await trainCard(page, thai)).toHaveAttribute(
+			'aria-label',
+			`${longDate(thai.date)}, Muay Thai class, 60 min`
+		);
 		await gotoHydrated(page, open(thai));
 		await expect(facts(page).first()).toHaveText(/^Duration\s*60\s*min\s*$/);
 	});
@@ -242,7 +247,9 @@ test.describe('a program that starts next week', () => {
 			{ number: 2, status: 'skipped' }
 		]);
 
-		await expect(await trainCard(page, easy)).toContainText('Skipped');
+		const line = await trainCard(page, easy);
+		await expect(line).toContainText('Skipped');
+		await expect(line).toHaveAttribute('data-status', 'skipped');
 		await gotoHydrated(page, open(easy));
 		await expect(page.getByTestId('session-skipped')).toBeVisible();
 	});

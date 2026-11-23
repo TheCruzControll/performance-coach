@@ -19,7 +19,7 @@ import { DB_NAME, STORES } from '../src/lib/client/workout/names';
 import type { StartKit, SyncResponse } from '../src/lib/domain/workout';
 import { createMutation } from '../src/lib/domain/workout/mutations';
 import { DESKTOP, expectNoSideScroll } from './desktop';
-import { PROGRAM_TZ, seedProgram, type SeededProgram } from './program-support';
+import { openMore, PROGRAM_TZ, seedProgram, type SeededProgram } from './program-support';
 import { captureScreen, gotoHydrated, query, resetTrainingProfile, SAME_ORIGIN } from './support';
 import { historyAfterDone, readOutbox } from './workout-support';
 
@@ -228,6 +228,7 @@ test('Log something else and Train’s Log a session open the ad-hoc options', a
 	await expect(page.getByTestId('adhoc-other')).toBeVisible();
 
 	await gotoHydrated(page, '/train');
+	await openMore(page);
 	await page.getByTestId('log-a-session').click();
 	await expect(page).toHaveURL(/\/workout$/);
 	await expect(page.getByTestId('adhoc-run')).toBeVisible();

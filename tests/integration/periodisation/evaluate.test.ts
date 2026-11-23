@@ -86,12 +86,14 @@ describe('getWeekEvaluation', () => {
 				[moved!]: {
 					tone: 'caution',
 					label: 'Heads-up',
+					headline: 'Heavy lower body the day before hard Muay Thai',
 					text: 'Heads-up · Heavy lower body the day before hard Muay Thai · You moved this here',
 					why: `${WHY} You moved Lower A here from Friday. Moving Lower A to Friday clears this.`
 				},
 				[hardMuayThai!]: {
 					tone: 'caution',
 					label: 'Heads-up',
+					headline: 'Heavy lower body the day before hard Muay Thai',
 					text: 'Heads-up · Heavy lower body the day before hard Muay Thai · After Lower A the day before',
 					why: `${WHY} You moved Lower A here from Friday. Moving Lower A to Friday clears this.`
 				}
@@ -280,9 +282,9 @@ describe('getWeekEvaluation', () => {
 });
 
 describe('Train’s load with the findings', () => {
-	it('puts each note on its card, and the week line on planned weeks still ahead', async () => {
+	it('puts each finding once in the week’s note, and the week line on planned weeks still ahead', async () => {
 		await withRollback(async (db) => {
-			const { owner, seeded } = await seed(db);
+			const { owner } = await seed(db);
 			const load = (week: number | null) =>
 				loadTrainWeek(
 					owner,
@@ -290,16 +292,19 @@ describe('Train’s load with the findings', () => {
 					{ db }
 				).then(program);
 			const moved = await load(FIXTURE_WEEKS.moved);
-			expect(moved.weekLine).toBe('1 heads-up this week');
-			const notes = moved.days.flatMap((d) => d.cards.filter((c) => c.note));
-			expect(notes.map((c) => [c.lineage, c.note!.label])).toEqual([
-				[seeded.lineages.moved, 'Heads-up'],
-				[seeded.lineages.hardMuayThai, 'Heads-up']
+			expect(moved.noteParts.summary).toBe('1 heads-up this week');
+			expect(moved.note).toEqual({ text: '1 heads-up this week', opens: true });
+			// The finding once (v2/07), though it names the moved session and the class, without the
+			// words that place it on either.
+			expect(moved.noteParts.findings).toMatchObject([
+				{ label: 'Heads-up', text: 'Heads-up · Heavy lower body the day before hard Muay Thai' }
 			]);
-			expect((await load(null)).weekLine).toBe('No clashes ahead this week');
-			expect((await load(FIXTURE_WEEKS.clean)).weekLine).toBe('No clashes this week');
-			expect((await load(FIXTURE_WEEKS.past)).weekLine).toBeNull();
-			expect((await load(FIXTURE_WEEKS.outline)).weekLine).toBeNull();
+			expect(moved.noteParts.findings[0]!.why).toMatch(/You moved Lower A here from Friday\./);
+			const line = async (week: number | null) => (await load(week)).noteParts.summary;
+			expect(await line(null)).toBe('No clashes ahead this week');
+			expect(await line(FIXTURE_WEEKS.clean)).toBe('No clashes this week');
+			expect(await line(FIXTURE_WEEKS.past)).toBeNull();
+			expect(await line(FIXTURE_WEEKS.outline)).toBeNull();
 		});
 	});
 
@@ -319,9 +324,9 @@ describe('Train’s load with the findings', () => {
 					)
 				);
 				expect(data.week).toMatchObject({ planned: true, startsOn: seeded.mondays.moved });
-				expect(data.days.flatMap((d) => d.cards).length).toBeGreaterThan(0);
-				expect(data.days.flatMap((d) => d.cards.filter((c) => c.note))).toEqual([]);
-				expect(data.weekLine).toBeNull();
+				expect(data.lines.filter((l) => l.session).length).toBeGreaterThan(0);
+				expect(data.noteParts.findings).toEqual([]);
+				expect(data.noteParts.summary).toBeNull();
 				const recorded = await findErrorsByRequestId(request.requestId, { db });
 				expect(recorded).toHaveLength(1);
 				expect(recorded[0]).toMatchObject({
@@ -347,8 +352,8 @@ describe('Train’s load with the findings', () => {
 				)
 			);
 			expect(data.week).toMatchObject({ startsOn: seeded.mondays.moved });
-			expect(data.days.flatMap((d) => d.cards.filter((c) => c.note))).toEqual([]);
-			expect(data.weekLine).toBeNull();
+			expect(data.noteParts.findings).toEqual([]);
+			expect(data.noteParts.summary).toBeNull();
 		});
 	});
 });

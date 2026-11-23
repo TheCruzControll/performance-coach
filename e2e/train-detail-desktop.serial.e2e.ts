@@ -11,7 +11,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { addDays } from '../src/lib/domain/calendar';
-import { longDate, shortDate } from '../src/lib/ui/program/words';
+import { shortDate } from '../src/lib/ui/program/words';
 import {
 	BELOW_DESKTOP_WIDTH,
 	DESKTOP,
@@ -24,7 +24,13 @@ import {
 	layoutWidth,
 	tokenPx
 } from './desktop';
-import { PROGRAM_TZ, seedProgram, type SeededProgram, type SeededSession } from './program-support';
+import {
+	PROGRAM_TZ,
+	seedProgram,
+	sessionLine,
+	type SeededProgram,
+	type SeededSession
+} from './program-support';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -54,8 +60,6 @@ const list = (page: Page) => page.getByTestId('history-list');
 const versions = (page: Page) => page.getByTestId('version');
 const versionLink = (page: Page, n: number) =>
 	page.getByTestId('version-link').filter({ hasText: new RegExp(`^\\s*Version ${n}\\b`) });
-const dayOf = (page: Page, date: string) =>
-	page.getByTestId('week-strip').getByRole('radio', { name: new RegExp(`^${longDate(date)}\\b`) });
 const save = (dialog: Locator) => dialog.getByTestId('edit-save');
 
 /**
@@ -380,8 +384,7 @@ test.describe('a program that starts next week', () => {
 		}, testInfo) => {
 			const full = titled('Full body');
 			await gotoHydrated(page, '/train?week=2');
-			await dayOf(page, addDays(seeded.weekStart, 10)).click();
-			const easy = cards(page).filter({ hasText: 'Easy run' });
+			const easy = sessionLine(page, 'Easy run', addDays(seeded.weekStart, 10));
 			let release = await hold(page, '**/train/session/*/__data.json*');
 			await easy.click();
 			await expect(easy).toHaveAttribute('aria-busy', 'true');

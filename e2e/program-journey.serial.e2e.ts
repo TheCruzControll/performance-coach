@@ -28,9 +28,16 @@ import { localDay } from '../src/lib/domain/dates';
 import { WEEKDAY_INFO } from '../src/lib/domain/profile/catalog';
 import { BASELINE_INSTRUCTION } from '../src/lib/domain/training/describe';
 import { BASELINE_CALLOUT } from '../src/lib/ui/program/session-words';
-import { longDate, shortDate } from '../src/lib/ui/program/words';
+import { shortDate } from '../src/lib/ui/program/words';
 import { DESKTOP, expectMainCentred, expectNoSideScroll } from './desktop';
-import { PROGRAM_TZ, weekViolations } from './program-support';
+import {
+	dayLines,
+	lineDay,
+	openMore,
+	PROGRAM_TZ,
+	sessionLine,
+	weekViolations
+} from './program-support';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -312,23 +319,12 @@ const versionsOf = (lineage: string) =>
 
 // ---- Screens --------------------------------------------------------------------------------
 
-const cards = (page: Page) => page.getByTestId('session-card');
-const dayOf = (page: Page, date: string) =>
-	page.getByTestId('week-strip').getByRole('radio', { name: new RegExp(`^${longDate(date)}\\b`) });
 const exercise = (page: Page, name: string) =>
 	page.getByTestId('exercise').filter({ has: page.getByRole('heading', { name, exact: true }) });
 const setLines = (page: Page, name: string): Locator =>
 	exercise(page, name)
 		.getByRole('list', { name: `${name}: sets` })
 		.getByRole('listitem');
-
-/** Select `date` on Train's week strip and wait for its sessions. */
-async function showDay(page: Page, date: string) {
-	await dayOf(page, date).click();
-	await expect(page.getByTestId('day-sessions').getByRole('heading').first()).toHaveText(
-		longDate(date)
-	);
-}
 
 test('blank 1RMs: onboarding, a week-1 baseline program built from Today, a move and a one-off swap, all in History and persisted', async ({
 	page
@@ -357,17 +353,23 @@ test('blank 1RMs: onboarding, a week-1 baseline program built from Today, a move
 			['tue', 'evening'],
 			['thu', 'evening']
 		]);
+		// Each day's sessions as its lines, in order; a day with none is one Rest line.
 		for (const date of week) {
-			await showDay(page, date);
 			const planned = sessions.filter((s) => s.date === date);
-			await expect(cards(page).locator('.title')).toHaveText(planned.map((s) => s.title));
-			const lines = cards(page).locator('.line');
-			await expect(lines.filter({ hasText: /^Muay Thai/ })).toHaveCount(
-				classes.some((s) => s.date === date) ? 1 : 0
-			);
-			if (planned.length === 0) await expect(page.getByTestId('rest-day')).toBeVisible();
+			const lines = dayLines(page, date);
+			if (planned.length === 0) {
+				await expect(lines).toHaveCount(1);
+				await expect(lines).toHaveAttribute('data-testid', 'rest-day');
+				await expect(lines).toHaveAttribute(
+					'aria-label',
+					`${lineDay(date, localDay(new Date(), PROGRAM_TZ))}, rest`
+				);
+			} else {
+				await expect(lines.locator('.title')).toHaveText(planned.map((s) => s.title));
+				for (const [i, s] of planned.entries())
+					await expect(lines.nth(i)).toHaveAttribute('href', `/train/session/${s.lineage}`);
+			}
 		}
-		await showDay(page, sessions[0]!.date);
 		await captureScreen(page, testInfo, 'journey-train-week-1');
 		expect(await audit(page), 'Train week 1').toEqual([]);
 
@@ -391,8 +393,7 @@ test('blank 1RMs: onboarding, a week-1 baseline program built from Today, a move
 			new Set(['rpe_based'])
 		);
 
-		await showDay(page, strength.date);
-		await cards(page).filter({ hasText: strength.title }).click();
+		await sessionLine(page, strength.title, strength.date).first().click();
 		await expect(page).toHaveURL(`/train/session/${strength.lineage}`);
 		await page.waitForLoadState('networkidle');
 		await expect(page.getByRole('heading', { level: 1 })).toHaveText(strength.title);
@@ -473,6 +474,7 @@ test('blank 1RMs: onboarding, a week-1 baseline program built from Today, a move
 	await test.step('History lists the move and the swap with their why', async () => {
 		await page.getByTestId('back-to-train').click();
 		await expect(page).toHaveURL(/\/train(\?|$)/);
+		await openMore(page);
 		await page.getByTestId('open-history').click();
 		await expect(page).toHaveURL('/train/history');
 		await page.waitForLoadState('networkidle');
@@ -486,12 +488,8 @@ test('blank 1RMs: onboarding, a week-1 baseline program built from Today, a move
 		await expectHistory();
 
 		await gotoHydrated(page, '/train');
-		await showDay(page, target);
-		await expect(cards(page).filter({ hasText: strength.title })).toContainText(
-			`Moved from ${day(strength.date).short}`
-		);
-		await showDay(page, strength.date);
-		await expect(cards(page).filter({ hasText: strength.title })).toHaveCount(0);
+		await expect(sessionLine(page, strength.title, target)).toHaveAttribute('data-status', 'moved');
+		await expect(sessionLine(page, strength.title, strength.date)).toHaveCount(0);
 
 		await gotoHydrated(page, `/train/session/${strength.lineage}`);
 		await expect(page.getByTestId('session-status')).toHaveText(

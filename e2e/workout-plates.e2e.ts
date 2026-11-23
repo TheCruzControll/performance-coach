@@ -12,6 +12,7 @@ import { PLATES_KEY } from '../src/lib/client/plates';
 import { DB_NAME, STORES } from '../src/lib/client/workout/names';
 import type { StrengthKit } from '../src/lib/domain/workout';
 import { createMutation } from '../src/lib/domain/workout/mutations';
+import { openMore } from './program-support';
 import { captureScreen } from './support';
 import { gotoWorkout, injectMutation, seedWorkout, workoutDay } from './workout-support';
 
@@ -174,6 +175,7 @@ test.describe('the plate calculator from a set (IndexedDB only)', () => {
 		// workout's pending changes (the bar's engine) keeps from happening.
 		await page.goto('/train');
 		await expect(page.locator('[data-testid="resume-slot"][data-looked="/train"]')).toBeAttached();
+		await openMore(page);
 		await page.getByTestId('open-plates').click();
 		await expect(bar(page, '15 kg bar')).toHaveAttribute('aria-checked', 'true');
 		await expect(result(page)).toHaveText(/^20 · 15 · 5 · 2\.5\s*kg per side$/);

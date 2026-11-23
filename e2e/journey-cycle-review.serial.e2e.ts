@@ -10,10 +10,10 @@
  *   Monday, the only start on offer); Train opens its week 1, whose loads read as a share of the
  *   estimated 1RM; History lists version 2 and the previous version 1, read-only; M5's inbox lists
  *   the next_cycle as applied, labelled 'Cycle review'.
- * - Late (block-end-late: the block ended weeks ago, nothing planned since): Train reads 'First
- *   block complete' and leads to the review; the preview names the unplanned weeks; starting this
- *   week creates them and the block from this Monday; Train's previous week reads 'Unplanned week
- *   · between blocks'; the plan timeline labels the bridge with its length.
+ * - Late (block-end-late: the block ended weeks ago, nothing planned since): Train says the
+ *   block is done and leads to the review; the preview names the unplanned weeks; starting this
+ *   week creates them and the block from this Monday; Train's previous week reads 'Free week',
+ *   between blocks; the plan timeline labels the bridge with its length.
  *
  * Steps that depend on the weekday read the dates seedReview returns, never the clock. Nothing
  * here holds a request, so the service worker stays on (WebKit's page.route trap does not apply).
@@ -147,12 +147,12 @@ async function onTime(page: Page, seeded: SeededReview, testInfo: TestInfo) {
 	await newBlock.locator('a[data-testid="plan-week"]').first().click();
 	await expect(page).toHaveURL(new RegExp(`/train\\?week=${weekNumber(cycle, next)}$`));
 	const strength = await firstStrength(seeded.programId!, 2, next);
-	await page
-		.getByTestId('week-strip')
-		.getByRole('radio')
-		.nth(daysBetween(next, strength.date))
-		.click();
+	// The week's lines link each session: no day to pick first.
 	await expect(page.locator(`a[href="/train/session/${strength.lineage}"]`)).toBeVisible();
+	await expect(page.locator(`a[href="/train/session/${strength.lineage}"]`)).toHaveAttribute(
+		'data-date',
+		strength.date
+	);
 	await capture(page, testInfo, '4-train-week-1');
 	await page.locator(`a[href="/train/session/${strength.lineage}"]`).click();
 	await expect(page).toHaveURL(new RegExp(`/train/session/${strength.lineage}$`));
@@ -244,7 +244,8 @@ async function late(page: Page, seeded: SeededReview, testInfo: TestInfo) {
 
 	// Train's previous week: a bridge week, never seven rest days.
 	await gotoHydrated(page, `/train?week=${weekNumber(cycle, thisMonday) - 1}`);
-	await expect(page.getByTestId('train-bridge')).toContainText('Unplanned week · between blocks');
+	await expect(page.getByTestId('train-bridge')).toContainText('Free week');
+	await expect(page.getByTestId('program-position')).toHaveText('Between blocks');
 	await expect(page.getByTestId('rest-day')).toHaveCount(0);
 	await capture(page, testInfo, 'late-4-train-bridge-week');
 }

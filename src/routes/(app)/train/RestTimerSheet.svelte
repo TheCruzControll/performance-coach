@@ -64,13 +64,17 @@
 		if (rest) keep(change(rest, Date.now()));
 	};
 
-	/** Skip, or Dismiss once over: the focus moves on to what starts the next rest. */
+	/** Skip, or Dismiss once over: the focus moves on to what starts the next rest, or to More when
+	 * its list, which holds that row, is closed. */
 	async function clear() {
 		keep(null);
 		await tick();
+		const row = document.querySelector<HTMLElement>('[data-testid="open-rest-timer"]');
 		const next = open
 			? presets?.querySelector('button')
-			: document.querySelector<HTMLElement>('[data-testid="open-rest-timer"]');
+			: row?.checkVisibility?.()
+				? row
+				: document.querySelector<HTMLElement>('[data-testid="open-more"]');
 		next?.focus();
 	}
 

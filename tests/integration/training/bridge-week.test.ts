@@ -80,24 +80,28 @@ describe('a bridge week', () => {
 				const view = await train(db, owner, now);
 				expect(view.card).toMatchObject({
 					id: 'train-bridge',
-					title: 'Unplanned week · between blocks',
-					next: { title: 'See your next block', subtitle: 'Build · Week 8', to: { week: 8 } }
+					title: 'Free week',
+					next: { title: 'See the next block', to: { week: 8 }, style: 'row' },
+					bare: false
 				});
-				expect(view.card!.description).toMatch(/^Your next block starts Mon 23 Nov\./);
+				expect(view.card!.description).toBe(
+					'Build starts Monday 23 November. Train as you like, and what you log counts as off plan.'
+				);
+				expect(view.position).toBe('Between blocks');
 				// Never seven rest days.
-				expect(view.strip).toEqual([]);
-				expect(view.days).toEqual([]);
+				expect(view.lines).toEqual([]);
 				// Nothing to add to: no day of a bridge week takes a session.
 				expect(view.addable).toEqual([]);
-				const day = today === MONDAY ? 'Mon 16 Nov' : 'Wed 18 Nov';
+				const [day, date] =
+					today === MONDAY ? ['Mon', 'Monday 16 November'] : ['Wed', 'Wednesday 18 November'];
 				expect(view.offPlan).toEqual([
 					{
-						id: expect.any(String),
+						date: today,
+						day,
 						title: 'Easy run',
-						status: 'completed',
-						statusWords: 'Off-plan',
-						line: `${day} · 30 min`,
-						tone: 'running'
+						when: 'today',
+						end: { text: '30 min' },
+						name: `${date}, Easy run, 30 min`
 					}
 				]);
 			});
@@ -110,8 +114,8 @@ describe('a bridge week', () => {
 			const view = await train(db, owner, now, String(BUILD_WEEK));
 			expect(view.card).toBeNull();
 			expect(view.offPlan).toEqual([]);
-			expect(view.position).toBe('Build · Week 8 of 11');
-			expect(view.days[0]!.cards.map((c) => c.title)).toEqual(['Strength A']);
+			expect(view.position).toBe('Week 8 of 11 · Build');
+			expect(view.lines[0]).toMatchObject({ day: 'Mon', title: 'Strength A' });
 		});
 	});
 

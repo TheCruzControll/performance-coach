@@ -4,9 +4,11 @@
  * before it arrives still opens the sheet, and that a failed fetch has a designed Retry state
  * that recovers: in place, or through a reload of Train when the failure persists online. The
  * shell spec covers the calculator itself (stepper, units, Escape, focus return, ?tool=plates).
+ * Its row is in Train's More, which ?tool=plates opens too, so a failure there shows under it.
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type APIResponse, type Page, type Route } from '@playwright/test';
+import { openMore } from './program-support';
 import { captureScreen } from './support';
 
 // Every script then comes from the page itself, as on a first visit: no service worker
@@ -43,6 +45,8 @@ async function routeSheetChunk(
 		await page.waitForLoadState('networkidle');
 		expect(duringLoad, 'the sheet is not part of the initial load').toEqual([]);
 		loaded = true;
+		// The calculator's row is in Train's More.
+		await openMore(page);
 	};
 }
 

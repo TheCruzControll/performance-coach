@@ -15,7 +15,13 @@ import { createDatabase, createPool } from '../src/lib/server/db/client';
 import { skipSession } from '../src/lib/server/services/programs/edits';
 import { longDate } from '../src/lib/ui/program/words';
 import { DESKTOP, expectMainCentred, expectNoSideScroll, tokenPx } from './desktop';
-import { PROGRAM_TZ, seedProgram, type SeededProgram, type SeededSession } from './program-support';
+import {
+	PROGRAM_TZ,
+	seedProgram,
+	sessionLine,
+	type SeededProgram,
+	type SeededSession
+} from './program-support';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -93,8 +99,6 @@ const sets = (page: Page, name: string) =>
 	exercise(page, name)
 		.getByRole('list', { name: `${name}: sets` })
 		.getByRole('listitem');
-const dayOf = (page: Page, date: string) =>
-	page.getByTestId('week-strip').getByRole('radio', { name: new RegExp(`^${longDate(date)}\\b`) });
 
 test.describe('a program that starts next week', () => {
 	let seeded: SeededProgram;
@@ -253,14 +257,13 @@ test.describe('a program that starts next week', () => {
 		// during gotoHydrated (clients.claim). Chromium routes that request either way.
 		test.use({ serviceWorkers: 'block' });
 
-		test('the tapped card is busy until its session renders; Back returns to the same week and day', async ({
+		test('the tapped line is busy until its session renders; Back returns to the same week', async ({
 			page
 		}) => {
 			await gotoHydrated(page, '/train?week=2');
 			const thursday = addDays(seeded.weekStart, 10);
-			await dayOf(page, thursday).click();
-			const easy = cards(page).filter({ hasText: 'Easy run' });
-			const thai = cards(page).filter({ hasText: 'Muay Thai class' });
+			const easy = sessionLine(page, 'Easy run', thursday);
+			const thai = sessionLine(page, 'Muay Thai class', thursday);
 			await expect(easy).toHaveAttribute('href', open(titled('Easy run', 1)));
 
 			let release!: () => void;
@@ -277,17 +280,17 @@ test.describe('a program that starts next week', () => {
 			await expect(page).toHaveURL(new RegExp(`${open(titled('Easy run', 1))}$`));
 			await page.unrouteAll({ behavior: 'ignoreErrors' });
 
-			// The browser's Back (an iPhone's swipe): the week and the day the owner picked.
+			// The browser's Back (an iPhone's swipe): the week the owner was on.
 			await page.goBack();
 			await expect(page).toHaveURL(/\/train\?week=2$/);
-			await expect(dayOf(page, thursday)).toHaveAttribute('aria-checked', 'true');
+			await expect(easy).toBeVisible();
 
 			// The screen's own Back does the same.
 			await easy.click();
 			await expect(heading(page)).toHaveText('Easy run');
 			await page.getByTestId('back-to-train').click();
 			await expect(page).toHaveURL(/\/train\?week=2$/);
-			await expect(dayOf(page, thursday)).toHaveAttribute('aria-checked', 'true');
+			await expect(easy).toBeVisible();
 			await expect(easy).not.toHaveAttribute('aria-busy');
 		});
 

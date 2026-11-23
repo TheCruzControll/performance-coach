@@ -78,19 +78,28 @@ describe('Train’s load', () => {
 				[],
 				[]
 			]);
-			// In words, composed here so the screen ships no vocabulary.
-			expect(data.strip[3]).toMatchObject({
-				name: 'Thursday 19 November, 2 sessions',
-				short: 'Thu'
+			// In words, composed here so the screen ships no vocabulary (v2/07: the week as lines).
+			expect(data).toMatchObject({
+				position: 'Week 2 of 5 · Accumulation',
+				title: 'This week',
+				status: 'Five sessions this week',
+				current: true,
+				previous: '/train?week=1',
+				next: '/train?week=3'
 			});
-			expect(data.days[0]).toMatchObject({
-				heading: 'Monday 16 November',
-				rest: null,
-				cards: [{ title: 'Full body', line: 'Strength · 60 min · Moderate · Morning' }]
-			});
-			expect(data.days[4]!.rest).toBe(
-				'Recovery is part of the plan. Nothing else is planned this week.'
-			);
+			expect(data.lines.map((l) => [l.day, l.title, l.when, l.end])).toEqual([
+				['Mon', 'Full body', 'past', { text: '60 min' }],
+				['Tue', 'Muay Thai class', 'past', { text: '90 min' }],
+				['Today', 'Intervals', 'today', { text: '45 min' }],
+				['Thu', 'Easy run', 'ahead', { text: '30 min' }],
+				['', 'Muay Thai class', 'ahead', { text: '90 min' }],
+				['Fri', 'Rest', 'ahead', null],
+				['Sat', 'Rest', 'ahead', null],
+				['Sun', 'Rest', 'ahead', null]
+			]);
+			expect(data.lines[0]!.name).toBe('Monday 16 November, Full body, 60 min');
+			expect(data.lines[2]!.name).toBe('Today, Wednesday 18 November, Intervals, 45 min');
+			expect(data.lines[5]!.name).toBe('Friday 20 November, rest');
 		});
 	});
 
@@ -127,7 +136,8 @@ describe('Train’s load', () => {
 		await withRollback(async (db) => {
 			const owner = await withProgram(db);
 			const asked = program(await load(db, owner, '2026-11-11', '4'));
-			expect(asked).toMatchObject({ shown: 4, asked: true });
+			expect(asked).toMatchObject({ shown: 4, asked: true, current: false, title: 'Week 4' });
+			expect(asked.status).toBe('Starts Monday 30 November');
 			expect(asked.week).toMatchObject({ planned: true, number: 4, startsOn: '2026-11-30' });
 			for (const malformed of ['abc', '0', '-1', '2.5', '1e1', '1000', ' 2', '']) {
 				const data = program(await load(db, owner, '2026-11-11', malformed));
@@ -148,17 +158,21 @@ describe('Train’s load', () => {
 			expect(beyond.week).toMatchObject({ planned: false, phase: null });
 			expect(beyond.card).toMatchObject({
 				id: 'train-not-planned',
+				title: 'Not planned yet',
 				description: 'Week 99 is past the end of your plan.',
-				next: { to: 'this-week' }
+				next: { title: 'Back to this week', to: 'this-week', style: 'row' },
+				bare: false
 			});
+			expect(beyond).toMatchObject({ position: 'Week 99', lines: [], status: null, next: null });
 		});
 		await withRollback(async (db) => {
 			const outline = program(await load(db, await withProgram(db, 'one-week'), MONDAY, '3'));
 			expect(outline).toMatchObject({ shown: 3, totalWeeks: 4 });
 			expect(outline.week).toMatchObject({ planned: false, phase: 'accumulation' });
 			expect(outline.card?.description).toBe(
-				'Week 3 is in the Accumulation phase. Its sessions are planned closer to the time, from how your training goes.'
+				'I plan Accumulation after your Baseline week review, from how these weeks went.'
 			);
+			expect(outline.position).toBe('Week 3 · Accumulation');
 		});
 	});
 
@@ -168,6 +182,13 @@ describe('Train’s load', () => {
 			expect(early.program).toMatchObject({ notStarted: true, currentWeek: 1 });
 			expect(early).toMatchObject({ shown: 1, asked: false });
 			expect(early.week).toMatchObject({ planned: true, number: 1, programStartsOn: MONDAY });
+			// The first week is ahead: it says when it starts, and it is this week until then.
+			expect(early).toMatchObject({
+				title: 'Next week',
+				status: 'Starts Monday 9 November',
+				current: true,
+				previous: null
+			});
 		});
 		await withRollback(async (db) => {
 			const owner = await withProgram(db, 'one-week');
@@ -177,9 +198,11 @@ describe('Train’s load', () => {
 			expect(done.week).toMatchObject({ planned: false, phase: 'accumulation' });
 			expect(done.card).toMatchObject({
 				id: 'train-block-complete',
+				title: 'Baseline week is done',
 				description:
-					'You trained through every planned week, Mon 9 Nov – Sun 15 Nov. Your next block is planned from how this one went, starting with Accumulation.',
-				next: { title: 'Review this block', to: { href: '/progress/reviews' } }
+					'You trained through the whole week, 9 November to 15 November. I plan Accumulation from how it went.',
+				next: { title: 'Review the block', to: { href: '/progress/reviews' }, style: 'primary' },
+				bare: true
 			});
 			// Asked for by number, a past week is just that week, and an outline week is not
 			// planned yet: only the current view says the block is complete.
@@ -241,8 +264,13 @@ describe('Train’s load', () => {
 			const data = await load(db, owner, MONDAY);
 			expect(data).toMatchObject({ state: 'none', today: MONDAY, profileComplete: false });
 			if (data.state !== 'none') throw new Error('expected no program');
-			expect(data.card).toMatchObject({ id: 'train-empty', title: 'No program yet' });
-			expect(data.card.next).toMatchObject({ title: 'Set up my profile', to: 'profile' });
+			expect(data.card).toMatchObject({ id: 'train-empty', title: 'No plan yet', bare: true });
+			expect(data.card.description).toBe('Finish setting up your profile, then I can plan week 1.');
+			expect(data.card.next).toMatchObject({
+				title: 'Finish setup',
+				to: 'profile',
+				style: 'primary'
+			});
 		});
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
@@ -253,8 +281,12 @@ describe('Train’s load', () => {
 			const data = await load(db, owner, MONDAY);
 			expect(data).toMatchObject({ state: 'none', profileComplete: true });
 			if (data.state !== 'none') throw new Error('expected no program');
-			expect(data.card.description).toContain('Your training profile is ready');
-			expect(data.card.next).toMatchObject({ title: 'Build my program', to: 'today' });
+			expect(data.card.description).toBe('Your profile is ready, so I can plan week 1.');
+			expect(data.card.next).toMatchObject({
+				title: 'Build my program',
+				to: 'today',
+				style: 'primary'
+			});
 		});
 	});
 
@@ -269,7 +301,8 @@ describe('Train’s load', () => {
 					{ db: broken.db, errorsDb: tx }
 				);
 				expect(data).toMatchObject({ state: 'error', card: { id: 'train-error' } });
-				expect(data.card?.next).toMatchObject({ title: 'Try again', to: 'retry' });
+				expect(data.card).toMatchObject({ title: 'Couldn’t load your plan', bare: true });
+				expect(data.card?.next).toMatchObject({ title: 'Try again', to: 'retry', style: 'text' });
 				const recorded = await findErrorsByRequestId(request.requestId, { db: tx });
 				expect(recorded).toHaveLength(1);
 				expect(recorded[0]).toMatchObject({

@@ -12,6 +12,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { DESKTOP } from './desktop';
+import { openMore } from './program-support';
 import { captureScreen, gotoHydrated, query, toastWith, trackConsoleErrors } from './support';
 import { addVirtualAuthenticator, signInAsOwner, toBase64Url } from './webauthn';
 
@@ -91,6 +92,7 @@ interface OpenSheet {
 
 async function openPlates(page: Page): Promise<OpenSheet> {
 	await gotoHydrated(page, '/train');
+	await openMore(page);
 	const opener = page.getByTestId('open-plates');
 	await opener.click();
 	const dialog = page.getByRole('dialog', { name: 'Plate calculator' });

@@ -5,6 +5,7 @@
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { boxOf, expectNoSideScroll, layoutWidth } from './desktop';
+import { openMore } from './program-support';
 import { captureScreen } from './support';
 import { gotoWorkout, seedWorkout, workoutDay } from './workout-support';
 
@@ -103,13 +104,14 @@ test.describe('the workout settings on a desktop', () => {
 });
 
 test.describe("Train's rest timer on a desktop", () => {
-	test('its row sits in the tools column; the timer is a centred dialog, by keyboard', async ({
+	test('its row sits in More, under the plates; the timer is a centred dialog, by keyboard', async ({
 		page
 	}) => {
 		await page.goto('/train');
 		await page.waitForLoadState('networkidle');
+		await openMore(page);
 		const row = page.getByTestId('open-rest-timer');
-		const tools = page.getByRole('region', { name: 'Tools' });
+		const tools = page.getByTestId('more-tools');
 		const plates = await boxOf(page.getByTestId('open-plates'));
 		const box = await boxOf(row);
 		expect(Math.abs(box.x - plates.x), 'under the plate calculator').toBeLessThanOrEqual(1);

@@ -121,12 +121,7 @@ test.describe('block-end', () => {
 		await next.locator('a[data-testid="plan-week"]').first().click();
 		// Train on the new block's week 1, its days holding sessions.
 		await expect(page).toHaveURL(/\/train\?week=\d+$/);
-		await expect(
-			page
-				.getByTestId('week-strip')
-				.getByRole('radio', { name: /\d+ sessions?/ })
-				.first()
-		).toBeVisible();
+		await expect(page.getByTestId('week-lines').getByTestId('session-card').first()).toBeVisible();
 
 		// History: version 1 read-only, with its outline block; the review links to version 2.
 		await gotoHydrated(page, '/train/history/1');

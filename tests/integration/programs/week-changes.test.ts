@@ -215,10 +215,12 @@ describe('what a weekly review changed in a week', () => {
 			const shown = await loadTrainWeek(r.owner, { now, week: null, origin: origin() }, { db });
 			if (shown.state !== 'program') throw new Error(`expected a program, got ${shown.state}`);
 			expect(shown.week.startsOn).toBe(NEXT);
-			const notice = shown.aside.find((panel) => panel.id === 'review-notice');
+			// The week's one line opens the notice (v2/07); a finding's count may come first.
+			expect(shown.note?.opens).toBe(true);
+			const notice = shown.noteParts.review;
 			expect(notice).toMatchObject({
+				id: 'review-notice',
 				title: 'Updated from your weekly review',
-				eyebrow: `Version ${number}`,
 				lead: 'The programming rules applied 2 changes from your weekly review of 9 Nov. Each change says why in its own decision.'
 			});
 			expect(notice!.points).toHaveLength(2);
@@ -239,7 +241,7 @@ describe('what a weekly review changed in a week', () => {
 			const week = String(Number(shown.shown) - 1);
 			const before = await loadTrainWeek(r.owner, { now, week, origin: origin() }, { db });
 			expect(before.state === 'program' && before.week.startsOn).toBe(REVIEWED);
-			expect(before.state === 'program' && before.aside).toEqual([]);
+			expect(before.state === 'program' && before.noteParts.review).toBeNull();
 		});
 	});
 });
@@ -262,7 +264,7 @@ describe("Train's first block complete", () => {
 			};
 			expect(await card()).toMatchObject({
 				id: 'train-block-complete',
-				next: { title: 'Review this block', to: { href: '/progress/reviews' } }
+				next: { title: 'Review the block', to: { href: '/progress/reviews' }, style: 'primary' }
 			});
 
 			const { rows } = await db.execute<{ lineage: string }>(
@@ -276,7 +278,11 @@ describe("Train's first block complete", () => {
 			const { review } = await createCycleReview(owner, { ...target, today: '2026-11-18' }, deps);
 			expect(await card()).toMatchObject({
 				id: 'train-block-complete',
-				next: { title: 'Open your cycle review', to: { href: `/progress/reviews/c-${review.id}` } }
+				next: {
+					title: 'Open the review',
+					to: { href: `/progress/reviews/c-${review.id}` },
+					style: 'row'
+				}
 			});
 		});
 	});

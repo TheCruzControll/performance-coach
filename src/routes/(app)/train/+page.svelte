@@ -1,27 +1,22 @@
 <script lang="ts">
 	import { onMount, type ComponentProps } from 'svelte';
-	import { goto, invalidateAll, replaceState } from '$app/navigation';
+	import { afterNavigate, goto, invalidateAll, replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { navigating, page } from '$app/state';
 	import { preferences } from '#lib/client/preferences.svelte.ts';
-	import Badge from '#lib/ui/components/Badge.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
-	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
-	import PageHeader from '#lib/ui/components/PageHeader.svelte';
-	import Section from '#lib/ui/components/Section.svelte';
-	import Surface from '#lib/ui/components/Surface.svelte';
+	import type { IconName } from '#lib/ui/icons/icons.ts';
 	import type AddSessionSheetType from '#lib/ui/program/AddSessionSheet.svelte';
-	import ProgramHeader from '#lib/ui/program/ProgramHeader.svelte';
-	import SessionCard from '#lib/ui/program/SessionCard.svelte';
 	import type PlanSheetType from '#lib/ui/program/PlanOverviewSheet.svelte';
-	import WeekStrip from '#lib/ui/program/WeekStrip.svelte';
+	import WeekLines from '#lib/ui/program/WeekLines.svelte';
 	import { LazySheet } from './lazy-sheet.svelte.ts';
 	import type PlateSheetType from './PlateSheet.svelte';
 	import type RestTimerSheetType from './RestTimerSheet.svelte';
-	import type { PageProps, Snapshot } from './$types';
+	import type { AsidePanel } from './cards.server';
+	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
@@ -32,57 +27,48 @@
 	 */
 	const BUILD_HREF = resolve('/(app)/today');
 	const SETUP_HREF = resolve('/(app)/profile');
+	const TRAIN = resolve('/(app)/train');
 
-	const weekHref = (n: number) => `${resolve('/(app)/train')}?week=${n}`;
+	const weekHref = (n: number) => `${TRAIN}?week=${n}`;
 	const HISTORY_HREF = resolve('/(app)/train/history/[[version]]', {});
 	const START_HREF = resolve('/(app)/train/start');
+	const COACH_HREF = resolve('/(app)/coach/[[thread]]', {});
 
 	// ---- The week shown ----------------------------------------------------------------------
 
 	const view = $derived(data.state === 'program' ? data : null);
 	const week = $derived(view?.week.planned ? view.week : null);
+	const parts = $derived(view?.noteParts);
+	/** The week's note has more than one part: each says what it is. */
+	const headed = $derived(
+		parts
+			? [
+					parts.kind,
+					parts.findings.length,
+					parts.review,
+					parts.baseline,
+					parts.replan,
+					parts.why.length
+				].filter(Boolean).length > 1
+			: false
+	);
 
 	/** A week change in flight: Train itself, with another ?week (or none). */
 	const loading = $derived(
 		navigating.to?.url.pathname === page.url.pathname &&
 			navigating.to.url.search !== page.url.search
 	);
-	const pendingWeek = $derived(
-		loading ? Number(navigating.to?.url.searchParams.get('week')) || null : null
-	);
 
-	/** The state card's next step as a link (none for Retry); `inTrain` when it changes week. */
+	/** The state's next step as a link (none for Retry); `inTrain` when it changes week. */
 	const next = $derived.by(() => {
 		const to = data.card?.next.to;
 		if (to === 'today') return { href: BUILD_HREF };
 		if (to === 'profile') return { href: SETUP_HREF };
-		if (to === 'this-week') return { href: resolve('/(app)/train'), inTrain: true };
+		if (to === 'this-week') return { href: TRAIN, inTrain: true };
 		if (typeof to === 'object')
 			return 'href' in to ? { href: to.href } : { href: weekHref(to.week), inTrain: true };
 		return { href: undefined };
 	});
-
-	/** The weekday the owner tapped, kept across weeks; until then today, else the first session. */
-	let chosen = $state<number | null>(null);
-	const selectedIndex = $derived.by(() => {
-		if (chosen !== null || !week) return chosen ?? 0;
-		const today = week.days.findIndex((d) => d.date === view!.today);
-		return today >= 0
-			? today
-			: Math.max(
-					0,
-					week.days.findIndex((d) => d.sessions.length > 0)
-				);
-	});
-	const day = $derived(week?.days[selectedIndex]);
-	/** That day in words, from the server. */
-	const words = $derived(view?.days[selectedIndex]);
-
-	/** Back from a session (history) comes back to the weekday the owner had picked. */
-	export const snapshot: Snapshot<number | null> = {
-		capture: () => chosen,
-		restore: (value) => (chosen = value)
-	};
 
 	const sessionHref = (lineage: string) => resolve('/(app)/train/session/[key]', { key: lineage });
 
@@ -148,7 +134,7 @@
 				: import('#lib/ui/program/PlanOverviewSheet.svelte'),
 		'plan'
 	);
-	/** Add a session to the day shown (AddSessionSheet): loaded on its button's first tap. */
+	/** Add a session to the week shown (AddSessionSheet): loaded on its row's first tap. */
 	const addSession = new LazySheet<ComponentProps<typeof AddSessionSheetType>>(
 		() =>
 			import.meta.env.SSR
@@ -157,11 +143,24 @@
 		'add'
 	);
 
-	/** A week tapped in the plan: shown as a week pill shows it (keeping scroll and focus), pending
-	 * state included. */
+	/** A week tapped in the plan: shown as an arrow shows it (keeping scroll and focus). */
 	const openWeek = (week: number) =>
 		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() + a query
 		goto(weekHref(week), { replace: true, reset: false });
+
+	/** More's disclosure. It opens on a tap, or on arrival asking for one of its tools (`?tool=`),
+	 * so the tool's row is there to return the focus to, and to hold its notice if it fails to
+	 * load. Set once mounted, never bound: a disclosure opened before hydration stays open. */
+	let moreEl = $state<HTMLDetailsElement>();
+
+	/** Back to this week was followed: once there, the focus it held goes to More, in its place. */
+	let backed = false;
+	afterNavigate(() => {
+		if (!backed) return;
+		backed = false;
+		const lost = !document.activeElement || document.activeElement === document.body;
+		if (lost) document.querySelector<HTMLElement>('[data-testid="open-more"]')?.focus();
+	});
 
 	/** The notice can appear under the bottom navigation: bring it into view. */
 	const reveal = (node: HTMLElement) => node.scrollIntoView({ block: 'nearest' });
@@ -169,13 +168,14 @@
 	onMount(() => {
 		preferences.load();
 		const tool = page.url.searchParams.get('tool');
+		if (tool && ['plates', 'rest', 'plan', 'add'].includes(tool) && moreEl) moreEl.open = true;
 		if (tool === 'plates') plates.show();
 		if (tool === 'plan' && view) plan.show();
 		if (tool === 'add' && view) addSession.show();
 		if (tool === 'rest') restTimer.show();
-		// A rest left running (a reload, or back from another screen) shows under its row again,
-		// with its alarm and keep-awake, without a tap. The key literal keeps standalone-rest.ts
-		// out of Train's own chunk; blocked storage throws and means no rest.
+		// A rest left running (a reload, or back from another screen) shows on Train again, with
+		// its alarm and keep-awake, without a tap. The key literal keeps standalone-rest.ts out of
+		// Train's own chunk; blocked storage throws and means no rest.
 		try {
 			if (localStorage.getItem('pc:rest:v1')) restTimer.prefetch();
 		} catch {
@@ -190,7 +190,7 @@
 	});
 
 	function closeSheet() {
-		if (page.url.searchParams.has('tool')) replaceState(resolve('/(app)/train'), {});
+		if (page.url.searchParams.has('tool')) replaceState(TRAIN, {});
 	}
 </script>
 
@@ -198,280 +198,317 @@
 	<title>Train · Performance Coach</title>
 </svelte:head>
 
-<PageHeader title="Train" eyebrow="Program" />
+{#snippet arrow(href: string | null, label: string, icon: IconName, testId: string)}
+	{#if href}
+		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- from week.server.ts -->
+		<a class="arrow" {href} aria-label={label} data-testid={testId}>
+			<Icon name={icon} size={16} />
+		</a>
+	{:else}
+		<span class="arrow" aria-hidden="true" data-off><Icon name={icon} size={16} /></span>
+	{/if}
+{/snippet}
 
-<!-- Wide from 1024 px (docs/design-system.md, Responsive layout → Screens): the header and the
-     strip span the content, the day's sessions sit beside the week's brief and the tools. -->
-<div class="stack" data-layout="wide">
-	{#if view}
-		<ProgramHeader
-			title={view.program.title}
-			position={view.position}
-			weeks={Array.from({ length: view.program.plannedWeeks }, (_, i) => ({
-				number: i + 1,
-				href: weekHref(i + 1),
-				mark: view.marks[i + 1]
-			}))}
-			shown={view.shown}
-			current={view.program.currentWeek}
-			pending={pendingWeek}
-			previous={view.shown > 1 ? weekHref(Math.min(view.shown - 1, view.totalWeeks)) : undefined}
-			next={view.shown < view.totalWeeks ? weekHref(view.shown + 1) : undefined}
-			status={view.status}
-			line={view.weekLine}
-			kind={view.weekKind}
-			replan={view.replanNote
-				? { href: resolve('/(app)/coach/proposals/[[id]]', { id: view.replanNote.proposalId }) }
-				: null}
-		>
-			{#snippet actions()}
-				<button
-					type="button"
-					class="action"
-					aria-haspopup="dialog"
-					aria-busy={plan.busy}
-					onpointerdown={plan.prefetch}
-					onpointerenter={plan.prefetch}
-					onclick={plan.show}
-					data-testid="open-plan"
-				>
-					<Icon name="progress" size={18} />Plan
-				</button>
-				<a
-					class="action"
-					href={HISTORY_HREF}
-					aria-busy={navigating.to?.url.pathname === HISTORY_HREF}
-					data-testid="open-history"
-				>
-					<Icon name="clock" size={18} />History
-				</a>
-				{#if view.movable}
-					<a
-						class="action"
-						href={START_HREF}
-						aria-busy={navigating.to?.url.pathname === START_HREF}
-						data-testid="open-start"
-					>
-						<Icon name="today" size={18} />Start date
-					</a>
-				{/if}
-				{#if plan.failed}
-					<div class="plan-failed">
-						<Notice tone="danger" title="Couldn’t open your plan">
-							<button type="button" class="retry" onclick={plan.show}>Try again</button>
-						</Notice>
-					</div>
-				{/if}
-			{/snippet}
-		</ProgramHeader>
-		<p class="visually-hidden" role="status">{loading ? 'Loading the week…' : ''}</p>
+{#snippet chevron()}
+	<Icon name="chevron-right" size={14} class="chevron" />
+{/snippet}
+
+<!-- A part of the week's note: what a review changed (each change, then its links), or week 1's
+     brief (its three facts as rows). -->
+{#snippet panel(part: AsidePanel)}
+	<section data-testid={part.id}>
+		{#if headed}<h3>{part.title}</h3>{/if}
+		<p class="lead">{part.lead}</p>
+		{#if part.id === 'review-notice'}
+			<ul class="changes" role="list">
+				{#each part.points as point, i (i)}
+					<li>
+						{#if point.lead}<strong>{point.lead}</strong>{/if}
+						{point.text}
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			{#each part.points as point, i (i)}
+				<ListRow static title={point.text} />
+			{/each}
+		{/if}
+		<!-- eslint-disable svelte/no-navigation-without-resolve -- paths from cards.server.ts -->
+		{#each part.links as link (link.id)}
+			<ListRow title={link.label} href={link.href} data-testid={link.id} />
+		{/each}
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
+	</section>
+{/snippet}
+
+<!-- Instrument v2 (Paper, 4 · Train): the tab's name stays the page's heading, for screen
+     readers; the week's own title ('This week') is the display line. A readable screen: on a
+     desktop it is the 560 px column, 200 px from the rail. -->
+<h1 class="visually-hidden">Train</h1>
+<div class="screen" data-testid="train-week" aria-busy={loading} data-kits={kits}>
+	{#if view && !data.card?.bare}
+		<header class="top" data-testid="program-header">
+			<p class="position" data-testid="program-position">{view.position}</p>
+			<nav
+				aria-label="Weeks"
+				class="arrows"
+				data-sveltekit-replacestate
+				data-sveltekit-reset="false"
+			>
+				{@render arrow(view.previous, 'Previous week', 'chevron-left', 'previous-week')}
+				{@render arrow(view.next, 'Next week', 'chevron-right', 'next-week')}
+			</nav>
+		</header>
 	{/if}
 
-	<!-- Busy while the next week loads; only the week's own strip and cards go inert, never the
-	     state card's link, which may hold the focus of the change it started. -->
-	<div
-		class="week"
-		aria-busy={loading}
-		inert={loading && !data.card}
-		data-testid="train-week"
-		data-kits={kits}
-	>
-		{#if data.card}
-			{@const card = data.card}
-			<Surface padding="none" radius="xl">
-				<EmptyState
-					icon={card.icon}
-					tone={card.tone}
-					title={card.title}
-					description={card.description}
-					data-testid={card.id}
-				/>
-			</Surface>
-			<div
-				class="tool"
-				aria-busy={reloading}
-				data-sveltekit-replacestate={next.inTrain ? '' : undefined}
-				data-sveltekit-reset={next.inTrain ? 'false' : undefined}
-			>
-				<ListRow
-					icon={card.next.icon}
-					title={card.next.title}
-					subtitle={card.next.subtitle}
+	{#if data.card}
+		{@const card = data.card}
+		<!-- One statement in place of the week, and the one thing to do. Never inert while the
+		     next week loads: its link may hold the focus of the change it started. -->
+		<section class="state" data-testid={card.id} aria-labelledby="state-title">
+			<h2 id="state-title" class="statement">{card.title}</h2>
+			<p class="lead">{card.description}</p>
+			{#if card.next.style === 'primary'}
+				<Button
+					size="lg"
+					block
 					href={next.href}
 					onclick={next.href ? undefined : reload}
+					loading={reloading}
 					data-testid="train-next"
-				/>
-			</div>
-			<!-- A bridge week's workouts, which no plan holds: each says Off-plan. One box, so the
-			     desktop subgrid gives them one row. -->
-			{#if view?.offPlan.length}
-				<div class="logged">
-					{#each view.offPlan as workout (workout.id)}
-						<SessionCard session={workout} data-testid="off-plan-workout" />
-					{/each}
-				</div>
+				>
+					{card.next.title}
+				</Button>
+			{:else if card.next.style === 'text'}
+				<button
+					type="button"
+					class="again"
+					aria-busy={reloading}
+					onclick={reload}
+					data-testid="train-next"
+				>
+					{card.next.title}
+				</button>
 			{/if}
-		{:else if week}
-			<WeekStrip
-				days={view!.strip}
-				today={view!.today}
-				selected={day?.date ?? null}
-				label={`Week ${week.number}`}
-				onselect={(date) => (chosen = week.days.findIndex((d) => d.date === date))}
-				data-testid="week-strip"
-			/>
-
-			{#if day && words}
-				<Section title={words.heading} data-testid="day-sessions">
-					{#snippet action()}
-						{#if day.date === view!.today}<Badge tone="accent">Today</Badge>{/if}
-						{#if view!.addable.includes(day.date)}
-							<Button
-								variant="secondary"
-								size="sm"
-								icon="plus"
-								loading={addSession.busy}
-								onpointerdown={addSession.prefetch}
-								onclick={addSession.show}
-								data-testid="open-add-session"
-							>
-								Add session
-							</Button>
-						{/if}
-					{/snippet}
-					{#each words.cards as card (card.lineage)}
-						{@const href = sessionHref(card.lineage)}
-						<SessionCard
-							session={card}
-							{href}
-							baseline={card.baseline}
-							pending={loading || navigating.to?.url.pathname === href}
-							data-testid="session-card"
-						/>
-						<!-- A week finding (m7/04): one line under its card, its why behind it. -->
-						{#if card.note}
-							<details class="note" data-tone={card.note.tone}>
-								<summary>{card.note.text}</summary>
-								<p>{card.note.why}</p>
-							</details>
-						{/if}
-						<!-- Why this day (m7/14): the decisions that put it here, closed by default. -->
-						{#if card.why}
-							<details class="why">
-								<summary>{card.why.title}</summary>
-								<ul role="list">
-									{#each card.why.lines as line, i (i)}<li>{line}</li>{/each}
-								</ul>
-							</details>
-						{/if}
-					{:else}
-						<Surface padding="none" radius="lg">
-							<EmptyState
-								compact
-								icon="moon"
-								tone="neutral"
-								title="Rest day"
-								description={words.rest ?? undefined}
-								data-testid="rest-day"
-							/>
-						</Surface>
-					{/each}
-				</Section>
-			{/if}
-
-			{#if addSession.failed}
-				<Notice tone="danger" title="Couldn’t open adding a session">
-					<button type="button" class="retry" onclick={addSession.show} use:reveal>Try again</button
-					>
-				</Notice>
-			{/if}
-
-			{#if view!.aside.length}
-				<!-- The side column on desktop: the week's brief and what a review changed in it. -->
-				<div class="aside">
-					{#each view!.aside as panel (panel.id)}
-						<Surface
-							as="section"
-							tone={panel.tone}
-							aria-labelledby="{panel.id}-title"
-							data-testid={panel.id}
-						>
-							<div class="brief">
-								<span class="eyebrow">{panel.eyebrow}</span>
-								<h2 id="{panel.id}-title" class="brief-title">{panel.title}</h2>
-								<p>{panel.lead}</p>
-								<ul>
-									{#each panel.points as point, i (i)}
-										<li><strong>{point.lead}</strong> {point.text}</li>
-									{/each}
-								</ul>
-								<!-- eslint-disable svelte/no-navigation-without-resolve -- paths from cards.server.ts -->
-								{#each panel.links as link (link.id)}
-									<a class="link" href={link.href} data-testid={link.id}>{link.label}</a>
-								{/each}
-								<!-- eslint-enable svelte/no-navigation-without-resolve -->
-							</div>
-						</Surface>
-					{/each}
-				</div>
-			{/if}
+		</section>
+		<!-- A bridge week's workouts, which no plan holds. -->
+		{#if view?.offPlan.length}
+			<WeekLines lines={view.offPlan} label="Logged this week" testId="off-plan-workout" />
 		{/if}
-	</div>
+		{#if card.next.style === 'row'}
+			<!-- eslint-disable svelte/no-navigation-without-resolve -- resolved above, or a path from cards.server.ts -->
+			<a
+				class="quiet"
+				href={next.href}
+				data-sveltekit-replacestate={next.inTrain ? '' : undefined}
+				data-sveltekit-reset={next.inTrain ? 'false' : undefined}
+				data-testid="train-next"
+			>
+				<span>{card.next.title}</span>{@render chevron()}
+			</a>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
+		{/if}
+	{:else if view}
+		<!-- Busy while the next week loads: dimmed after a beat, and inert, the arrows aside. -->
+		<div class="week" inert={loading}>
+			<h2 class="title" data-testid="week-title">{view.title}</h2>
+			{#if view.status}
+				<p class="status" data-testid="program-status">{view.status}</p>
+			{/if}
+			<WeekLines
+				lines={view.lines}
+				label={`Week ${view.shown}`}
+				href={sessionHref}
+				pending={navigating.to?.url.pathname ?? null}
+			/>
+			<!-- The one line about the week. What it opens shows under it, in place (the week's
+			     note): the findings, a review's changes, the week's kind, week 1's brief, a
+			     re-plan and why each day holds its session. -->
+			{#if view.note && parts}
+				{#if view.note.opens}
+					<details class="note">
+						<summary class="quiet" data-testid="week-line">
+							<span>{view.note.text}</span>{@render chevron()}
+						</summary>
+						<div class="note-body" data-testid="week-note">
+							{#if parts.kind}
+								<section data-testid="week-kind">
+									{#if headed}<h3>{parts.kind.label}</h3>{/if}
+									<p class="lead">{parts.kind.why}</p>
+								</section>
+							{/if}
+							{#if parts.findings.length}
+								<section data-testid="week-findings">
+									{#if headed}<h3>{parts.summary ?? 'Heads-ups'}</h3>{/if}
+									{#each parts.findings as finding (finding.text)}
+										<p class="finding" data-tone={finding.tone}>{finding.text}</p>
+										<p class="why-line">Why: {finding.why}</p>
+									{/each}
+								</section>
+							{/if}
+							{#if parts.review}{@render panel(parts.review)}{/if}
+							{#if parts.baseline}{@render panel(parts.baseline)}{/if}
+							<!-- eslint-disable svelte/no-navigation-without-resolve -- a path from week.server.ts -->
+							{#if parts.replan}
+								<section>
+									{#if headed}<h3>Your coach suggests a new plan</h3>{/if}
+									<ListRow
+										title="See the plan your coach suggests"
+										href={parts.replan.href}
+										data-testid="replan-review"
+									/>
+								</section>
+							{/if}
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							{#if parts.why.length}
+								<section data-testid="week-why">
+									{#if headed}<h3>Why each day holds its session</h3>{/if}
+									{#each parts.why as why, i (i)}
+										<details class="why">
+											<summary>{why.title}</summary>
+											<ul role="list">
+												{#each why.lines as line, j (j)}<li>{line}</li>{/each}
+											</ul>
+										</details>
+									{/each}
+								</section>
+							{/if}
+							<ListRow title="Ask the coach about it" href={COACH_HREF} />
+						</div>
+					</details>
+				{:else}
+					<p class="quiet" data-testid="week-line">{view.note.text}</p>
+				{/if}
+			{/if}
+		</div>
+	{/if}
 
-	<Section title="Tools">
-		<div class="tool" aria-busy={plates.busy}>
-			<ListRow
-				icon="plate"
-				tone="strength"
-				title="Plate calculator"
-				subtitle="Exact loading in kg or lb"
-				onpointerdown={plates.prefetch}
-				onpointerenter={plates.prefetch}
-				onclick={plates.show}
-				data-testid="open-plates"
-			/>
-			{#if plates.failed}
-				<Notice tone="danger" title="Couldn’t open the plate calculator">
-					<button type="button" class="retry" onclick={plates.show} use:reveal>Try again</button>
-				</Notice>
-			{/if}
-		</div>
-		<div class="tool" aria-busy={restTimer.busy}>
-			<ListRow
-				icon="timer"
-				title="Rest timer"
-				subtitle="Outside a workout"
-				onpointerdown={restTimer.prefetch}
-				onpointerenter={restTimer.prefetch}
-				onclick={restTimer.show}
-				data-testid="open-rest-timer"
-			/>
-			{#if restTimer.failed}
-				<Notice tone="danger" title="Couldn’t open the rest timer">
-					<button type="button" class="retry" onclick={restTimer.show} use:reveal>Try again</button>
-				</Notice>
-			{/if}
-			<!-- A running rest shows here, under its row, with the sheet closed. -->
-			<restTimer.component bind:open={restTimer.open} onclose={closeSheet} />
-		</div>
-		<ListRow
-			icon="plus"
-			title="Log a session"
-			subtitle="A run, a class or anything off the plan"
-			href={resolve('/workout')}
-			data-testid="log-a-session"
-		/>
-	</Section>
+	<!-- More, or Back to this week on any other week (a 'Not planned yet' week already ends with
+	     it, as its next step). More opens the plan, history and tools in place, as a list. -->
+	{#if data.card?.next.to === 'this-week'}
+		<!-- its next step is Back to this week -->
+	{:else if view?.asked && !view.current}
+		<a
+			class="quiet"
+			href={TRAIN}
+			data-sveltekit-replacestate
+			data-sveltekit-reset="false"
+			data-testid="back-to-this-week"
+			onclick={() => (backed = true)}
+		>
+			<span>Back to this week</span>{@render chevron()}
+		</a>
+	{:else}
+		<details class="more" bind:this={moreEl}>
+			<summary class="quiet" data-testid="open-more"><span>More</span>{@render chevron()}</summary>
+			<!-- Each row in its own item, so each keeps its hairline, a failed tool's notice under it. -->
+			<ul class="rows" role="list" data-testid="more-tools">
+				{#if view}
+					<li class="tool" aria-busy={plan.busy}>
+						<ListRow
+							title="See the whole plan"
+							onpointerdown={plan.prefetch}
+							onpointerenter={plan.prefetch}
+							onclick={plan.show}
+							data-testid="open-plan"
+						/>
+						{#if plan.failed}
+							<Notice tone="danger" title="Couldn’t open your plan">
+								<button type="button" class="retry" onclick={plan.show} use:reveal>Try again</button
+								>
+							</Notice>
+						{/if}
+					</li>
+					<li class="tool">
+						<ListRow
+							title="See what has changed"
+							href={HISTORY_HREF}
+							aria-busy={navigating.to?.url.pathname === HISTORY_HREF}
+							data-testid="open-history"
+						/>
+					</li>
+				{/if}
+				<li class="tool" aria-busy={plates.busy}>
+					<ListRow
+						title="Work out the plates for a bar"
+						onpointerdown={plates.prefetch}
+						onpointerenter={plates.prefetch}
+						onclick={plates.show}
+						data-testid="open-plates"
+					/>
+					{#if plates.failed}
+						<Notice tone="danger" title="Couldn’t open the plate calculator">
+							<button type="button" class="retry" onclick={plates.show} use:reveal>Try again</button
+							>
+						</Notice>
+					{/if}
+				</li>
+				<li class="tool" aria-busy={restTimer.busy}>
+					<ListRow
+						title="Start a rest timer"
+						onpointerdown={restTimer.prefetch}
+						onpointerenter={restTimer.prefetch}
+						onclick={restTimer.show}
+						data-testid="open-rest-timer"
+					/>
+					{#if restTimer.failed}
+						<Notice tone="danger" title="Couldn’t open the rest timer">
+							<button type="button" class="retry" onclick={restTimer.show} use:reveal
+								>Try again</button
+							>
+						</Notice>
+					{/if}
+				</li>
+				<li class="tool">
+					<ListRow
+						title="Log a session that isn’t on the plan"
+						href={resolve('/workout')}
+						data-testid="log-a-session"
+					/>
+				</li>
+				{#if view?.addable.length}
+					<li class="tool" aria-busy={addSession.busy}>
+						<ListRow
+							title="Add a session to this week"
+							onpointerdown={addSession.prefetch}
+							onclick={addSession.show}
+							data-testid="open-add-session"
+						/>
+						{#if addSession.failed}
+							<Notice tone="danger" title="Couldn’t open adding a session">
+								<button type="button" class="retry" onclick={addSession.show} use:reveal
+									>Try again</button
+								>
+							</Notice>
+						{/if}
+					</li>
+				{/if}
+				{#if view?.movable}
+					<li class="tool">
+						<ListRow
+							title="Change when the plan starts"
+							href={START_HREF}
+							aria-busy={navigating.to?.url.pathname === START_HREF}
+							data-testid="open-start"
+						/>
+					</li>
+				{/if}
+			</ul>
+		</details>
+	{/if}
 </div>
+<p class="visually-hidden" role="status">{loading ? 'Loading the week…' : ''}</p>
 
-<!-- Each renders nothing until its code has arrived (a dynamic component that is null). -->
+<!-- A running rest still shows on Train with its sheet closed (v2/09 redesigns it). Each sheet
+     renders nothing until its code has arrived (a dynamic component that is null). -->
+<restTimer.component bind:open={restTimer.open} onclose={closeSheet} />
 <plates.component bind:open={plates.open} unit={preferences.units} onclose={closeSheet} />
-{#if view && day}
+{#if view?.addable.length}
 	<addSession.component
 		bind:open={addSession.open}
 		version={view.version}
 		addable={view.addable}
-		day={day.date}
+		day={view.addable[0]!}
 		addIntents={view.addIntents}
 		onclose={closeSheet}
 	/>
@@ -490,187 +527,234 @@
 {/if}
 
 <style>
-	.stack,
-	.week {
-		display: grid;
-		gap: var(--space-6);
+	/* On a phone a state stands at the foot, above the tab bar, with an empty room above it
+	   (Paper, 4 · Train "No week to show"); from 1024 px at the top of the column. */
+	.screen {
+		display: flex;
+		flex-direction: column;
 	}
 
-	/* Loading the next week: the week stays where it is, dimmed, while its cards show their
-	   progress line; after a beat, so a fast load shows nothing. */
-	.week {
+	.screen:has(.state) {
+		min-height: calc(100svh - var(--nav-inset-bottom) - var(--safe-top) - var(--space-12));
+	}
+
+	/* The top line: the week's place, and the arrows at the end, their glyphs on the gutter. */
+	.top {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-4);
+		min-height: var(--touch-target);
+		margin-top: var(--space-3);
+	}
+
+	.position {
+		min-width: 0;
+		font: var(--type-secondary);
+		color: var(--color-text-secondary);
+	}
+
+	.arrows {
+		display: flex;
+		flex: none;
+		margin-right: calc((var(--touch-target) - 1rem) / -2);
+	}
+
+	.arrow {
+		display: grid;
+		place-items: center;
+		width: var(--touch-target);
+		height: var(--touch-target);
+		color: var(--color-text-secondary);
+	}
+
+	.arrow[data-off] {
+		opacity: 0.35;
+	}
+
+	/* Loading the next week: the week stays where it is, dimmed, after a beat, so a fast load
+	   shows nothing. */
+	.week,
+	.state {
 		transition: opacity var(--duration-base) var(--ease-standard);
 	}
 
-	.week[aria-busy='true'] {
+	.screen[aria-busy='true'] :is(.week, .state) {
 		opacity: 0.55;
 		transition-delay: 150ms;
 	}
 
-	/*
-	 * Desktop (wide): two columns under the full-width header and strip. The day's sessions take
-	 * the main column, at most the readable width (cards, never a stretched phone column); the
-	 * week's brief and the tools take the side column, at least --content-list. CSS only: the one
-	 * selected day renders as on a phone, in the same order, so Tab reads left column then right.
-	 *
-	 * Rows: the header, the strip, the side column's first item, then a row that takes the rest of
-	 * the session column, so the tools sit right under the brief however long the day is. The week
-	 * is a subgrid over rows 2 to the end, so its strip, sessions and brief share the screen's
-	 * columns while it keeps its own box (busy, dimmed and inert as on a phone); its box lets
-	 * clicks through to the tools it overlaps.
-	 */
-	@media (width >= 64rem) {
-		.stack {
-			grid-template-columns: minmax(0, var(--content-readable)) minmax(var(--content-list), 1fr);
-			grid-template-rows: auto auto auto 1fr;
-			column-gap: var(--space-8);
-			align-items: start;
-		}
-
-		.stack > :global(*) {
-			grid-column: 1 / -1;
-		}
-
-		.week {
-			grid-row: 2 / -1;
-			grid-template-columns: subgrid;
-			grid-template-rows: subgrid;
-			gap: normal;
-			align-items: start;
-			pointer-events: none;
-		}
-
-		/* No program: no header, so the week starts at the top. */
-		.week:first-child {
-			grid-row: 1 / -1;
-		}
-
-		.week > :global(*) {
-			grid-column: 1;
-			pointer-events: auto;
-		}
-
-		.week > :global([role='radiogroup']) {
-			grid-column: 1 / -1;
-		}
-
-		.week > :global([role='radiogroup'] + *) {
-			grid-row: span 2;
-		}
-
-		.week > :global(.aside) {
-			grid-column: 2;
-		}
-
-		/* The tools (the stack's last section): under the brief (.aside), else right under the
-		   strip; beside a state card (no strip), level with it. */
-		.stack > :global(section:last-child) {
-			grid-column: 2;
-			grid-row: 3 / -1;
-		}
-
-		.stack:has(:global(.aside)) > :global(section:last-child) {
-			grid-row: 4;
-		}
-
-		.stack:not(:has(:global([role='radiogroup']))) > :global(section:last-child) {
-			grid-row: 2 / -1;
-		}
-
-		.stack > .week:first-child ~ :global(section:last-child) {
-			grid-row: 1 / -1;
-		}
-	}
-
-	.brief {
-		display: grid;
-		gap: var(--space-3);
-		font-size: var(--text-sm);
-		line-height: var(--leading-normal);
-		color: var(--color-text-secondary);
-	}
-
-	/* The eyebrow and title as Card sets them, closer together than the paragraphs. */
-	.brief-title {
-		margin-top: calc(var(--space-2) * -1);
-		font-size: var(--text-lg);
-		font-weight: var(--weight-semibold);
-		letter-spacing: var(--tracking-tight);
-		line-height: var(--leading-snug);
-		color: var(--color-text);
-	}
-
-	.brief ul {
-		display: grid;
-		gap: var(--space-1-5);
-		margin: 0;
-		padding-left: var(--space-5);
-	}
-
-	.aside {
-		display: grid;
-		gap: var(--space-6);
-	}
-
-	.brief strong {
-		font-weight: var(--weight-semibold);
-		color: var(--color-text);
-	}
-
-	/*
-	 * A week finding under its card (m7/04): the summary of a native <details>, a 44 px target
-	 * that opens without JavaScript; its body is the why. A CSS glyph and the words carry the
-	 * meaning; caution fills the glyph with the warning colour, never the danger tone. Here, not
-	 * in SessionCard, so Today and History load none of it (docs/performance.md).
-	 */
-	.note,
-	.why {
-		margin-top: calc(var(--space-2) * -1);
-		font-size: var(--text-sm);
-		color: var(--color-text-secondary);
-	}
-
-	.note summary,
-	.why summary {
+	.week {
 		display: flex;
-		align-items: baseline;
-		gap: var(--space-2);
+		flex-direction: column;
+	}
+
+	.title {
+		margin-top: var(--space-10);
+		font: var(--type-title);
+		letter-spacing: var(--tracking-display);
+		color: var(--color-text);
+	}
+
+	.status {
+		margin-top: var(--space-2);
+		font: var(--type-body);
+		color: var(--color-text-secondary);
+	}
+
+	.week > :global(.week-lines) {
+		margin-top: var(--space-8);
+	}
+
+	.state {
+		margin-top: auto;
+		padding-top: var(--space-10);
+	}
+
+	.statement {
+		font: var(--type-statement);
+		letter-spacing: var(--tracking-statement);
+		color: var(--color-text);
+	}
+
+	.lead {
+		padding: var(--space-3) 0 var(--space-7);
+		font: var(--type-body);
+		color: var(--color-text-secondary);
+	}
+
+	.again {
 		min-height: var(--touch-target);
-		padding: var(--space-3) var(--space-4);
+		font: var(--type-button);
+		color: var(--color-text);
+	}
+
+	/* A quiet row: More, the week's line, Back to this week, a state's row. */
+	.quiet {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-3);
+		width: 100%;
+		min-height: var(--touch-target);
+		margin-top: var(--space-3-5);
+		font: var(--type-secondary);
+		color: var(--color-text-secondary);
+		text-decoration: none;
 		list-style: none;
 	}
 
-	.note summary::-webkit-details-marker,
-	.why summary::-webkit-details-marker {
+	summary.quiet {
+		cursor: pointer;
+	}
+
+	summary.quiet::-webkit-details-marker {
 		display: none;
 	}
 
-	.note summary::before {
+	.quiet :global(.chevron) {
+		flex: none;
+		color: var(--color-text-tertiary);
+		transition: transform var(--duration-fast) var(--ease-standard);
+	}
+
+	details[open] > summary.quiet :global(.chevron) {
+		transform: rotate(90deg);
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.quiet:is(a, summary):hover {
+			color: var(--color-text);
+		}
+
+		.arrow:is(a):hover {
+			color: var(--color-text);
+		}
+
+		.why summary:hover {
+			color: var(--color-text);
+		}
+	}
+
+	/* The week's note, in place under its line. */
+	.note-body {
+		display: grid;
+		gap: var(--space-6);
+		padding-bottom: var(--space-3);
+	}
+
+	.note-body h3 {
+		font: var(--type-row);
+		font-weight: var(--weight-semibold);
+		color: var(--color-text);
+	}
+
+	.note-body .lead {
+		padding: var(--space-3) 0 0;
+	}
+
+	/* A finding: its words in text colour, label first; a caution keeps its warning dot. */
+	.finding {
+		display: flex;
+		align-items: baseline;
+		gap: var(--space-2);
+		padding-top: var(--space-3);
+		font: var(--type-body);
+		color: var(--color-text);
+	}
+
+	.finding::before {
 		content: '';
 		flex: none;
 		width: 0.5rem;
 		height: 0.5rem;
 		border-radius: 50%;
 		box-shadow: inset 0 0 0 1.5px;
+		transform: translateY(-0.1em);
 	}
 
-	.note[data-tone='caution'] summary::before {
+	.finding[data-tone='caution']::before {
 		background: var(--color-warning);
 	}
 
-	@media (hover: hover) and (pointer: fine) {
-		:is(.note, .why) summary:hover {
-			color: var(--color-text);
-			cursor: pointer;
-		}
+	.why-line {
+		padding: var(--space-3) 0 var(--space-5);
+		font: var(--type-secondary);
+		color: var(--color-text-tertiary);
 	}
 
-	.note p,
-	.why ul {
-		padding: 0 var(--space-4);
+	.changes {
+		display: grid;
+		gap: var(--space-3);
+		padding: var(--space-3) 0;
+		list-style: none;
+		font: var(--type-secondary);
+		color: var(--color-text-secondary);
 	}
 
-	/* Each decision on its own lines, the newest first, under the title that says which day. */
+	.changes strong {
+		font-weight: var(--weight-semibold);
+		color: var(--color-text);
+	}
+
+	/* Why a day holds its session (m7/14): closed by default, its decisions under it. */
+	.why {
+		font: var(--type-secondary);
+		color: var(--color-text-secondary);
+	}
+
+	.why summary {
+		display: flex;
+		align-items: center;
+		min-height: var(--touch-target);
+		list-style: none;
+		cursor: pointer;
+	}
+
+	.why summary::-webkit-details-marker {
+		display: none;
+	}
+
 	.why ul {
 		display: grid;
 		gap: var(--space-2);
@@ -678,28 +762,36 @@
 		list-style: none;
 	}
 
-	/* A link in a panel: a full 44 px row, as the session screen's notices set theirs. */
-	.link {
-		display: flex;
-		align-items: center;
-		min-height: var(--touch-target);
-		font-weight: var(--weight-semibold);
+	.rows {
+		display: grid;
+		list-style: none;
 	}
 
-	.logged {
-		display: grid;
-		gap: var(--space-2);
+	@media (width >= 64rem) {
+		.screen:has(.state) {
+			min-height: 0;
+		}
+
+		.state {
+			margin-top: 0;
+		}
+
+		/* Paper, 11 · Desktop: a 60 px row with a hairline above. */
+		.quiet {
+			min-height: 3.75rem;
+			margin-top: 0;
+			border-top: 1px solid var(--color-hairline);
+		}
+
+		.note-body {
+			padding-bottom: var(--space-6);
+		}
 	}
 
 	.tool {
 		position: relative;
 		display: grid;
 		gap: var(--space-2);
-	}
-
-	/* The plan's failure notice: under its button, the row's whole width. */
-	.plan-failed {
-		flex-basis: 100%;
 	}
 
 	/* Pending (tapped, the sheet's code on its way): a spinner takes the chevron's place after
@@ -709,7 +801,7 @@
 		content: '';
 		position: absolute;
 		top: 50%;
-		right: calc(var(--space-4) + 1px);
+		right: 0;
 		width: 20px;
 		height: 20px;
 		margin-top: -10px;
@@ -717,8 +809,8 @@
 		border-top-color: currentColor;
 		border-radius: var(--radius-full);
 		color: var(--color-text-tertiary);
-		background: var(--color-surface-1);
-		box-shadow: 0 0 0 4px var(--color-surface-1);
+		background: var(--color-canvas);
+		box-shadow: 0 0 0 4px var(--color-canvas);
 		opacity: 0;
 		animation:
 			spin 0.8s linear infinite,

@@ -2,14 +2,14 @@
  * Train's notice for a week a weekly review changed (src/routes/(app)/train, week-changes.ts),
  * and 'First block complete' leading to the cycle review.
  *
- * - review-ahead: generating next week from the review lands on Train's next week, whose notice
- *   says 'Updated from your weekly review' with every applied decision's why (the version's
- *   decisions, read in SQL); its links open the version in History and the review; the week
- *   before shows none. After a modified decision (one change at its half step, the rest left
+ * - review-ahead: generating next week from the review lands on Train's next week, whose one
+ *   line under the week opens the notice, 'Updated from your weekly review', with every applied
+ *   decision's why (the version's decisions, read in SQL); its links open the version in History
+ *   and the review; the week before shows none. After a modified decision (one change at its half step, the rest left
  *   out), it lists only that change.
  * - block-end-late: the block is over and nothing is planned since, so Train's 'First block
  *   complete' leads to the reviews list, which creates the cycle review; then straight to it.
- * - axe in both themes; the notice at 393 × 659 and, in the side column, at 1440 × 900.
+ * - axe in both themes; the notice at 393 × 659 and, under the week in its column, at 1440 × 900.
  *
  * Serial: the history is the one owner's, which every browser and worker shares.
  */
@@ -42,6 +42,15 @@ async function seedAhead(request: APIRequestContext) {
 }
 
 const notice = (page: Page) => page.getByTestId('review-notice');
+
+/** Open the week's note from its one line (a finding's count, if any, names the line first). */
+async function openNote(page: Page) {
+	const line = page.getByTestId('week-line');
+	await expect(line).toHaveText(/Updated from your weekly review|heads-up|trade-off/);
+	await line.click();
+	await expect(notice(page)).toBeVisible();
+	await expect(page.locator('details.note')).toContainText('Updated from your weekly review');
+}
 const items = (page: Page) => page.getByTestId('review-next-item');
 const reviewPage = (s: Seeded) => `${LIST}/w-${s.review.weekStartsOn}`;
 
@@ -80,8 +89,8 @@ test.describe('review-ahead: next week generated from the review', () => {
 		const { changes, review } = await applied(seeded);
 		expect(changes.length).toBeGreaterThan(1);
 
-		await expect(notice(page)).toBeVisible();
-		await expect(notice(page)).toContainText('Updated from your weekly review');
+		await expect(notice(page)).toBeHidden();
+		await openNote(page);
 		await expect(notice(page)).toContainText(review.why);
 		await expect(notice(page).getByRole('listitem')).toHaveCount(changes.length);
 		for (const change of changes) {
@@ -99,13 +108,17 @@ test.describe('review-ahead: next week generated from the review', () => {
 		).toBeVisible();
 
 		await gotoHydrated(page, `/train?week=${week}`);
+		await openNote(page);
 		await notice(page).getByTestId('review-notice-review').click();
 		await expect(page).toHaveURL(new RegExp(`${reviewPage(seeded)}$`));
 		await expect(page.getByTestId('review-next-week')).toHaveAttribute('data-state', 'applied');
 
 		await gotoHydrated(page, `/train?week=${week - 1}`);
-		await expect(page.getByTestId('week-strip')).toBeVisible();
+		await expect(page.getByTestId('week-lines')).toBeVisible();
 		await expect(notice(page)).toHaveCount(0);
+		await expect(
+			page.getByTestId('week-line').filter({ hasText: 'Updated from your weekly review' })
+		).toHaveCount(0);
 	});
 
 	test('after a modified decision, it lists only the change applied', async ({ page }) => {
@@ -120,6 +133,7 @@ test.describe('review-ahead: next week generated from the review', () => {
 		});
 		const { changes, review } = await applied(seeded);
 		expect(changes).toHaveLength(1);
+		await openNote(page);
 		await expect(notice(page).getByRole('listitem')).toHaveCount(1);
 		await expect(notice(page)).toContainText(changes[0]!.why);
 		await expect(notice(page)).toContainText(review.why);
@@ -129,14 +143,17 @@ test.describe('review-ahead: next week generated from the review', () => {
 	test.describe('in a desktop window', () => {
 		test.use({ ...DESKTOP });
 
-		test('the notice sits in the side column beside the day, nothing scrolls sideways', async ({
+		test('the notice opens under the week, in its column, nothing scrolls sideways', async ({
 			page
 		}, testInfo) => {
 			await generate(page, seeded);
-			await expect(notice(page)).toBeVisible();
-			const day = (await page.getByTestId('day-sessions').boundingBox())!;
+			await openNote(page);
+			const week = (await page.getByTestId('week-lines').boundingBox())!;
+			const main = (await page.locator('main#main').boundingBox())!;
 			const box = (await notice(page).boundingBox())!;
-			expect(box.x).toBeGreaterThanOrEqual(day.x + day.width);
+			expect(Math.abs(box.x - week.x)).toBeLessThanOrEqual(1);
+			expect(box.y).toBeGreaterThanOrEqual(week.y + week.height - 1);
+			expect(box.x + box.width).toBeLessThanOrEqual(main.x + main.width + 1);
 			await expectNoSideScroll(page);
 			await notice(page).getByTestId('review-notice-version').hover();
 			await captureScreen(page, testInfo, 'train-review-notice-desktop');
@@ -155,7 +172,7 @@ test.describe('block-end-late: the block is over', () => {
 		await gotoHydrated(page, '/train');
 		await expect(page.getByTestId('train-block-complete')).toBeVisible();
 		const next = page.getByTestId('train-next');
-		await expect(next).toContainText('Review this block');
+		await expect(next).toHaveText('Review the block');
 		await auditBothThemes(page, 'Train block complete');
 		await captureScreen(page, testInfo, 'train-block-complete-review');
 		await next.click();
@@ -168,7 +185,7 @@ test.describe('block-end-late: the block is over', () => {
 		expect(stored).toBeDefined();
 
 		await gotoHydrated(page, '/train');
-		await expect(next).toContainText('Open your cycle review');
+		await expect(next).toHaveText('Open the review');
 		await next.click();
 		await expect(page).toHaveURL(new RegExp(`${LIST}/c-${stored!.id}$`));
 		await expect(page.getByTestId('cycle-review')).toBeVisible();

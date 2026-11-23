@@ -15,7 +15,15 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { addDays } from '../src/lib/domain/calendar';
 import { longDate } from '../src/lib/ui/program/words';
 import { DESKTOP, expectMainCentred, expectNoSideScroll, tokenPx } from './desktop';
-import { PROGRAM_TZ, seedProgram, type SeededProgram, type SeededSession } from './program-support';
+import {
+	dayLines,
+	openMore,
+	PROGRAM_TZ,
+	seedProgram,
+	sessionLine,
+	type SeededProgram,
+	type SeededSession
+} from './program-support';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -196,10 +204,11 @@ test.describe('a program that starts next week', () => {
 
 			// The current version is as it was: Full body on Friday, moved, and Monday a rest day.
 			await gotoHydrated(page, '/train');
-			await dayOf(page, seeded.weekStart).click();
-			await expect(page.getByTestId('rest-day')).toBeVisible();
-			await dayOf(page, addDays(seeded.weekStart, 4)).click();
-			await expect(cards(page).filter({ hasText: 'Full body' })).toContainText('Moved from Mon');
+			await expect(dayLines(page, seeded.weekStart)).toHaveAttribute('data-testid', 'rest-day');
+			await expect(sessionLine(page, 'Full body', addDays(seeded.weekStart, 4))).toHaveAttribute(
+				'data-status',
+				'moved'
+			);
 		});
 
 		test('an edit opens on the day it changed; the current one says it is current', async ({
@@ -225,6 +234,7 @@ test.describe('a program that starts next week', () => {
 				page
 			}) => {
 				await gotoHydrated(page, '/train');
+				await openMore(page);
 				const action = page.getByTestId('open-history');
 				let release = await hold(page, '**/train/history/__data.json*');
 				await action.click();
@@ -261,6 +271,7 @@ test.describe('a program that starts next week', () => {
 						body: JSON.stringify({ message: 'Something went wrong on our side.', requestId: 'e2e' })
 					})
 				);
+				await openMore(page);
 				await page.getByTestId('open-history').click();
 				const error = page.getByTestId('error-view');
 				await expect(error).toContainText('Something went wrong');
@@ -281,6 +292,7 @@ test.describe('a program that starts next week', () => {
 				context
 			}) => {
 				await gotoHydrated(page, '/train');
+				await openMore(page);
 				await context.setOffline(true);
 				await page.getByTestId('open-history').click();
 				await expect(page.getByTestId('offline-state')).toBeVisible();

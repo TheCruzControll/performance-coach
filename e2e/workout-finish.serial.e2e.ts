@@ -305,7 +305,8 @@ test.describe('finishing a workout', () => {
 			from.locator(`[data-testid="session-card"][href$="/train/session/${session.lineage}"]`);
 		await page.goto('/train');
 		await expect(card(page)).toHaveAttribute('data-status', 'completed');
-		await expect(card(page)).toContainText('Done');
+		// Train's line says it is done (a tick, and its name).
+		await expect(card(page)).toHaveAttribute('aria-label', /, done$/);
 		// Today lists the day's sessions once onboarding is done (the seeded program skips it).
 		await query('update athlete_profiles set onboarding_completed_at = now()');
 		await page.goto('/today');

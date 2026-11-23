@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { isDesktopPage } from './desktop';
+import { openMore } from './program-support';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -122,7 +123,8 @@ test.describe('app shell on an iPhone viewport', () => {
 		// With no program and the profile not yet complete, Train sends the owner to it.
 		await page.goto('/train');
 		const empty = page.getByTestId('train-empty');
-		await expect(empty).toContainText('Finish your training profile first');
+		await expect(empty).toContainText('Finish setting up your profile, then I can plan week 1.');
+		await expect(page.getByTestId('train-next')).toHaveText('Finish setup');
 		await expect(page.getByTestId('train-next')).toHaveAttribute('href', '/profile');
 		await expect(empty).not.toContainText(/passkey|sign.in/i);
 	});
@@ -367,6 +369,7 @@ test.describe('app shell on an iPhone viewport', () => {
 			await page.waitForLoadState('networkidle');
 		}
 		await gotoHydrated(page, '/train');
+		await openMore(page);
 		await page.getByTestId('open-plates').click();
 		await expect(page.getByTestId('plates-sheet')).toBeVisible();
 		await page.keyboard.press('Escape');
@@ -376,6 +379,7 @@ test.describe('app shell on an iPhone viewport', () => {
 
 	test('plate calculator sheet: stepper, unit switch, focus return', async ({ page }, testInfo) => {
 		await gotoHydrated(page, '/train');
+		await openMore(page);
 		const opener = page.getByTestId('open-plates');
 		await opener.click();
 
@@ -443,6 +447,7 @@ test.describe('app shell on an iPhone viewport', () => {
 		});
 		// Hydrated first: a tap on the server-rendered row before then does nothing.
 		await gotoHydrated(page, '/train');
+		await openMore(page);
 		await page.getByTestId('open-plates').click();
 		const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
 		await expect(page.getByTestId('plates-sheet')).toHaveClass(/\bvisible\b/);
@@ -487,6 +492,7 @@ test.describe('app shell on an iPhone viewport', () => {
 			.getByRole('link', { name: 'Train' })
 			.click();
 		await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
+		await openMore(page);
 		await page.getByTestId('open-plates').click();
 		await expect(sheet).toBeVisible();
 		expect(await overflow()).toBe('hidden');
@@ -546,6 +552,7 @@ test.describe('app shell on an iPhone viewport', () => {
 			await gotoHydrated(page, '/profile');
 			await page.getByTestId('theme-control').getByRole('radio', { name: theme }).click();
 			await gotoHydrated(page, '/train');
+			await openMore(page);
 			await page.getByTestId('open-plates').click();
 			const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
 			await expect(sheet).toBeVisible();
@@ -572,6 +579,7 @@ test.describe('app shell on an iPhone viewport', () => {
 			await gotoHydrated(page, '/profile');
 			await page.getByTestId('theme-control').getByRole('radio', { name: theme }).click();
 			await gotoHydrated(page, '/train');
+			await openMore(page);
 			await page.getByTestId('open-plates').click();
 			const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
 			await expect(sheet).toBeVisible();
