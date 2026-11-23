@@ -32,11 +32,10 @@
  *   plan has it (the previous block's last week for a block's first). Each avoid finding it keeps
  *   that no decision explains gets a schedule_kept decision, found against that week before and
  *   kept because the block shares its days (an OWN_WEEKS week keeps its own days instead). Repair
- *   does not search again for these. Moves, eases
- *   and drops get schedule_repaired, load_eased and session_dropped decisions. Decisions alike
- *   across weeks are one citing each session, and every decision's refs follow the sessions to
- *   their new places, as placement's do; the schedule_kept ones are written after that, so they
- *   name the final places.
+ *   does not search again for these. Moves, eases and drops get schedule_repaired, load_eased and
+ *   session_dropped decisions. Decisions alike across weeks are one citing each session, and every
+ *   decision's refs follow the sessions to their new places, as placement's do; the schedule_kept
+ *   ones are written after that, so they name the final places.
  *
  * Pure and deterministic, like every stage.
  */
@@ -266,7 +265,8 @@ function recordKeptAsPlanned(
 	const { budget } = demandIn(draft);
 	const events = eventsOf(input);
 	const level = input.experience[input.disciplines[0]!];
-	// Explained already: a clash-keeping decision (CLASH_KEPT_RULES) citing the session, from any stage.
+	// Explained already: a clash-keeping decision (CLASH_KEPT_RULES) citing the session, from any
+	// stage.
 	const explained = new Set(
 		log
 			.list()
