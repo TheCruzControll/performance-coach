@@ -240,6 +240,16 @@ export async function getSpecifics(ownerId: string, deps: ProfileDeps = {}): Pro
 	};
 }
 
+/** The running profile's heart rates, or null with none stored (the session screen's zones). */
+export async function getHeartRate(
+	ownerId: string,
+	deps: ProfileDeps = {}
+): Promise<HeartRate | null> {
+	const { db } = resolveDeps(deps);
+	const running = await measure('db', () => createProfileRepository(db).getRunning(ownerId));
+	return (running && toHeartRate(running).heartRate) ?? null;
+}
+
 /** `{ heartRate }` when the row holds at least one heart rate, else nothing (no key at all). */
 function toHeartRate(row: RunningRow): { heartRate?: HeartRate } {
 	const heartRate = { max: row.maxHr, resting: row.restingHr, threshold: row.thresholdHr };

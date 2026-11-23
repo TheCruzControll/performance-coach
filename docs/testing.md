@@ -998,7 +998,9 @@ The Train week, the plan overview, session detail and the edit sheets.
   designed offline state; axe in dark and light per discipline, no layout shift, and the desktop
   column centred beside the rail. The load's words, 404s and fail-soft error are covered on real
   Postgres in `tests/integration/training/session-load.test.ts`;
-  `src/lib/ui/program/session-words.test.ts` covers the composed words.
+  `src/lib/ui/program/session-words.test.ts` covers the composed words, the zones in bpm included
+  (`effortWords`, `stepsInZones`); `src/lib/domain/programming/hr-zones.test.ts` covers the plan's
+  `hr_zones_set` decision and pins that plans without heart rate do not change.
 - **Move** (`e2e/move-session.serial.e2e.ts`, the hybrid fixture seeded `next_week`, so every day is
   ahead):
   - Move opens a code-split sheet that lists the days left in the week as radio cards, each with

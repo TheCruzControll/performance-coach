@@ -70,6 +70,14 @@ Last reviewed: 2026-11-23, against `main` at the merge of #618.
   `src/lib/domain/programming/planned-targets.ts`. Closes when a deload in a spliced tail is judged
   by the range its block set, or a test pins the first range as the intended judgement.
 - **A first program's marathon blocks, and a first block that is a marathon or half taper, carry no running targets (`targets.running`), so their race work, long-run targets and race week without a long run reach only next blocks and re-plans.** A first program's half base, build and peak blocks do carry them. Found building m7r/07 and checked again in m7r/08 (`src/lib/domain/programming/running.ts`). Closes when a first program's marathon and taper weeks carry their running targets.
+- **Heart-rate zones in bpm show only on the session screen.** The live run workout
+  (`src/routes/workout/run/run-log.ts`) shows 'Zone 2' without bpm, and the coach's diff, a re-plan's
+  changes, a session edit's change line (`segmentWords` in
+  `src/lib/server/services/programs/edits.ts`) and `/design` read 'HR zone 2'
+  (`src/lib/domain/training/describe.ts`). The plan's
+  `hr_zones_set` decision keeps the rates of the day it was built, so after the owner edits them it
+  can differ from the session screen until the next plan. Found building m7r/10. Closes when the
+  workout shows bpm and the words agree.
 
 ## Stale documentation
 
