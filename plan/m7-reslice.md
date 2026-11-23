@@ -233,6 +233,11 @@ added. M7's acceptance criterion 2, a journey with several disciplines at once, 
 - m7r/28 kept `programPlanSchema` for a stored re-plan and corrected the ADR. It ships `cutShortLineages` and `CopyChanges.weeks` ahead of m7r/29, which uses them.
 - m7r/30: compute `from` as the later of `replanStart(today, touched)` and the version's `startsOn`; a program whose start is still ahead otherwise throws `GeneratedPlanError`.
 - m7r/07 restores the periodised marathon-pace assertion.
+- m7r/29 adds a store-side refusal of a deload whose week is already over. m7r/32 routes a deload to `reviseDeload` (with `source`) and every other re-plan to `storeReplan`, re-checking the preview inside the accept transaction.
+- m7r/30's preview judges both sides on their own modelled load through the week's Sunday, so the load rules run; the source commit filtered them out.
+- m7r/31 adds migration 0034 (superseded reasons). m7r/33 stores only a re-plan's week rows, impact and summary lines, never the plan; m7r/34 caps those rows at 12 and makes `ReplanRequest` a discriminated union.
+- m7r/35 targets a reactive deload at next week, or this week only when the review is exactly one week late. m7r/36 adds the review page's deload card (Accept the deload, Keep the plan), which the source commit lacked.
+- For m7/50: a capped re-plan card should show its "N more changes" line, which today reaches only the coach. A late deload's toast still says "Next week".
 
 ## For the owner
 
