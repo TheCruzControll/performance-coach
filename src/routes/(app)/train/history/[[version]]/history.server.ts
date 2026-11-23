@@ -15,8 +15,9 @@
  *   The route has no param matcher, which would cost every route JavaScript (docs/performance.md).
  * - /train/history/<n>?week is the week as it was before that change: version n − 1's week, on
  *   the day the change touched, read-only, whose sessions open at that version
- *   (/train/session/<lineage>?v=n−1). Version 1 shows itself, as first planned. Only this read
- *   reads a week.
+ *   (/train/session/<lineage>?v=n−1), named by its block and number. When version n − 1 had no
+ *   week planned there, it says so ('Not planned before this change') in place of another week.
+ *   Version 1 shows itself, as first planned. Only this read reads a week.
  * - It fails soft: a read that fails is recorded as a server error (kind 'load') and History
  *   shows its designed error with Retry, inside the shell, instead of the 500 page.
  */
@@ -55,7 +56,7 @@ const CURSOR_PARAM = VERSION_PARAM;
  * sentence under the list) and its sentence.
  */
 export interface HistoryCard {
-	id: 'history-empty' | 'history-none' | 'history-error' | 'history-bridge';
+	id: 'history-empty' | 'history-none' | 'history-error' | 'history-bridge' | 'history-not-planned';
 	title: string | null;
 	description: string;
 }
@@ -85,6 +86,13 @@ const bridgeCard = (startsOn: IsoDate): HistoryCard => ({
 	title: 'Unplanned week · between blocks',
 	description: `The next block starts ${shortDate(startsOn)}. Nothing was planned this week: what was logged counts as off-plan.`
 });
+
+/** The week a change touched was past the end of the plan before it: no week as it was. */
+export const NOT_PLANNED_BEFORE: HistoryCard = {
+	id: 'history-not-planned',
+	title: 'Not planned before this change',
+	description: 'Your plan ended before this week then, so there is no week as it was to show.'
+};
 
 /** Version 1 in the list: the plan's start, not a change (Paper). */
 export const PLAN_CREATED = 'Plan created';
@@ -125,7 +133,7 @@ export interface HistoryPageView {
 
 /** The week as it was before a change, as Train's lines, read-only. */
 export interface VersionWeekView {
-	/** 'Baseline week · Week 1'. */
+	/** 'Baseline week · Week 1'; 'Week of Mon 16 Nov' when it was not planned. */
 	label: string;
 	/** The version it is: the one before the change, or version 1 itself. */
 	version: number;
@@ -134,6 +142,8 @@ export interface VersionWeekView {
 	lines: WeekLine[];
 	/** A bridge week between blocks, in place of its seven rest lines: when the next block starts. */
 	bridge?: HistoryCard;
+	/** In place of the lines (none): version n − 1 planned no week on the day the change touched. */
+	notPlanned?: HistoryCard;
 }
 
 export type HistoryData =
@@ -213,9 +223,10 @@ const pageView = (history: VersionHistory, timeZone: string, today: IsoDate): Hi
 
 /**
  * The week as it was before a change (v2/07b): version n − 1's week at the day the change
- * touched, the first of its sessions with a date. Version 1, which changed no one session, shows
- * itself on the week that holds today (week 1 before the start, as Train does). A week past the
- * planned weeks shows week 1 instead.
+ * touched, the first of its sessions with a date (today when none has one). When version n − 1
+ * had no week planned there, it says so: never another of its weeks, which the change did not
+ * touch. Version 1, which changed no one session, shows itself on the week that holds today
+ * (week 1 before the start, as Train does), and week 1 past the planned weeks: as first planned.
  */
 async function versionWeek(
 	ownerId: string,
@@ -223,17 +234,22 @@ async function versionWeek(
 	today: IsoDate,
 	db: TrainingDeps['db']
 ): Promise<VersionWeekView> {
-	const touched =
-		entry.number > 1
-			? entry.decisions.flatMap((d) => d.affected).find((node) => node.date !== null)?.date
-			: undefined;
+	const first = entry.number === 1;
+	const touched = first
+		? undefined
+		: entry.decisions.flatMap((d) => d.affected).find((node) => node.date !== null)?.date;
 	const number = Math.max(1, entry.number - 1);
+	const older = number !== entry.number || !entry.current;
 	let week: TrainingWeek | null = await getVersionWeek(
 		ownerId,
 		number,
 		{ date: touched ?? today },
 		{ db }
 	);
+	if (week && !week.planned && !first) {
+		const label = `Week of ${shortDate(week.startsOn)}`;
+		return { label, version: number, older, lines: [], notPlanned: NOT_PLANNED_BEFORE };
+	}
 	if (week && !week.planned) {
 		week = await getVersionWeek(ownerId, number, { block: 1, week: 1 }, { db });
 	}
@@ -242,7 +258,7 @@ async function versionWeek(
 	return {
 		label: `${week.blockName} · Week ${week.number}`,
 		version: number,
-		older: number !== entry.number || !entry.current,
+		older,
 		lines: weekLines(week.days, today),
 		...(week.nextBlockStartsOn && { bridge: bridgeCard(week.nextBlockStartsOn) })
 	};

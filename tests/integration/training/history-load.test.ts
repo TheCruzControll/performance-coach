@@ -3,7 +3,9 @@
  * versions newest first, HISTORY_PAGE_SIZE at a time, each with its day and date in the owner's
  * zone, who made it and every decision with its why, and how many changes there have been (version
  * 1, 'Plan created', is none). /train/history/<n> is version n's change; with ?week, the week as
- * it was before it: version n − 1's, on the week the change touched, read-only. Only version 1 is
+ * it was before it: version n − 1's, on the week the change touched, read-only, named by its block
+ * and number (tests/integration/training/bridge-week.test.ts has one version n − 1 did not plan,
+ * which says so). Only version 1 is
  * 'no changes yet'. ?before=n is the page below version n. A malformed or unknown version is the
  * 404 page; a read that fails is the designed error, recorded.
  *
@@ -17,6 +19,7 @@ import { addDays } from '../../../src/lib/domain/calendar';
 import type { Executor } from '../../../src/lib/server/db';
 import { findErrorsByRequestId } from '../../../src/lib/server/services/errors';
 import { getAthleteProfile, saveBasics } from '../../../src/lib/server/services/profile/index';
+import { applyProgramEdits } from '../../../src/lib/server/services/programs/batch';
 import {
 	createProgramFromPlan,
 	getProgramVersion,
@@ -305,13 +308,43 @@ describe('a change’s page', () => {
 				by: 'Programming rules',
 				summary: PLAN_CREATED
 			});
-			expect(data.week).toMatchObject({ version: 1, older: false });
+			expect(data.week).toMatchObject({
+				label: 'Baseline week · Week 1',
+				version: 1,
+				older: false
+			});
+			expect(data.week).not.toHaveProperty('notPlanned');
 			expect(data.week!.lines[0]).toMatchObject({ date: MON, title: 'Full body' });
 
 			await move(db, owner, full, WED, 1);
 			const older = await version(db, owner, '1', true);
 			expect(older.version.current).toBe(false);
 			expect(older.week).toMatchObject({ version: 1, older: true });
+		});
+	});
+
+	it('a coach proposal’s one edit keeps its own words beside the proposal’s title', async () => {
+		await withRollback(async (db) => {
+			const { owner, full } = await withProgram(db);
+			const rationale = 'Friday leaves Monday free after the weekend away.';
+			await applyProgramEdits(
+				owner,
+				{
+					baseVersion: 1,
+					today: TODAY,
+					ops: [{ op: 'move', sessionLineage: full, toDate: FRI }],
+					title: 'Ease into the week',
+					rationale
+				},
+				{ db }
+			);
+
+			const change = await version(db, owner, '2');
+			expect(change.version).toMatchObject({ summary: 'Ease into the week', by: 'Coach' });
+			// Not the version's summary: the change lists it, with its why under it.
+			expect(change.version.decisions).toEqual([
+				{ id: expect.any(String), summary: 'Moved Full body from Mon to Fri', why: rationale }
+			]);
 		});
 	});
 

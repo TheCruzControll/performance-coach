@@ -34,8 +34,8 @@ const baseline = JSON.parse(
 
 /**
  * What each M7 Train slice may add, in KB of gzip (m7-plan; 3.0 KB in all). A slice turns on its
- * own row in ON when it lands. The timeline's row (m7/39's season, streamed for the plan sheet)
- * stays on, though the season left Train with the sheet (v2/07b): the whole plan is its own page.
+ * own row in ON when it lands. The timeline's row (m7/39's season) is off: the season left Train
+ * with its plan sheet (v2/07b), and the whole plan is its own page.
  */
 const ALLOWANCES = {
 	findings: 0.6,
@@ -44,7 +44,7 @@ const ALLOWANCES = {
 	timeline: 0.7,
 	replanNote: 0.1
 } as const;
-const ON: readonly (keyof typeof ALLOWANCES)[] = ['findings', 'why', 'weekKinds', 'timeline'];
+const ON: readonly (keyof typeof ALLOWANCES)[] = ['findings', 'why', 'weekKinds'];
 /** Random ids and the store's timestamps move a measure by a few bytes either way. */
 const TOLERANCE_B = 64;
 

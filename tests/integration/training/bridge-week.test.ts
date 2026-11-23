@@ -1,9 +1,10 @@
 /**
  * A bridge week between blocks (M6 bridge-week-states) on real Postgres, from the bridge-week
  * fixture: three unplanned weeks after Base, this week the last, and Build from next Monday.
- * Train, the whole plan, History and Today each show the bridge as a deliberate gap with the
- * day the next block starts, never seven rest days, and Train lists what was logged in it as
- * off-plan. A Base week and Build's first week read as they always have.
+ * Train, the whole plan and Today each show the bridge as a deliberate gap with the day the next
+ * block starts, never seven rest days, and Train lists what was logged in it as off-plan; History
+ * says the week was not planned before the change that made the bridge. A Base week and Build's
+ * first week read as they always have.
  *
  * Today is forced to a Wednesday and a Monday in Los Angeles; the seeds run inside the test's
  * transaction, so the integration setup also proves each load sends one query at a time.
@@ -19,7 +20,10 @@ import { seedAnalyticsFixture } from '../../../src/lib/server/test-support/analy
 import { atLocal } from '../../../src/lib/server/test-support/analytics-fixtures/dashboards';
 import type { BridgeFixtureResult } from '../../../src/lib/server/test-support/analytics-fixtures/bridge-week';
 import { loadTodayPlan } from '../../../src/routes/(app)/today/plan.server';
-import { loadHistory } from '../../../src/routes/(app)/train/history/[[version]]/history.server';
+import {
+	loadHistory,
+	NOT_PLANNED_BEFORE
+} from '../../../src/routes/(app)/train/history/[[version]]/history.server';
 import { loadPlan } from '../../../src/routes/(app)/train/plan/plan.server';
 import { loadTrainWeek, type TrainWeekData } from '../../../src/routes/(app)/train/week.server';
 import { withCommitted, withRollback } from '../helpers';
@@ -134,20 +138,27 @@ describe('a bridge week', () => {
 		});
 	});
 
-	// The bridge came with version 2, the late review's next block: the week before that change is
-	// version 1's, which had none. A later change in the bridge week would show it as Train does.
-	it('History’s change that made the bridge shows the week before it, with no bridge', async () => {
+	// The bridge came with version 2, the late review's next block, which names no dated session:
+	// the week it touched is this one, where version 1 had nothing planned (Base ended three weeks
+	// ago). The week before that change is not planned, never Base's week 1.
+	it('History’s change that made the bridge says the week was not planned before it', async () => {
 		await withRollback(async (db) => {
 			const { owner, now } = await seeded(db, WEDNESDAY);
+			const before = await getTrainingWeek(owner, { date: WEDNESDAY }, { version: 1 }, { db });
+			expect(before).toMatchObject({ planned: false, startsOn: MONDAY });
 			const data = await loadHistory(
 				owner,
 				{ version: '2', before: null, week: true, now, origin: origin('/train/history/2') },
 				{ db }
 			);
 			if (data.state !== 'version') throw new Error(`expected a version, got ${data.state}`);
-			expect(data.week).toMatchObject({ version: 1, older: true });
-			expect(data.week!.bridge).toBeUndefined();
-			expect(data.week!.lines.length).toBeGreaterThanOrEqual(7);
+			expect(data.week).toEqual({
+				label: 'Week of Mon 16 Nov',
+				version: 1,
+				older: true,
+				lines: [],
+				notPlanned: NOT_PLANNED_BEFORE
+			});
 		});
 	});
 

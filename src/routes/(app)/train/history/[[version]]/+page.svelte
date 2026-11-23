@@ -149,13 +149,21 @@
 						<span class="back-label">{version.summary}</span>
 					</a>
 					<h1 class="title">As it was</h1>
-					<p class="lead">
-						{version.number === 1
-							? 'As first planned · read-only'
-							: 'Before this change · read-only'}
+					<!-- Which week it is, and when: 'Base · Week 1 · before this change'. -->
+					<p class="lead" data-testid="version-week-label">
+						{week.label} · {version.number === 1 ? 'as first planned' : 'before this change'}
 					</p>
 					<div class="week" data-testid="version-week">
-						{#if week.bridge}
+						{#if week.notPlanned}
+							<section
+								class="state"
+								data-testid={week.notPlanned.id}
+								aria-labelledby="not-planned-title"
+							>
+								<h2 id="not-planned-title" class="statement">{week.notPlanned.title}</h2>
+								<p class="sentence">{week.notPlanned.description}</p>
+							</section>
+						{:else if week.bridge}
 							<section class="state" data-testid={week.bridge.id} aria-labelledby="bridge-title">
 								<h2 id="bridge-title" class="statement">{week.bridge.title}</h2>
 								<p class="sentence">{week.bridge.description}</p>
@@ -193,14 +201,16 @@
 							<dt class="label">Who</dt>
 							<dd class="value">{version.by}</dd>
 						</div>
-						{#if version.decisions.length === 1}
+						{#if version.decisions.length === 1 && version.decisions[0]!.summary === null}
+							<!-- One decision the version's summary already says: only its why. -->
 							<div class="fact" data-testid="decision">
 								<dt class="label">Why</dt>
 								<dd class="value">{version.decisions[0]!.why}</dd>
 							</div>
 						{:else}
 							{#each version.decisions as decision (decision.id)}
-								<!-- Several: each decision's own words, and its why under them. -->
+								<!-- Several, or one in its own words (a coach proposal's one edit): each
+								     decision's words, and its why under them. -->
 								<div class="fact several" data-testid="decision">
 									<dt class="value">{decision.summary ?? version.summary}</dt>
 									<dd class="why">{decision.why}</dd>

@@ -1077,12 +1077,14 @@ Changes, each with who made it and why; the week as it was before each stays vie
   newest-first order, each change's day and date in the owner's zone, the count ('Two since the
   plan began', none on a `?before` page), version 1 as 'Plan created' with its own summary kept, who
   made each version and each decision's why, `HISTORY_PAGE_SIZE` paging with `?before`, 'no
-  changes yet' only for version 1, the no-program, 404 and recorded soft-error states, and with
-  `?week` the week as it was: version n − 1's on the week the change touched (version 1 itself).
+  changes yet' only for version 1, the no-program, 404 and recorded soft-error states, a coach
+  proposal's one edit keeping its own words, and with `?week` the week as it was: version n − 1's
+  on the week the change touched, named by its block and number (version 1 itself). A week
+  version n − 1 had not planned says so (`tests/integration/training/bridge-week.test.ts`).
 - `e2e/program-history.serial.e2e.ts` (hybrid fixture, versions made through the session's move
   action) covers More's row to Changes, the lines and paging, the inline Retry after a soft failure,
-  a change's Who and Why, the week as it was read-only with its sessions as they were then, busy
-  states while `__data.json` is held, the move toast's History link, 404s, the shell error and
+  a change's Who and Why, the week as it was by name, read-only, its sessions as they were then,
+  busy states while `__data.json` is held, the move toast's History link, 404s, the shell error and
   offline cards, axe dark and light, no layout shift, and the desktop column with hover, focus and
   the change's ×.
 

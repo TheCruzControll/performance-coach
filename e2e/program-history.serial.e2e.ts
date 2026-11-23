@@ -2,10 +2,10 @@
  * Changes (src/routes/(app)/train/history/[[version]], Instrument v2 Paper 4 · Train "What has
  * changed"): one line per change, newest first, 20 at a time, with its day, and how many there
  * have been; version 1 is 'Plan created'. A change says who made it and why, and opens the week as
- * it was before it, read-only, whose sessions open as they were then. More's row and a tapped
- * change are busy until the next page renders, as 'Show older changes' is while its page loads,
- * whose failure has an inline Retry. Only version 1 is 'no changes yet'. Not-found, failed-load
- * and offline states are designed.
+ * it was before it, named and read-only, whose sessions open as they were then. More's row and a
+ * tapped change are busy until the next page renders, as 'Show older changes' is while its page
+ * loads, whose failure has an inline Retry. Only version 1 is 'no changes yet'. Not-found,
+ * failed-load and offline states are designed.
  *
  * The program is seeded next week (PROGRAM_TZ), so every one of its days is ahead on any weekday,
  * and changed through the session screen's own move action. Serial: programs are the one owner's
@@ -194,9 +194,11 @@ test.describe('a program that starts next week', () => {
 			await page.getByTestId('see-week').click();
 			await expect(page).toHaveURL(/\/train\/history\/2\?week=?$/);
 			await expect(heading(page)).toHaveText('As it was');
-			await expect(page.getByTestId('version-detail')).toContainText(
-				'Before this change · read-only'
+			// The week it is, by name: the one the change touched, never another.
+			await expect(page.getByTestId('version-week-label')).toHaveText(
+				'Baseline week · Week 1 · before this change'
 			);
+			await expect(page.getByTestId('history-not-planned')).toHaveCount(0);
 			const line = sessionLine(page, 'Full body', seeded.weekStart);
 			await expect(line).toHaveAttribute('href', `/train/session/${full.lineage}?v=1`);
 			await expect(line).toHaveAttribute('data-status', 'planned');
@@ -232,6 +234,9 @@ test.describe('a program that starts next week', () => {
 			await expect(page.getByTestId('current-version')).toHaveText('This is your plan now.');
 			await expect(page.getByTestId('older-version')).toHaveCount(0);
 			await page.getByTestId('see-week').click();
+			await expect(page.getByTestId('version-week-label')).toHaveText(
+				'Baseline week · Week 1 · before this change'
+			);
 			// Before it, version 2: Full body moved to Wednesday.
 			const moved = sessionLine(page, 'Full body', wednesday());
 			await expect(moved).toHaveAttribute('data-status', 'moved');
@@ -245,8 +250,8 @@ test.describe('a program that starts next week', () => {
 			await expect(page.getByTestId('version-detail')).toContainText('Your first program');
 			await expect(page.getByTestId('version-changes').getByTestId('decision')).toHaveCount(5);
 			await page.getByTestId('see-week').click();
-			await expect(page.getByTestId('version-detail')).toContainText(
-				'As first planned · read-only'
+			await expect(page.getByTestId('version-week-label')).toHaveText(
+				'Baseline week · Week 1 · as first planned'
 			);
 			await expect(sessionLine(page, 'Full body', seeded.weekStart)).toHaveAttribute(
 				'href',

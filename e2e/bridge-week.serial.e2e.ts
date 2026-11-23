@@ -4,7 +4,7 @@
  * next Monday. Train shows 'Free week', between blocks, with the next block's start and no rest
  * days, and lists the run logged this week as a line of its own; its next step and the next
  * week's arrow open Build's first week; the whole plan names the bridge with its length, as its
- * current phase; History's change that made it shows the week before it, which had no bridge;
+ * current phase; History's change that made it says the week was not planned before it;
  * Today's panel names the next block's start with 'Log something else'. Axe is clean in both themes on a phone (393 × 659) and in a desktop window
  * (1440 × 900), where each screen is captured.
  *
@@ -110,17 +110,29 @@ test('the whole plan names the bridge with its length, as the phase now', async 
 	await auditBothThemes(page, 'the plan, a bridge');
 });
 
-// The bridge came with version 2 (the late review's next block): the week before that change,
-// version 1's, had no bridge. A later change to the bridge week would show it as Train does.
-test('History’s change that made the bridge shows the week before it, as Train’s lines', async ({
+// The bridge came with version 2 (the late review's next block), which names no dated session: the
+// week it touched is this one, where version 1 had nothing planned (Base ended three weeks ago).
+// The week before that change says so, and never draws Base's week 1.
+test('History’s change that made the bridge says the week was not planned before it', async ({
 	page
 }) => {
 	await gotoHydrated(page, '/train/history/2');
 	await page.getByTestId('see-week').click();
 	await expect(page).toHaveURL(/\/train\/history\/2\?week=?$/);
+	await expect(page.getByTestId('version-week-label')).toHaveText(
+		`Week of ${shortDate(seeded.weekStart)} · before this change`
+	);
 	const week = page.getByTestId('version-week');
-	await expect(week.getByTestId('week-lines')).toBeVisible();
+	await expect(week.getByTestId('history-not-planned')).toHaveText(
+		/^Not planned before this change\s*Your plan ended before this week then/
+	);
+	await expect(week.getByTestId('week-lines')).toHaveCount(0);
 	await expect(week.getByTestId('history-bridge')).toHaveCount(0);
+	// The change itself is one step back.
+	await page.getByTestId('back-to-change').click();
+	await expect(page).toHaveURL(/\/train\/history\/2$/);
+	await expect(page.getByTestId('version-changes')).toBeVisible();
+	await gotoHydrated(page, '/train/history/2?week');
 	await auditBothThemes(page, 'History, the week before a bridge');
 });
 
@@ -166,7 +178,7 @@ test.describe('in a desktop window', () => {
 		await captureScreen(page, testInfo, 'bridge-week-train-desktop');
 
 		await gotoHydrated(page, '/train/history/2?week');
-		await expect(page.getByTestId('version-week')).toBeVisible();
+		await expect(page.getByTestId('history-not-planned')).toBeVisible();
 		await expectNoSideScroll(page);
 		await captureScreen(page, testInfo, 'bridge-week-history-desktop');
 
