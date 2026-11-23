@@ -25,11 +25,15 @@
  *   lowered is loaded again by M3's loads rules at that RPE, its sRPE follows, and the time fit is
  *   checked again for it.
  * - What repair cannot fix is kept, and says why. An avoid finding a higher-priority goal holds, or
- *   one between a goal's session and a session no goal trains, gets a priority_tradeoff decision;
- *   any other avoid finding the week keeps gets a schedule_kept decision with its headline and the
- *   reason repair kept it. Moves, eases and drops get schedule_repaired, load_eased and
- *   session_dropped decisions. Decisions alike across weeks are one citing each session, and every
- *   decision's refs follow the sessions to their new places, as placement's do.
+ *   one between a goal's session and a session no goal trains, gets a priority_tradeoff decision.
+ *   Once the plan is final, every planned week is judged again against the week before it as the
+ *   plan has it (the previous block's last week for a block's first). Each avoid finding it keeps
+ *   that no decision explains gets a schedule_kept decision, found against that week before and
+ *   kept because the block shares its days. Repair does not search again for these. Moves, eases
+ *   and drops get schedule_repaired, load_eased and session_dropped decisions. Decisions alike
+ *   across weeks are one citing each session, and every decision's refs follow the sessions to
+ *   their new places, as placement's do; the schedule_kept ones are written after that, so they
+ *   name the final places.
  *
  * Pure and deterministic, like every stage.
  */
@@ -50,7 +54,9 @@ import type { FactsFor } from '../decisions.ts';
 import { clip } from '../demand.ts';
 import { goalOf } from '../evaluate/concurrent.ts';
 import type { ContextEvent } from '../evaluate/concurrent.ts';
+import { evaluateWeek } from '../evaluate/week.ts';
 import type { ProgrammingInput } from '../input.ts';
+import { loadModel } from '../load/fatigue.ts';
 import { eachMain, loadBaseline } from '../loads.ts';
 import type { MainLift } from '../loads.ts';
 import { eventKindOf } from '../priority/weights.ts';
@@ -62,7 +68,7 @@ import { openDates } from '../running.ts';
 import { repairWeek } from '../schedule/repair.ts';
 import type { KeptFinding, RepairDecision } from '../schedule/repair.ts';
 import { demandIn } from '../stage.ts';
-import type { Stage } from '../stage.ts';
+import type { Draft, Stage, StageContext } from '../stage.ts';
 import { fitWeek } from '../timefit.ts';
 import type { Trim } from '../timefit.ts';
 
@@ -228,6 +234,102 @@ function decisionOf(
 	return overUngoaled(kept, week.all, week.priorities) ?? kept.decision ?? null;
 }
 
+/**
+ * Why a week keeps an avoid finding that the plan shows against the week before as planned, and no
+ * decision explains: the block's days repeat, so this pairing stays. It names no other day.
+ */
+const FOUND_KEPT =
+	'Found against the week before as planned, and kept because the block shares its days: its days repeat each week, so this pairing with the week before stays.';
+
+/**
+ * Every planned week of the final plan judged with its real week before, and each avoid finding it
+ * keeps that no decision explains recorded as a schedule_kept: once per block for alike facts, citing
+ * the first session of the week it names. The judge is the one the generator's tests use: the week
+ * beside its day before and the next Monday's commitments, with the load of the week before as
+ * planned, the week's priorities, kind and targets, the goals' events and the leader's level. Repair
+ * is not run again for these. Runs after the refs are retargeted, so the refs it writes are final.
+ */
+function recordKeptAsPlanned(
+	blocks: readonly BlockPlan[],
+	draft: Draft,
+	{ input, options, log }: StageContext
+): void {
+	const { budget } = demandIn(draft);
+	const events = eventsOf(input);
+	const level = input.experience[input.disciplines[0]!];
+	// Explained already: a priority_tradeoff or schedule_kept citing the session, from any stage.
+	const explained = new Set(
+		log
+			.list()
+			.filter((d) => d.kind === 'priority_tradeoff' || d.kind === 'schedule_kept')
+			.flatMap((d) => d.refs)
+	);
+	const found = new Map<string, { refs: PlanPath[]; facts: FactsFor<'schedule_kept'> }>();
+	let prior: readonly SessionPlan[] = [];
+	blocks.forEach((block, b) =>
+		block.weeks.forEach((week, w) => {
+			const eve = addDays(week.startsOn, -1);
+			const next =
+				block.weeks[w + 1]?.sessions ??
+				week.sessions.map((s) => ({ ...s, date: addDays(s.date, 7) }));
+			const around = [
+				...prior.filter((s) => s.date === eve),
+				...next.filter((s) => s.source === 'commitment' && s.date === addDays(week.endsOn, 1))
+			].map((s, i): Tagged => ({ ...s, lineage: `${AROUND}${i}` }));
+			const sessions: Tagged[] = [
+				...week.sessions.map((s, i): Tagged => ({ ...s, lineage: `${i}` })),
+				...around
+			];
+			const from = addDays(week.startsOn, -7);
+			const priorities = draft.periodisation?.prioritiesByWeek.find(
+				(p) => p.startsOn === week.startsOn
+			)?.priorities;
+			const evaluation = evaluateWeek(sessions, {
+				openDates: openDates(week, budget.days, options.firstPlannedDay),
+				today: from,
+				context: {
+					load: {
+						days: loadModel({
+							planned: [...prior.filter((s) => s.date !== eve), ...sessions],
+							logged: [],
+							from,
+							to: week.endsOn,
+							today: from
+						}),
+						logged: []
+					},
+					priorities,
+					week: { kind: week.kind, phase: block.phase, targets: week.targets },
+					events,
+					...(level && { experience: level })
+				}
+			});
+			prior = week.sessions;
+			for (const f of evaluation.findings) {
+				if (f.severity !== 'avoid' || f.resolution?.kind === 'commitment_fixed') continue;
+				const named = f.sessions.flatMap((s) =>
+					s.lineage !== undefined && !s.lineage.startsWith(AROUND)
+						? [sessionPath(b, w, Number(s.lineage))]
+						: []
+				);
+				const [ref] = named;
+				if (ref === undefined || named.some((r) => explained.has(r))) continue;
+				explained.add(ref);
+				const headline = clip(f.headline, 120);
+				const key = JSON.stringify([b, headline]);
+				const group = found.get(key) ?? { refs: [], facts: { headline, reason: FOUND_KEPT } };
+				group.refs.push(ref);
+				found.set(key, group);
+			}
+		})
+	);
+	for (const { refs, facts } of found.values()) {
+		for (let i = 0; i < refs.length; i += MAX_REFS) {
+			log.add('schedule_kept', 'schedule.kept', refs.slice(i, i + MAX_REFS), facts);
+		}
+	}
+}
+
 export const schedule: Stage = (draft, { input, options, log }) => {
 	const { budget } = demandIn(draft);
 	const notes = new Map<string, { refs: PlanPath[]; write: (refs: PlanPath[]) => void }>();
@@ -357,14 +459,14 @@ export const schedule: Stage = (draft, { input, options, log }) => {
 			return { shared, pattern: { from: t, sessions: repair.sessions.map(untag) } };
 		};
 
-		// The avoid findings a week keeps; `open`, only those no decision explains (a priority_tradeoff
-		// or a schedule_kept alike).
-		const avoids = (r: ReturnType<typeof repairIn>, open = true) =>
+		// The avoid findings a week keeps that no priority explains: a priority_tradeoff does, a
+		// schedule_kept does not, so the pattern that keeps fewer clashes is the one preferred.
+		const avoids = (r: ReturnType<typeof repairIn>) =>
 			r.kept.filter(
 				(k) =>
 					k.finding.severity === 'avoid' &&
 					k.finding.resolution?.kind !== 'commitment_fixed' &&
-					!(open && decisionOf(k, r))
+					decisionOf(k, r)?.kind !== 'priority_tradeoff'
 			).length;
 
 		/**
@@ -484,5 +586,6 @@ export const schedule: Stage = (draft, { input, options, log }) => {
 		const to = session === undefined ? undefined : moves.get(session);
 		return to === undefined ? ref : to === null ? null : to + rest;
 	});
+	recordKeptAsPlanned(blocks, draft, { input, options, log });
 	return { ...draft, blocks };
 };
