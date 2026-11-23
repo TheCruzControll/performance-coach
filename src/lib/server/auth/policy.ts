@@ -67,6 +67,11 @@ export const RATE_LIMITS = {
 	/** Email sign-in link redemptions, per client (tokens are unguessable: this limits noise). */
 	'email.verify': { limit: 10, windowMs: 15 * MINUTE },
 	/**
+	 * TEST ONLY: `/api/test-support/session`, which is a 404 unless test routes are enabled (never
+	 * on a hosted deployment). Generous, because one e2e run mints every session from one address.
+	 */
+	'test.session': { limit: 1000, windowMs: 15 * MINUTE },
+	/**
 	 * Coach turns, all the owner's devices together (`global`: one owner). Owner decision (open
 	 * question): 30 per 10 minutes, beside the daily cost cap (domain/coach/budgets.ts).
 	 */

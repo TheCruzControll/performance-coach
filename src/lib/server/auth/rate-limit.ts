@@ -12,6 +12,25 @@ import { RATE_LIMIT_PRUNE, RATE_LIMITS, type RateLimitBucket } from './policy';
 
 export type RateLimitSubject = { ip: string | null } | { session: string } | 'global';
 
+/**
+ * Every public POST route (routes.ts `public`) and the bucket its handler counts against. A public
+ * POST without an entry fails src/lib/server/auth/rate-limit.test.ts, and that test also checks
+ * the handler really applies the bucket.
+ */
+export const PUBLIC_POST_BUCKETS = {
+	'/api/auth/setup/options': 'setup',
+	'/api/auth/setup/verify': 'setup',
+	'/api/auth/signin/options': 'signin.options',
+	'/api/auth/signin/verify': 'signin.verify',
+	// Counts only a request that ends no session (signOut, sessions.ts).
+	'/api/auth/signout': 'signout',
+	'/api/test-support/session': 'test.session',
+	// The recovery-code form action (src/routes/recover/+page.server.ts).
+	'/recover': 'recovery'
+} as const satisfies Record<string, RateLimitBucket>;
+
+export type PublicPostRoute = keyof typeof PUBLIC_POST_BUCKETS;
+
 function keyFor(bucket: RateLimitBucket, subject: RateLimitSubject): string {
 	if (subject === 'global') return `${bucket}:global`;
 	if ('session' in subject) return `${bucket}:session:${subject.session}`;
