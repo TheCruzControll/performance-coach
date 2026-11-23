@@ -89,9 +89,8 @@ export interface WeekAt {
 	tradeoffs?: readonly TradeoffDecision[];
 }
 
-/** A priority_tradeoff or schedule_kept decision: its kind, sentence and the lineages it names. */
+/** A priority_tradeoff decision: its sentence and the lineages it names. */
 export interface TradeoffDecision {
-	kind: PriorityHint['kind'];
 	why: string;
 	affected: readonly string[];
 }
@@ -99,14 +98,14 @@ export interface TradeoffDecision {
 /**
  * Each trade-off as the judge's hint (m7/14): it becomes the resolution of the finding that
  * names a session it affected, so the card says why the week keeps the clash. A session keeps
- * only its newest trade-off: the judge reads its hints in its own order. Each keeps its own kind:
- * a schedule_kept is a clash the block's days keep, not a priority trade-off.
+ * only its newest trade-off: the judge reads its hints in its own order.
  */
 export function tradeoffHints(tradeoffs: readonly TradeoffDecision[]): PriorityHint[] {
 	const hints = new Map<string, PriorityHint>();
-	for (const { kind, why, affected } of tradeoffs) {
+	for (const { why, affected } of tradeoffs) {
 		for (const lineage of affected) {
-			if (!hints.has(lineage)) hints.set(lineage, { kind, lineage, text: why });
+			if (!hints.has(lineage))
+				hints.set(lineage, { kind: 'priority_tradeoff', lineage, text: why });
 		}
 	}
 	return [...hints.values()];
