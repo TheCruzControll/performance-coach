@@ -11,8 +11,10 @@
  *   building week they miss moves a session on its own, the next hardest week's are tried, and the
  *   days fewest weeks lapse from are kept. Never pinned into a finding repair without pins would
  *   fix.
- * - The week before is planned across the boundary. A block's first week has the real week before
- *   (the previous block's last week, or the owner's logged history). Every later week has the
+ * - The week before is planned across the boundary. A block's first week has the week before as
+ *   this generation plans it: the previous block's last week, or nothing for the plan's first week,
+ *   since ProgrammingInput carries no logged history. A next block is planned without its previous
+ *   block, so its first week has no week before (docs/known-issues.md). Every later week has the
  *   block's pattern, week t's repaired sessions, shifted back a week: the Sunday the block repeats
  *   precedes the Monday after it, so a hard Monday after a hard Sunday is repaired as it will be.
  * - Then every week, the OWN_WEEKS kinds included, is repaired on its own, in order, with that
