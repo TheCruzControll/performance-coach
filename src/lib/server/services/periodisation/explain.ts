@@ -18,6 +18,7 @@ import type { IsoDate } from '../../../domain/calendar';
 import { weekdayOf } from '../../../domain/calendar';
 import { WEEKDAY_INFO } from '../../../domain/profile/catalog';
 import {
+	CLASH_KEPT_RULES,
 	DECIDER_LABEL,
 	DECISION_KIND_LABEL,
 	type Decider,
@@ -41,17 +42,9 @@ export const WHY_KINDS = [
 ] as const satisfies readonly DecisionKind[];
 
 /**
- * The priority trade-offs that keep a clash the week then shows as a finding: placement.ts's on
- * the session that keeps its day, and schedule repair's (schedule/repair.ts). Its schedule_kept
- * decisions, the avoid findings it keeps for no priority, are the same kind of explanation.
+ * The clash-keeping decisions among `rows` (CLASH_KEPT_RULES, in the domain's vocabulary), each
+ * with its sentence and sessions.
  */
-export const CLASH_KEPT_RULES: readonly string[] = [
-	'placement.priority_kept',
-	'schedule.priority_kept',
-	'schedule.kept'
-];
-
-/** The clash-keeping decisions among `rows`, each with its sentence and sessions. */
 function clashTradeoffs(
 	rows: readonly {
 		kind: DecisionKind;

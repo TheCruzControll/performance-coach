@@ -789,8 +789,10 @@ hybrid, injured shoulder, dumbbells only, the journey, the minimal onboarding pr
   the RPE its purpose names except a commitment the purpose sets aside. Also: deep-equal plans for
   the same input and for reordered profile rows, with no clock or randomness; a Thursday start plans
   Thursday to Sunday only; no avoid finding a generated week keeps, judged by `evaluateWeek` with
-  the real week before, without a `priority_tradeoff` or `schedule_kept` decision citing it; every
-  decision's kind is in `DECISION_KINDS` and has a rationale; the `program_purpose` words.
+  the real week before, without a clash-keeping decision citing it (one whose rule is in
+  `CLASH_KEPT_RULES`, from `src/lib/domain/training/vocabulary.ts`); every decision's kind is in
+  `DECISION_KINDS` and has a rationale; the `program_purpose` words. The same holds for the
+  scenarios planned from other Mondays (`generate-schedule.test.ts`).
 - **Composition** (`generate.test.ts`, `index.test.ts`): the stages run once each in the documented
   order; every scenario composes into a plan `programPlanSchema` accepts, parsed before it is
   returned, and the same input gives byte-identical JSON; week 1 starts on a Monday and the first
