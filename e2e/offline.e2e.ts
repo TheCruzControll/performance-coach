@@ -159,7 +159,7 @@ test.describe('offline behaviour (service worker)', () => {
 		await context.route('**/__data.json*', unreachable);
 		await context.route('**/api/health', unreachable);
 
-		await openProfile(page);
+		await profileEntry(page).click();
 		const state = page.getByTestId('offline-state');
 		await expect(state).toBeVisible();
 		await expect(state).toContainText('The server isn’t answering');
@@ -186,7 +186,7 @@ test.describe('offline behaviour (service worker)', () => {
 		await context.route('**/__data.json*', hang);
 		await context.route('**/api/health', hang);
 		const asked = Date.now();
-		await openProfile(page);
+		await profileEntry(page).click();
 		const state = page.getByTestId('offline-state');
 		// The worker's bounded wait, not the minute or more a hung request takes.
 		await expect(state).toContainText('The server isn’t answering', {
@@ -322,6 +322,7 @@ test.describe('offline behaviour (service worker)', () => {
 		await page.goto(START_URL).catch(() => {});
 		await expect(page).toHaveURL(/\/today$/);
 		await expect(page.getByTestId('offline-state')).toContainText(OFFLINE);
+		if (!isDesktopPage(page)) await expect(profileEntry(page)).toBeVisible();
 	});
 
 	/** Today on the page's clock: the day the offline screen lists saved kits for. */

@@ -44,7 +44,9 @@
 	<div class="offline-today" data-testid="offline-today" data-count={sessions.length}>
 		<Section title="Today’s sessions" gap="md">
 			{#snippet action()}
-				<Badge icon="check">Saved on this device</Badge>
+				{#if sessions?.length}
+					<Badge icon="check">Saved on this device</Badge>
+				{/if}
 			{/snippet}
 			{#each sessions as session (session.lineage)}
 				<div class="session" data-testid="offline-session">
@@ -68,11 +70,13 @@
 				</div>
 			{/each}
 			<!-- The one other thing to do: a plain row, never a second button. -->
-			<ListRow
-				title="Log something else"
-				href={resolve('/workout')}
-				data-testid="offline-log-other"
-			/>
+			<div class="other">
+				<ListRow
+					title="Log something else"
+					href={resolve('/workout')}
+					data-testid="offline-log-other"
+				/>
+			</div>
 		</Section>
 	</div>
 {/if}
@@ -92,6 +96,11 @@
 		display: grid;
 		gap: var(--space-4);
 		padding-bottom: var(--space-6);
+	}
+
+	/* Paper's hairline above the one plain row; the list's last row has none below. */
+	.other {
+		border-top: 1px solid var(--color-hairline);
 	}
 
 	.statement {
