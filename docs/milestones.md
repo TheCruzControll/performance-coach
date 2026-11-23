@@ -338,7 +338,7 @@ Still open:
   fixed the 400s that failed every production turn.
 - Lighthouse has no inbox audit yet: the seeding failure was fixed in 61d467b9, with #395, and no
   inbox audit number has been recorded since (docs/performance.md, "M5 (coach)").
-- The real-device checklist has no coach item yet.
+- The real-device checklist has coach items (docs/testing.md, items 9 to 13) that no one has run on a device yet.
 
 ## M6 — Analytics & reviews [§10, §11]
 
