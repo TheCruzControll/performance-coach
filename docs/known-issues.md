@@ -74,7 +74,9 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   a group of status rows, until `v2/22`. Found building `v2/21a`.
 - **Goals keeps the reorder arrows and the drag handle at each row's end, and the goal sheet is the
   pre-v2 form.** Paper draws neither at rest and reorders by long press; the owner kept the arrows
-  (the keyboard's and VoiceOver's way) and the full form. Paper's goal action sheet and delete
+  (the keyboard's and VoiceOver's way) and the full form. With two or more goals each row is as
+  tall as its two stacked 44 px arrows (92 px), not Paper's 60 px; a lone goal's row is 60 px.
+  Paper's goal action sheet and delete
   confirm wait for `v2/22` (`src/lib/ui/profile/GoalsEditor.svelte`,
   `src/lib/ui/profile/GoalSheet.svelte`).
 - **A taper splice's deload is judged by the tail's first range.** A taper spliced into a block

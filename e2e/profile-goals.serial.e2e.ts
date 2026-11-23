@@ -88,6 +88,20 @@ const raiseList = (page: Page) =>
 		.getByTestId('goal-list')
 		.evaluate((list) => window.scrollBy(0, list.getBoundingClientRect().top - 16));
 
+/**
+ * Past goals' data, reloaded with the Profile layout after a change: set up before the change,
+ * awaited after it, so what the screen shows is what the server says once the reload is done.
+ */
+async function pastReloaded(page: Page, change: () => Promise<void>) {
+	const reloaded = page.waitForResponse(
+		(r) => new URL(r.url()).pathname === '/profile/goals/past/__data.json'
+	);
+	await change();
+	const response = await reloaded;
+	expect(response.status()).toBe(200);
+	await response.finished();
+}
+
 /** The fight, the marathon and the strength goal, ranked 1, 2 and 3. */
 async function threeGoals(request: APIRequestContext) {
 	for (const goal of [FIGHT, MARATHON, STRENGTH]) {
@@ -646,10 +660,12 @@ test('a goal achieved leaves the ranking for Past goals, one row away, and the r
 	await expect(status.getByRole('radio', { name: 'Achieved' })).toBeChecked();
 	await status.getByRole('radio', { name: 'Active' }).check();
 	await captureScreen(page, testInfo, 'goal-sheet-status');
-	await save.click();
+	await pastReloaded(page, () => save.click());
 	await expect(toastWith(page, 'Goal saved')).toBeVisible();
 	await expect(sheet).toBeHidden();
+	// Gone at once, and still gone once the screen has reloaded what it lists.
 	await expect(pastRows).toHaveCount(0);
+	await expect(page.getByText('No past goals.')).toBeVisible();
 	await page.getByTestId('back-to-goals').click();
 	await expect(page).toHaveURL('/profile/goals');
 	await editorReady(page);
@@ -779,6 +795,37 @@ test('deleting a goal takes a second tap that says it is for good; the goals bel
 	// No error but the browser’s report of the one delete it could not post offline.
 	expect(errors).toEqual([]);
 	expect(unsent).toHaveLength(1);
+});
+
+test('a goal deleted from Past goals stays gone once the screen has reloaded, and after a reload', async ({
+	page,
+	request
+}) => {
+	const errors = trackConsoleErrors(page);
+	await profileAction(request, '/profile/goals?/saveGoal', { ...FIGHT, status: 'achieved' });
+	await profileAction(request, '/profile/goals?/saveGoal', { ...MARATHON, status: 'dropped' });
+	await gotoHydrated(page, '/profile/goals/past');
+	const pastRows = page.getByTestId('past-goal-row');
+	await expect(pastRows).toHaveCount(2);
+
+	const sheet = sheetOf(page);
+	const remove = sheet.getByTestId('goal-delete');
+	await pastRows.filter({ hasText: 'First Muay Thai fight' }).click();
+	await expect(sheet.getByRole('heading', { name: 'Edit goal' })).toBeVisible();
+	await remove.click();
+	await expect(remove).toHaveText('Delete for good');
+	await pastReloaded(page, () => remove.click());
+	await expect(toastWith(page, 'Goal deleted')).toBeVisible();
+	await expect(sheet).toBeHidden();
+	await expect(pastRows).toHaveCount(1);
+	await expect(pastRows.filter({ hasText: 'First Muay Thai fight' })).toHaveCount(0);
+	await expect(pastRows.first()).toContainText('Valencia marathon');
+	expect(await query('select title from training_goals')).toEqual([{ title: 'Valencia marathon' }]);
+
+	await page.reload();
+	await expect(pastRows).toHaveCount(1);
+	await expect(pastRows.first()).toContainText('Valencia marathon');
+	expect(errors).toEqual([]);
 });
 
 test('a goal moves up the ranking by its arrow: the move is announced, and the order is stored and still there after a reload', async ({
