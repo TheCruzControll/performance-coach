@@ -38,7 +38,8 @@ export const GRADES = {
  * Which reason a kept finding gives when more than one applies, first first:
  * - owner_moved: the owner's own choice says most about why the week looks this way
  * - commitment_fixed: classes and clubs keep their days, so nothing can be moved
- * - priority_kept: the generator kept it for a goal's priority, and says which
+ * - priority_kept: the generator kept it (for a goal's priority, or for the block's shared days, as a
+ *   schedule_kept hint), and says which
  * - no_room: the week has no free day to move a session to
  */
 export const RESOLUTION_ORDER = [

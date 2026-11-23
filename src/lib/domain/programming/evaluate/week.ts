@@ -31,11 +31,15 @@ export type EvaluatedSession = InterferenceSession & {
 	targetRpe?: number | null;
 };
 
-/** The generator's note that it kept a conflict for a goal's priority, naming a session. */
+/**
+ * The generator's note that it kept a conflict, naming a session: a priority_tradeoff for a goal's
+ * priority (the sentence names both goals), or a schedule_kept for a clash the block's shared days
+ * keep (the sentence says why the week keeps it).
+ */
 export interface PriorityHint {
-	kind: 'priority_tradeoff';
+	kind: 'priority_tradeoff' | 'schedule_kept';
 	lineage: string;
-	/** The trade-off in one sentence, naming both goals. */
+	/** The reason in one sentence. */
 	text: string;
 }
 
