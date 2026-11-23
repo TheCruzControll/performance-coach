@@ -1,10 +1,16 @@
+import { error } from '@sveltejs/kit';
 import { version } from '$app/env';
-import { listPasskeys } from '#lib/server/auth/index.ts';
+import { listPasskeys, type AuthSession } from '#lib/server/auth/index.ts';
 import { ownerId } from '#lib/server/forms/profile.ts';
 import { recordServerError } from '#lib/server/services/errors.ts';
 import { findTrainingProfile } from '#lib/server/services/profile/index.ts';
 import { passkeysAnswer, sectionAnswers, type ProfileAnswers } from '#lib/ui/profile/answers.ts';
 import type { LayoutServerLoad } from './$types';
+
+function requireSession(locals: App.Locals): AuthSession {
+	if (!locals.session) error(401, 'Sign in to continue.'); // the guard already enforces this
+	return locals.session;
+}
 
 /**
  * Profile's list, with each row's answer: Profile, every section screen at a desk (and later
@@ -13,13 +19,14 @@ import type { LayoutServerLoad } from './$types';
  */
 export const load: LayoutServerLoad = ({ locals, request, url, route, depends, untrack }) => {
 	depends('app:profile-answers');
+	const session = requireSession(locals);
 	const owner = ownerId(locals);
 	// Streamed, and read-only (findTrainingProfile never writes): the load does not wait for it.
 	// The response has already started, so handleError never sees a streamed failure: a failure
 	// is recorded and the rows show their titles alone.
 	const answers: Promise<ProfileAnswers | null> = Promise.all([
 		findTrainingProfile(owner),
-		locals.session ? listPasskeys(locals.session) : Promise.resolve([])
+		listPasskeys(session)
 	])
 		.then(([profile, passkeys]) => ({
 			sections: profile ? sectionAnswers(profile) : {},

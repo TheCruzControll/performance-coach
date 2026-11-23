@@ -106,7 +106,7 @@ describe('sectionAnswers', () => {
 		expect(sectionAnswers(t)).toEqual({
 			goals: '3',
 			basics: 'kg, mi',
-			body: '78.4 kg',
+			body: `78.4${NBSP}kg`,
 			injuries: 'Left knee',
 			schedule: '6 days',
 			equipment: 'Commercial gym',
@@ -136,6 +136,19 @@ describe('sectionAnswers', () => {
 		const t = blank();
 		t.injuries = [injury('knee', 'both')];
 		expect(sectionAnswers(t).injuries).toBe('Knee');
+	});
+
+	it('names an "other" injury by its area alone, with no side', () => {
+		const t = blank();
+		t.injuries = [injury('other', 'left')];
+		expect(sectionAnswers(t).injuries).toBe('Other');
+	});
+
+	it('shows the latest weigh-in in the profile’s unit, as Body does', () => {
+		const t = blank();
+		t.profile.weightUnit = 'lb';
+		t.bodyWeight = [weighIn(78.4, '2026-11-01')];
+		expect(sectionAnswers(t).body).toBe(`172.8${NBSP}lb`);
 	});
 });
 

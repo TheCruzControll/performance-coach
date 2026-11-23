@@ -20,6 +20,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { applyAction } from '$app/forms';
+	import { invalidate } from '$app/navigation';
 	import { post } from '#lib/client/profile-form.ts';
 	import { DISCIPLINE_INFO, GOAL_STATUS_LABEL } from '#lib/domain/profile/catalog.ts';
 	import type { Goal } from '#lib/domain/profile/types.ts';
@@ -90,6 +91,8 @@
 		if (next) replan = next;
 		open = false;
 		toast.show(message, { tone: 'positive' });
+		// The Goals row's count on Profile is in the layout's answers: refresh them (Profile only).
+		if (manage) void invalidate('app:profile-answers');
 	}
 
 	// ---- reordering ------------------------------------------------------------------------------

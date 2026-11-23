@@ -99,7 +99,7 @@
 	<div class="about">
 		<section class="group" aria-labelledby="this-device">
 			<h2 class="label" id="this-device">This device</h2>
-			<Card title="Preferences" eyebrow="This device">
+			<Card title="Preferences">
 				<div class="prefs">
 					<div class="pref">
 						<span class="pref-label">Units</span>

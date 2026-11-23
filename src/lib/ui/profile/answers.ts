@@ -14,6 +14,7 @@ import {
 	type Lift
 } from '#lib/domain/profile/catalog.ts';
 import type { Injury, TrainingProfile } from '#lib/domain/profile/types.ts';
+import { cleanFloat, convertWeight, NBSP } from '#lib/domain/units.ts';
 import type { SectionKey } from './sections';
 import { oneRepMax, trim } from './strength';
 
@@ -30,10 +31,10 @@ const FIRST_LIFTS: readonly Lift[] = ['back_squat', 'bench_press', 'deadlift'];
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** "Left knee", "Lower back": the side only when it is one side. */
+/** "Left knee", "Lower back": the side only when it is one side, and never for "Other". */
 function injuryName(i: Pick<Injury, 'bodyArea' | 'side'>): string {
 	const area = BODY_AREA_LABEL[i.bodyArea];
-	if (i.side !== 'left' && i.side !== 'right') return area;
+	if (i.bodyArea === 'other' || (i.side !== 'left' && i.side !== 'right')) return area;
 	return `${i.side === 'left' ? 'Left' : 'Right'} ${area.toLowerCase()}`;
 }
 
@@ -44,14 +45,21 @@ export function sectionAnswers(t: TrainingProfile): SectionAnswers {
 	const open = t.goals.filter((g) => g.priority !== null).length;
 	answers.goals = open ? String(open) : 'None';
 
-	answers.basics = `${t.profile.weightUnit}, ${t.profile.distanceUnit}`;
+	const unit = t.profile.weightUnit;
+	answers.basics = `${unit}, ${t.profile.distanceUnit}`;
 
 	const latest = t.bodyWeight.reduce<(typeof t.bodyWeight)[number] | undefined>(
 		(last, entry) => (!last || entry.measuredOn > last.measuredOn ? entry : last),
 		undefined
 	);
-	if (latest) answers.body = `${trim(latest.value)} ${latest.unit}`;
-	else if (t.profile.nutritionPhase)
+	if (latest) {
+		// In the owner's unit, converted as Body's draft converts it (to the tenth a scale shows).
+		const shown =
+			latest.unit === unit
+				? trim(latest.value)
+				: String(cleanFloat(convertWeight(latest.value, latest.unit, unit), 1));
+		answers.body = `${shown}${NBSP}${unit}`;
+	} else if (t.profile.nutritionPhase)
 		answers.body = NUTRITION_PHASE_INFO[t.profile.nutritionPhase].label;
 
 	const injuries = t.injuries.filter((i) => i.active);

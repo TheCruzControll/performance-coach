@@ -240,8 +240,10 @@ Specs:
   64 px wide; a canvas bar with no blur; four tabs, current in text colour and 600; no console
   errors on any screen; plate calculator sheet (stepper; Escape while typing cancels the edit
   without closing the sheet; a target below the bar is explained and the stepper's minimum is the
-  bar; the kg/lb switch stays local to the calculator; Close returns focus); theme applied before
-  first paint and persisted (under the CSP), and Auto following an OS appearance change while
+  bar; the kg/lb switch stays local to the calculator; Close returns focus); Profile is one list
+  (You, Training, Security) with each row's answer, 60 px rows, About this app with Backups first,
+  no account card; phone and desktop; theme applied before first paint and persisted (under the
+  CSP), and Auto following an OS appearance change while
   open (theme-color included); no screen scrolls sideways; nothing
   sits under fixed chrome at rest (landing CTAs, Coach composer); compact segmented controls keep
   a 44 px hit area. The root error page, loaded on demand: a server-rendered 404 hydrates
