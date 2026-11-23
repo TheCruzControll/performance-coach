@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+	capLine,
 	cardOf,
 	cardState,
 	CHOOSE_START,
+	deloadWords,
+	isStaleReplan,
 	NEXT_CYCLE_WAITS,
 	parseCard,
+	STALE_REPLAN_REASONS,
 	type ProposalCardView
 } from './cards.ts';
 
@@ -275,5 +279,91 @@ describe("M7's engine re-plans on the card", () => {
 		expect(
 			parseCard({ ...engine('fatigue'), origin: { kind: 'owner', href: '/progress' } })
 		).toBeNull();
+	});
+});
+
+describe('a re-plan’s card', () => {
+	const replan = { ...view, kind: 'replan', threadId: null, origin: null } as const;
+
+	it.each([
+		['goal_priority', 'From your goal change', '/profile/goals'],
+		['fatigue', 'From your training load', '/progress']
+	] as const)('names an engine’s %s re-plan, and links to its page', (kind, words, href) => {
+		expect(cardOf({ ...replan, origin: { kind, href, weekStartsOn: null } }).origin).toEqual({
+			words,
+			href
+		});
+	});
+
+	it('names a coach’s re-plan From your coach, linking to its conversation', () => {
+		expect(cardOf({ ...replan, threadId: 't1' }).origin).toEqual({
+			words: 'From your coach',
+			href: '/coach/t1'
+		});
+		// Only a re-plan is the coach's to name here: other proposals keep no origin line.
+		expect(cardOf({ ...view, threadId: 't1' }).origin).toBeUndefined();
+	});
+
+	it('says how many more changes a capped re-plan has, under its rows', () => {
+		const lines = ['From Mon 16 Nov, 2 weeks change: 14 changed', 'In all: +1 min'];
+		expect(cardOf({ ...replan, summaryLines: [...lines, capLine(2)] }).moreRows).toBe(
+			'2 more changes not listed'
+		);
+		expect(cardOf({ ...replan, summaryLines: lines }).moreRows).toBeUndefined();
+		// The line is only the cap's on a re-plan.
+		expect(cardOf({ ...view, summaryLines: [capLine(2)] }).moreRows).toBeUndefined();
+	});
+
+	it('words the cap line for one change and for many', () => {
+		expect(capLine(1)).toBe('1 more change not listed');
+		expect(capLine(12)).toBe('12 more changes not listed');
+	});
+
+	it('words a deload by its week’s date, never as this week or next week', () => {
+		// The same sentence whichever week it is and whenever it is read: a stored line stays right.
+		expect(deloadWords('2026-11-16')).toBe('Week of 16 Nov becomes a deload week');
+		expect(deloadWords('2026-11-23')).toBe('Week of 23 Nov becomes a deload week');
+		expect(deloadWords('2026-12-07')).toBe('Week of 7 Dec becomes a deload week');
+	});
+
+	it('shows a deload its line, and no other summary line as one', () => {
+		const deloadLine = 'Week of 23 Nov becomes a deload week';
+		expect(
+			cardOf({ ...replan, summaryLines: ['From Mon 23 Nov, 1 week changes', deloadLine] })
+				.deloadLine
+		).toBe(deloadLine);
+		expect(
+			cardOf({ ...replan, summaryLines: ['From Mon 23 Nov, 1 week changes'] }).deloadLine
+		).toBe(undefined);
+	});
+
+	it.each([
+		'profile_changed',
+		'plan_changed',
+		'start_passed',
+		'sessions_passed',
+		'program_changed'
+	] as const)('offers Propose again for a stale re-plan superseded as %s', (reason) => {
+		const stale = { ...replan, status: 'superseded', supersededReason: reason } as const;
+		expect(cardOf(stale).proposeAgain).toBe(true);
+		expect(isStaleReplan('replan', 'superseded', reason)).toBe(true);
+	});
+
+	it('offers nothing for the other reasons, the other statuses or the other kinds', () => {
+		// revised is never a stale re-plan: the owner revised it, and a revision replaces it.
+		expect(STALE_REPLAN_REASONS).not.toContain('revised');
+		for (const reason of ['revised', 'review_refreshed', null] as const) {
+			const other = { ...replan, status: 'superseded', supersededReason: reason } as const;
+			expect(cardOf(other).proposeAgain).toBeUndefined();
+		}
+		const proposed = { ...replan, status: 'proposed', supersededReason: null } as const;
+		expect(cardOf(proposed).proposeAgain).toBeUndefined();
+		const program = {
+			...view,
+			status: 'superseded',
+			supersededReason: 'profile_changed'
+		} as const;
+		expect(cardOf(program).proposeAgain).toBeUndefined();
+		expect(isStaleReplan('program_adjustment', 'superseded', 'profile_changed')).toBe(false);
 	});
 });

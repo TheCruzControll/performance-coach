@@ -12,16 +12,26 @@
     the coach drafts the revision; only while the coach can answer, and never for a review's.
   - A decision that failed on the way shows 'Couldn’t save' on the card, whose Retry sends the
     same decision again; while offline nothing can be decided.
+  - A stale re-plan offers Propose again: the page's `?/proposeAgain` action asks for it again
+    from today. Its answer is a fresh proposal (the page opens it), or a note on the card (a
+    source that cannot be asked again says so), or Couldn’t prepare it with Try again, which sends
+    the same request; a second tap while it runs is ignored, and an answer moves focus to the
+    note or to Try again.
   This file is the inbox's code on demand (+page.svelte imports it once a proposal is open), so
   the card comes with it; the sheet's code loads with the first Reject, and a failed fetch is a
   notice with Retry, failing again while online reloading the page.
 -->
 <script lang="ts">
 	import { onMount, type Component } from 'svelte';
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { decideProposal, type Decision } from '#lib/client/coach/proposals.ts';
+	import {
+		decideProposal,
+		proposeAgainRequest,
+		type Decision
+	} from '#lib/client/coach/proposals.ts';
 	import type { ProposalCardView } from '#lib/domain/coach/cards.ts';
+	import type { ProposeAgainOutcome } from '#lib/domain/coach/propose-again.ts';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
@@ -105,6 +115,32 @@
 		);
 	}
 
+	// ---- Propose again, on a stale re-plan ---------------------------------------------------
+
+	let proposing = $state(false);
+	let proposed = $state.raw<ProposeAgainOutcome | null>(null);
+
+	/**
+	 * Asks for the stale re-plan again. A fresh proposal opens at once (the page of its id); the
+	 * other answers stay on the card. While it runs nothing else is sent: a second tap is ignored.
+	 */
+	async function proposeAgain() {
+		if (proposing) return;
+		proposing = true;
+		proposed = null;
+		try {
+			const outcome = await proposeAgainRequest();
+			if (outcome.status === 'proposed') {
+				await goto(resolve('/(app)/coach/proposals/[[id]]', { id: outcome.id }));
+				return;
+			}
+			proposed = outcome;
+		} finally {
+			// Always: a navigation that fails must not leave the card busy for good.
+			proposing = false;
+		}
+	}
+
 	onMount(() => (online = navigator.onLine));
 
 	const conversation = $derived(
@@ -132,6 +168,9 @@
 			? () => location.assign(`${conversation}?revise=${encodeURIComponent(card.id)}`)
 			: undefined}
 		onretry={() => failure && decide(failure)}
+		onproposeagain={proposeAgain}
+		{proposing}
+		proposeOutcome={proposed}
 	/>
 	{#if sheetFailed}
 		<Notice tone="danger" title="Couldn’t load this part of the coach" data-testid="sheet-failed">

@@ -19,6 +19,7 @@
  * passed checkProposal against the same plan; an id the context lacks throws a RangeError.
  */
 import { weekdayOf, type IsoDate } from '../calendar.ts';
+import { deloadWords } from './cards.ts';
 import {
 	disciplineLabel,
 	GOAL_STATUS_LABEL,
@@ -706,7 +707,12 @@ const rowLine = (row: DiffRow) =>
  * impact, or the next rows when nothing is measured. The first fills coach_proposals.summary.
  */
 export function summaryLines(proposal: Proposal, context: DiffContext): string[] {
-	if (proposal.kind === 'replan') return replanOf(context).summaryLines.map(clip);
+	if (proposal.kind === 'replan') {
+		const lines = replanOf(context).summaryLines.map(clip);
+		const { directive } = proposal.payload;
+		// A deload says which week it makes a deload, by date; the cap line (capRows) comes last.
+		return directive.kind === 'deload' ? [...lines, deloadWords(directive.week)] : lines;
+	}
 	const { rows, impact } = describeProposal(proposal, context);
 	const [first, ...rest] = rows;
 	const more = rest.length

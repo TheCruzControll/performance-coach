@@ -8,7 +8,9 @@
  * writes nothing, so a Retry after a failure, or after a request cut off once the server had
  * applied it, shows the outcome and never applies it twice.
  */
+import { deserialize } from '$app/forms';
 import { parseCard, type ProposalCardView } from '#lib/domain/coach/cards.ts';
+import { outcomeOf, type ProposeAgainOutcome } from '#lib/domain/coach/propose-again.ts';
 
 type Fetch = typeof globalThis.fetch;
 
@@ -49,4 +51,25 @@ export async function decideProposal(
 		// The answer was cut off or replaced on the way: the server may have decided it.
 	}
 	return { kind: 'failed', retry: response.status === 200 };
+}
+
+/**
+ * 'Propose again' on a stale re-plan: posts to the detail page's `?/proposeAgain` action (the
+ * page's own URL names the stale proposal, so the body is empty). Sending it again is the same
+ * request, and the action's answer is an outcome; anything that is not one is a failure.
+ */
+export async function proposeAgainRequest(
+	fetch: Fetch = globalThis.fetch
+): Promise<ProposeAgainOutcome> {
+	try {
+		const response = await fetch('?/proposeAgain', {
+			method: 'POST',
+			body: new FormData(),
+			headers: { accept: 'application/json', 'x-sveltekit-action': 'true' }
+		});
+		const result = deserialize(await response.text());
+		return result.type === 'success' ? outcomeOf(result.data) : { status: 'failed' };
+	} catch {
+		return { status: 'failed' };
+	}
 }
