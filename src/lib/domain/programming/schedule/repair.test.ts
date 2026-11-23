@@ -203,6 +203,25 @@ describe('repairWeek: the PRD §5 conflicts', () => {
 	});
 });
 
+describe('repairWeek: the load of the week before', () => {
+	// Five hard sessions in the week before, none on its last day (the eve), so the eve is empty.
+	const heavyBefore = () => [legVolume(-6), legVolume(-5), legVolume(-4), lowerA(-3), lowerA(-2)];
+	const loadOf = (planned: EvaluatedSession[]) => ({ from: weekDay(-7), planned, logged: [] });
+	const residualOf = (r: ReturnType<typeof repairWeek>) =>
+		r.before.evaluation.findings.map((f) => f.rule);
+
+	it('counts the planned load of the week before when the stage passes its first day as today', () => {
+		// The stage's context: today is the week before's Monday, so its planned days are the past
+		// that still carry fatigue, not missed sessions.
+		const ctx = { ...CTX, today: weekDay(-7) };
+		const counted = repairWeek([sparring(0)], { ...ctx, load: loadOf(heavyBefore()) });
+		const missing = repairWeek([sparring(0)], { ...ctx, load: loadOf([]) });
+		expect(residualOf(counted)).toEqual(['concurrent.residual_fatigue_before_hard']);
+		expect(residualOf(missing)).toEqual([]);
+		expect(counted.before.cost).toBeGreaterThan(missing.before.cost);
+	});
+});
+
 // ---- The owner's own week -------------------------------------------------------------------
 
 describe('repairWeek: the owner’s moves', () => {

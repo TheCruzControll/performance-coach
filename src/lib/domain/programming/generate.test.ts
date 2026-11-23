@@ -218,6 +218,21 @@ describe('generateProgram', () => {
 		});
 	});
 
+	it.each(Object.keys(SCENARIOS) as ScenarioKey[])(
+		'%s: a mid-week first planned day plans no generated session in week 1 before it',
+		(key) => {
+			const thursday = scenarioDay(1, 3);
+			const plan = generateProgram(inputOf(SCENARIOS[key]()), {
+				...OPTIONS,
+				firstPlannedDay: thursday
+			});
+			const early = plan.blocks[0]!.weeks[0]!.sessions.filter(
+				(s) => s.source === 'generator' && s.date < thursday
+			);
+			expect(early.map((s) => [s.title, s.date])).toEqual([]);
+		}
+	);
+
 	it('keeps the start dates it was given and refuses a week 1 that is not a Monday', () => {
 		const input = inputOf(SCENARIOS.minimal());
 		const thursday = scenarioDay(1, 3);
