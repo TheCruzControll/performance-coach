@@ -62,9 +62,9 @@ test('toasts need no network: one shown offline appears whole, and reconnecting 
 	await context.setOffline(true);
 	await show.click();
 	const offline = toastWith(page, 'Set logged');
+	await expect(offline).toHaveCSS('animation-name', /toast-in/);
 	// A timed toast leaves by itself: it has no ×.
 	await expect(offline.getByRole('button')).toHaveCount(0);
-	await expect(offline).toHaveCSS('animation-name', /toast-in/);
 
 	await context.setOffline(false);
 	await page.waitForTimeout(500);

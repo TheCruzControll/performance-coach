@@ -98,6 +98,17 @@
 		bottom: auto;
 	}
 
+	/* Below 1024 px an open sheet covers the foot, so a toast stays at the top while it is open. */
+	@media (width < 64rem) {
+		:global(:root:has(.sheet-dialog[open])) .toaster {
+			top: calc(var(--safe-top) + var(--space-3));
+			bottom: auto;
+		}
+		:global(:root:has(.sheet-dialog[open])) .toast {
+			--toast-from: -16px;
+		}
+	}
+
 	/* From 1024 px in the shell: at the column's foot, starting where its text does, as wide as
 	   its words (Paper, 14 · State, toast: left 288, 40 px over the window's foot). */
 	@media (width >= 64rem) {

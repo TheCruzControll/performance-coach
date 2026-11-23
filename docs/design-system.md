@@ -592,7 +592,9 @@ type scale is the same at every width, because a 1024–1366 px window can be a 
   14 px corners, at the column's text edge 40 px over the window's foot, and as wide as its words.
   One at a time: a new toast takes the place of the one on screen. The × only on a toast that
   stays (`duration: 0`); a tap on its words reaches the screen under it. It rises 16 px into
-  place (falls from the top in the workout).
+  place (falls from the top in the workout). Below 1024 px, while a `BottomSheet` is open, it stays
+  at the top too and falls from there: the sheet is a top-layer dialog, so the toast sits under its
+  scrim, not above it.
 
 ### Screens
 
