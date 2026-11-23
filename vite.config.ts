@@ -342,6 +342,9 @@ export default defineConfig(({ command, mode }) => {
 						environment: 'node',
 						include: ['src/**/*.{test,spec}.ts', 'scripts/**/*.test.ts'],
 						exclude: ['src/**/*.svelte.{test,spec}.ts'],
+						// A plan generator test builds whole seasons; on a loaded CI runner one can pass 5 s
+						// (three flaky timeouts so far), so unit tests get integration's 15 s.
+						testTimeout: 15_000,
 						// An observed lifecycle throws on a move its table does not allow, so a test
 						// catches drift between a table and the code (services/lifecycle-guard.ts).
 						env: { LIFECYCLE_STRICT: '1' }
