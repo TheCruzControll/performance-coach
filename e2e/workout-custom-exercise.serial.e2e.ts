@@ -442,11 +442,10 @@ test.describe('desktop', () => {
 		const toggle = form(page).getByTestId('custom-more-toggle');
 		await toggle.focus();
 		await expect(toggle).toHaveCSS('outline-style', 'solid');
-		const before = await toggle.evaluate((el) => getComputedStyle(el).backgroundColor);
+		// A ghost has no fill: its hover brightens the text.
+		const before = await toggle.evaluate((el) => getComputedStyle(el).color);
 		await toggle.hover();
-		await expect
-			.poll(() => toggle.evaluate((el) => getComputedStyle(el).backgroundColor))
-			.not.toBe(before);
+		await expect.poll(() => toggle.evaluate((el) => getComputedStyle(el).color)).not.toBe(before);
 		await page.keyboard.press('Enter');
 		await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 		await expect(form(page).getByTestId('custom-muscles').getByLabel('Glutes')).toBeChecked();
