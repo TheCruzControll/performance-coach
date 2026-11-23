@@ -1,6 +1,6 @@
 {
-  "id": "4417985c-7f0d-4657-b51d-7db6ccf36212",
-  "prevId": "a9c28e8b-f851-4146-b98a-cb88376a488e",
+  "id": "ca472626-1d85-42e7-b423-fd9744a30127",
+  "prevId": "d28d9f6c-8254-40c7-8e9a-59ca40f166c2",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -9884,6 +9884,18 @@
         "backup_runs_error_code_ck": {
           "name": "backup_runs_error_code_ck",
           "value": "\"backup_runs\".\"error_code\" is null or \"backup_runs\".\"error_code\" ~ '^[a-z_]{1,64}$'"
+        },
+        "backup_runs_sha256_ck": {
+          "name": "backup_runs_sha256_ck",
+          "value": "\"backup_runs\".\"sha256\" is null or \"backup_runs\".\"sha256\" ~ '^[0-9a-f]{64}$'"
+        },
+        "backup_runs_bytes_ck": {
+          "name": "backup_runs_bytes_ck",
+          "value": "\"backup_runs\".\"bytes\" is null or \"backup_runs\".\"bytes\" >= 0"
+        },
+        "backup_runs_finish_order_ck": {
+          "name": "backup_runs_finish_order_ck",
+          "value": "\"backup_runs\".\"finished_at\" is null or \"backup_runs\".\"finished_at\" >= \"backup_runs\".\"started_at\""
         }
       },
       "isRLSEnabled": false

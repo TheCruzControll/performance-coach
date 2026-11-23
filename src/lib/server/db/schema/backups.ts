@@ -42,6 +42,12 @@ export const backupRuns = pgTable(
 		check(
 			'backup_runs_error_code_ck',
 			sql`${t.errorCode} is null or ${t.errorCode} ~ '^[a-z_]{1,64}$'`
+		),
+		check('backup_runs_sha256_ck', sql`${t.sha256} is null or ${t.sha256} ~ '^[0-9a-f]{64}$'`),
+		check('backup_runs_bytes_ck', sql`${t.bytes} is null or ${t.bytes} >= 0`),
+		check(
+			'backup_runs_finish_order_ck',
+			sql`${t.finishedAt} is null or ${t.finishedAt} >= ${t.startedAt}`
 		)
 	]
 );

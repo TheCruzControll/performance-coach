@@ -51,6 +51,7 @@ beforeAll(async () => {
 }, 30_000);
 
 afterAll(async () => {
+	await owner?.query('TRUNCATE backup_runs');
 	await app?.end();
 	await owner?.end();
 });
@@ -241,7 +242,48 @@ describe('backup_runs', () => {
 		expect(rowCount).toBe(1);
 	});
 
-	it('coach_runtime reaches the table through default privileges, and the guards hold for it too', async () => {
+	it('refuses a malformed hash, negative bytes or a finish before its start, and takes real values', async () => {
+		const insert = (startedAt: Date, finishedAt: Date, bytes: number, sha256: string) =>
+			owner.query(
+				"INSERT INTO backup_runs (trigger, status, started_at, finished_at, bytes, sha256) VALUES ('cron', 'succeeded', $1, $2, $3, $4)",
+				[startedAt, finishedAt, bytes, sha256]
+			);
+
+		for (const sha256 of ['A'.repeat(64), 'a'.repeat(63), 'a'.repeat(65), 'g'.repeat(64)]) {
+			await expect(insert(at(2043), at(2043, 1), 2048, sha256)).rejects.toMatchObject(
+				refused('23514', 'backup_runs_sha256_ck')
+			);
+		}
+		await expect(insert(at(2043), at(2043, 1), -1, SUCCESS.sha256)).rejects.toMatchObject(
+			refused('23514', 'backup_runs_bytes_ck')
+		);
+		await expect(insert(at(2043, 10), at(2043, 9), 2048, SUCCESS.sha256)).rejects.toMatchObject(
+			refused('23514', 'backup_runs_finish_order_ck')
+		);
+		// The edges hold: zero bytes, a finish at the same instant as the start, and every hex digit.
+		await expect(
+			insert(at(2043, 20), at(2043, 20), 0, '0123456789abcdef'.repeat(4))
+		).resolves.toBeDefined();
+	});
+
+	it('finishRun refuses a bad hash, negative bytes or a finish before its start, and leaves the run running', async () => {
+		const id = await startRun(owner, { trigger: 'manual', appVersion: '1.0.0', now: at(2043, 30) });
+		await expect(
+			finishRun(owner, id, { ...SUCCESS, sha256: 'A'.repeat(64) }, at(2043, 31))
+		).rejects.toMatchObject(refused('23514', 'backup_runs_sha256_ck'));
+		await expect(
+			finishRun(owner, id, { ...SUCCESS, bytes: -1 }, at(2043, 31))
+		).rejects.toMatchObject(refused('23514', 'backup_runs_bytes_ck'));
+		await expect(finishRun(owner, id, SUCCESS, at(2043, 29))).rejects.toMatchObject(
+			refused('23514', 'backup_runs_finish_order_ck')
+		);
+		expect(await rowOf(id)).toMatchObject({ status: 'running', finished_at: null });
+
+		expect(await finishRun(owner, id, SUCCESS, at(2043, 31))).toBe(true);
+		expect(await rowOf(id)).toMatchObject({ status: 'succeeded', error_code: null });
+	});
+
+	it('coach_runtime has the uniform runtime grants', async () => {
 		const { rows } = await owner.query<{
 			select: boolean;
 			insert: boolean;
@@ -260,6 +302,11 @@ describe('backup_runs', () => {
 			delete: true,
 			truncate: false
 		});
+		const { rows: defaults } = await owner.query<{ acl: string }>(
+			`SELECT defaclacl::text AS acl FROM pg_default_acl
+			WHERE defaclnamespace = 'public'::regnamespace AND defaclobjtype = 'r'`
+		);
+		expect(defaults.some((row) => row.acl.includes('coach_runtime='))).toBe(true);
 
 		const id = await startRun(app, { trigger: 'manual', appVersion: 'runtime', now: at(2042, 0) });
 		expect(
