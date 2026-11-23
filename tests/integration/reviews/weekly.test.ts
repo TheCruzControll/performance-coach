@@ -42,6 +42,7 @@ import {
 	WeeklyReviewRefreshError
 } from '../../../src/lib/server/services/reviews';
 import type { WeeklyReviewDeps } from '../../../src/lib/server/services/reviews/weekly';
+import { editWeight, logWeight, setWeightGoal } from '../../../src/lib/server/services/weight';
 import {
 	editSet,
 	finishWorkout,
@@ -554,6 +555,95 @@ describe('refreshing a weekly review', () => {
 			const view = await getWeeklyReviewView(owner, REVIEWED, deps);
 			expect(view.stale).toBe(true);
 			expect(view.laterChanges).toBeGreaterThanOrEqual(1);
+		});
+	});
+
+	it('goes stale when a weigh-in in the week is edited, and the digest moves with it', async () => {
+		await withRollback(async (db) => {
+			const { owner, deps } = await seed(db, 'week-complete');
+			const { entry } = await logWeight(
+				owner,
+				{ value: 82.4, unit: 'kg', measuredOn: addDays(REVIEWED, 3) },
+				{ db, now }
+			);
+			const { review: first } = await review(owner, deps);
+			const [stored] = await reviewRows(db, owner);
+			expect((await getWeeklyReviewView(owner, REVIEWED, deps)).stale).toBe(false);
+			// The edit happens after the review was stored, so its updated_at is later than the review.
+			const later = () => new Date(NOW.getTime() + 60_000);
+			await editWeight(
+				owner,
+				entry.id,
+				{ value: 81.9, unit: 'kg', measuredOn: addDays(REVIEWED, 3) },
+				{ db, now: later }
+			);
+			const view = await getWeeklyReviewView(owner, REVIEWED, deps);
+			expect(view.stale).toBe(true);
+			expect(view.laterChanges).toBeGreaterThanOrEqual(1);
+			const second = await refreshWeeklyReview(owner, first.id, { today: TODAY }, deps);
+			const rows = await reviewRows(db, owner);
+			expect(rows.map((r) => r.id)).toEqual([stored!.id, second.id]);
+			expect(rows[1]!.inputs_digest).not.toBe(stored!.inputs_digest);
+		});
+	});
+
+	it('is not made stale by a weigh-in dated after the reviewed week', async () => {
+		await withRollback(async (db) => {
+			const { owner, deps } = await seed(db, 'week-complete');
+			await review(owner, deps);
+			const later = () => new Date(NOW.getTime() + 60_000);
+			await logWeight(
+				owner,
+				{ value: 80.1, unit: 'kg', measuredOn: addDays(REVIEWED, 7) },
+				{ db, now: later }
+			);
+			expect((await getWeeklyReviewView(owner, REVIEWED, deps)).stale).toBe(false);
+		});
+	});
+
+	it('is not made stale by a weigh-in back-dated into its window, when it has no body-weight finding', async () => {
+		await withRollback(async (db) => {
+			const { owner, deps } = await seed(db, 'week-complete');
+			await review(owner, deps);
+			const view = await getWeeklyReviewView(owner, REVIEWED, deps);
+			expect(view.sections.flatMap((s) => s.findings.map((f) => f.id))).not.toContain(
+				'goals:body_weight'
+			);
+			// Logged after the review was stored, dated inside its window: no weigh-in was read then.
+			const later = () => new Date(NOW.getTime() + 60_000);
+			await logWeight(
+				owner,
+				{ value: 80.1, unit: 'kg', measuredOn: addDays(REVIEWED, 3) },
+				{ db, now: later }
+			);
+			const after = await getWeeklyReviewView(owner, REVIEWED, deps);
+			expect(after.stale).toBe(false);
+			expect(after.laterChanges).toBe(0);
+		});
+	});
+
+	it('is not made stale by a goal that starts after the reviewed week', async () => {
+		await withRollback(async (db) => {
+			const { owner, deps } = await seed(db, 'week-complete');
+			await logWeight(
+				owner,
+				{ value: 82.4, unit: 'kg', measuredOn: addDays(REVIEWED, 3) },
+				{ db, now }
+			);
+			await review(owner, deps);
+			const view = await getWeeklyReviewView(owner, REVIEWED, deps);
+			expect(view.sections.flatMap((s) => s.findings.map((f) => f.id))).toContain(
+				'goals:body_weight'
+			);
+			// A goal set today starts after the reviewed Sunday, so it is no goal for that week.
+			const later = () => new Date(NOW.getTime() + 60_000);
+			const { goal } = await setWeightGoal(
+				owner,
+				{ targetWeight: 78, targetOn: '2027-01-31' },
+				{ db, now: later }
+			);
+			expect(goal.startOn).toBe(TODAY);
+			expect((await getWeeklyReviewView(owner, REVIEWED, deps)).stale).toBe(false);
 		});
 	});
 

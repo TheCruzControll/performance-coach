@@ -30,6 +30,10 @@ import type { GroupTargets, StrengthExercise, StrengthFact } from '../../analyti
 import { classifyTrend } from '../../analytics/trend.ts';
 import type { TrendResult } from '../../analytics/trend.ts';
 import type { SeriesPoint } from '../../analytics/types.ts';
+import { dailyTrend, trendOn } from '../../analytics/weight.ts';
+import type { WeighIn } from '../../analytics/weight.ts';
+import { goalStatus } from '../../analytics/weight-goal.ts';
+import type { Milestone, WeightGoal } from '../../analytics/weight-goal.ts';
 import { ANALYTICS_VERSION } from '../../analytics/version.ts';
 import * as workload from '../../analytics/workload.ts';
 import type { LoggedSession, RecoveryEntry } from '../../analytics/workload.ts';
@@ -115,6 +119,18 @@ export interface VolumeTargets {
 	label: string;
 }
 
+/**
+ * The owner's body weight for the 'goals' finding (PR 10): every weigh-in up to the reviewed Sunday
+ * (the trend runs over the whole history, so the caller passes all of it), the active goal with its
+ * milestones in the goal's unit, and the unit the words are written in.
+ */
+export interface BodyWeightInput {
+	entries: readonly WeighIn[];
+	goal: WeightGoal | null;
+	milestones: readonly Milestone[];
+	unit: WeightUnit;
+}
+
 export interface WeeklyReviewInput {
 	/** The reviewed week's Monday. */
 	weekStartsOn: IsoDate;
@@ -143,6 +159,8 @@ export interface WeeklyReviewInput {
 	format?: Format;
 	/** M7's context for the week (evaluation.ts): the conflicts are judged with evaluateWeek. */
 	evaluation?: ReviewEvaluation;
+	/** The body weight the 'goals' finding reads; without it the review has no such finding. */
+	bodyWeight?: BodyWeightInput;
 }
 
 export interface WeeklyReview {
@@ -249,6 +267,72 @@ function adherenceWords(a: WeekAdherence, logged: number, onPlan: string | undef
 	if (logged === 0) return `Nothing logged this week: 0 of ${plural(a.planned, 'session')} done`;
 	if (a.planned === 0) return `${plural(logged, 'session')} logged, none planned`;
 	return `${a.completed} of ${plural(a.planned, 'session')} done · ${onPlan ?? 'nothing due'}`;
+}
+
+/**
+ * The 'goals' finding (PR 10): the trend on the reviewed Sunday and its change since the Sunday
+ * before, judged against the goal on that Sunday (goalStatus). A goal that starts after the week is
+ * no goal for it. With no weigh-ins up to the Sunday and no goal for the week there is nothing to
+ * read, so there is no finding (null). A trend whose last weigh-in is more than a week before the
+ * Sunday is stale: no change is read and the call says so, the trend keeps its last value. `goal`
+ * says whether there is one, and `summary` is the part the review's summary names it by.
+ */
+function bodyWeightReading(bw: BodyWeightInput, sunday: IsoDate) {
+	const { unit } = bw;
+	const entries = bw.entries.filter((entry) => entry.measuredOn <= sunday);
+	const goal = bw.goal && bw.goal.startOn <= sunday ? bw.goal : null;
+	if (entries.length === 0 && goal === null) return null;
+	const series = dailyTrend(entries, unit);
+	const reading = trendOn(series, sunday);
+	const onSunday = reading?.trend ?? null;
+	const stale = reading?.stale ?? false;
+	const before = trendOn(series, addDays(sunday, -7))?.trend ?? null;
+	const change = stale || onSunday === null || before === null ? null : onSunday - before;
+	const status = goal && !stale ? goalStatus(goal, series, sunday, unit, bw.milestones) : null;
+	// Words: a weight in one decimal; a change or rate signed, with the sign the words use.
+	const weight = (x: number) => `${cleanFloat(x, 1) + 0} ${unit}`;
+	const signed = (x: number) => {
+		const v = cleanFloat(x, 1) + 0;
+		const sign = v < 0 ? '−' : v > 0 ? '+' : '';
+		return `${sign}${Math.abs(v)} ${unit}`;
+	};
+	const moved = change === null ? 'No change measured' : `${signed(change)} this week`;
+	const needs = (rate: number | null) => (rate === null ? '' : ` · needs ${signed(rate)}/week`);
+	let call: Call;
+	if (stale) call = ['not_enough_data', 'No weigh-in in the last 7 days'];
+	else if (onSunday === null) call = ['not_enough_data', 'No weigh-ins yet'];
+	else if (status === null) call = ['neutral', `${moved} · no goal set`];
+	else if (status.verdict === 'no_data')
+		call = ['not_enough_data', 'No weigh-in near the start of the goal'];
+	else if (status.verdict === 'on_track') call = ['good', `${moved} · on track`];
+	else if (status.verdict === 'ahead')
+		call = ['good', `${weight(status.gap)} ahead${needs(status.requiredRate)}`];
+	else call = ['watch', `${weight(status.gap)} behind${needs(status.requiredRate)}`];
+	// The summary names the weight by its verdict; on track says so beside the change.
+	const summary =
+		status?.verdict === 'on_track'
+			? `${change === null ? '' : `${moved}, `}on track`
+			: call[1].split(' · ')[0]!;
+	// Figures in canonical kg (brief.ts), the words in the owner's unit.
+	const kg = (x: number | null) =>
+		x === null ? null : cleanFloat(convertWeight(x, unit, 'kg'), 2) + 0;
+	const figures: FindingFigure[] = [
+		{
+			label: 'Trend',
+			value: kg(onSunday),
+			unit: 'kg',
+			kind: 'calculated',
+			words: onSunday === null ? 'No data' : weight(onSunday)
+		},
+		{
+			label: 'Change',
+			value: kg(change),
+			unit: 'kg',
+			kind: 'calculated',
+			words: change === null ? 'No data' : signed(change)
+		}
+	];
+	return { figures, call, goal: goal !== null, summary };
 }
 
 const GROUP_LEVEL = { below: 'low', within: 'good', above: 'watch', no_target: 'neutral' } as const;
@@ -704,6 +788,10 @@ export function composeWeeklyReview(input: WeeklyReviewInput): WeeklyReview {
 		});
 	});
 
+	// Body weight: the trend on Sunday and its change, against the goal when there is one.
+	const body = input.bodyWeight && bodyWeightReading(input.bodyWeight, sunday);
+	if (body) add('goals:body_weight', 'Body weight', body.figures, body.call);
+
 	// PRs this week, then next week.
 	const prs = [...setsOf.keys()]
 		.sort()
@@ -748,6 +836,7 @@ export function composeWeeklyReview(input: WeeklyReviewInput): WeeklyReview {
 		...(baseline ? ['Baseline established'] : []),
 		...(fatigue.level === 'none' ? [] : [`Fatigue: ${fatigue.level}`]),
 		...(conflicts.length ? [plural(conflicts.length, 'conflict')] : []),
+		...(body?.goal ? [`Weight: ${body.summary}`] : []),
 		...(prs.length ? [plural(prs.length, 'PR')] : []),
 		...(state === 'outline' || state === 'new_block' ? ['Next week: your cycle review'] : [])
 	];
