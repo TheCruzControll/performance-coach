@@ -93,8 +93,8 @@
 
 {#if shown}
 	{@const version = shown.version}
-	<a class="back" href={HISTORY} data-testid="back-to-history">
-		<Icon name="chevron-left" size={18} /> History
+	<a class="back-link" href={HISTORY} data-testid="back-to-history">
+		<Icon name="chevron-left" size={16} /> History
 	</a>
 	<PageHeader title={`Version ${version.number}`} eyebrow={`${version.when} · ${version.by}`} />
 
@@ -179,8 +179,8 @@
 		</div>
 	</div>
 {:else}
-	<a class="back" href={TRAIN} data-testid="back-to-train">
-		<Icon name="chevron-left" size={18} /> Train
+	<a class="back-link" href={TRAIN} data-testid="back-to-train">
+		<Icon name="chevron-left" size={16} /> Train
 	</a>
 	<PageHeader title="History" eyebrow="Program" />
 
@@ -264,23 +264,6 @@
 {/snippet}
 
 <style>
-	.back {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1);
-		min-height: var(--touch-target);
-		margin-top: var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		color: var(--color-text-secondary);
-	}
-
-	@media (hover: hover) and (pointer: fine) {
-		.back:hover {
-			color: var(--color-text);
-		}
-	}
-
 	.stack,
 	.versions {
 		display: grid;

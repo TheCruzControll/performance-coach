@@ -220,8 +220,8 @@
 	{#if switching}
 		<LoadingRows label="Loading the conversation…" data-testid="coach-loading" />
 	{:else if page.params.thread || live?.asking}
-		<a class="back" href={HOME} data-testid="all-conversations">
-			<Icon name="chevron-left" size={18} /> All conversations
+		<a class="back-link" href={HOME} data-testid="all-conversations">
+			<Icon name="chevron-left" size={16} /> All conversations
 		</a>
 		{#if ready?.thread || live?.asking}
 			{#await threadCode}
@@ -316,26 +316,8 @@
 		gap: var(--space-2);
 	}
 
-	.back {
-		display: inline-flex;
-		align-items: center;
-		justify-self: start;
-		gap: var(--space-1);
-		min-height: var(--touch-target);
-		margin-top: calc(var(--space-3) * -1);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		color: var(--color-text-secondary);
-	}
-
-	.back:focus-visible {
+	.back-link:focus-visible {
 		outline: 2px solid var(--color-accent-ring);
 		outline-offset: 2px;
-	}
-
-	@media (hover: hover) and (pointer: fine) {
-		.back:hover {
-			color: var(--color-text);
-		}
 	}
 </style>

@@ -57,7 +57,7 @@ test.describe('/design → Workout on a desktop', () => {
 			const panel = await openWorkoutPanel(page);
 			const box = await boxOf(panel);
 			expect(box.width, 'about a phone column').toBeGreaterThanOrEqual(
-				(await tokenPx(page, '--content-max')) - 40
+				(await tokenPx(page, '--content-max')) - 2 * (await tokenPx(page, '--gutter'))
 			);
 			expect(box.width, 'never wider than the readable column').toBeLessThanOrEqual(
 				await tokenPx(page, '--content-readable')

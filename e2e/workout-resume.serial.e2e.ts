@@ -23,7 +23,15 @@ import type { RunKit, StartKit, StrengthKit } from '../src/lib/domain/workout';
 import { createMutation } from '../src/lib/domain/workout/mutations';
 import { boxOf, DESKTOP, expectCentredOver, expectNoShift, expectNoSideScroll } from './desktop';
 import { PROGRAM_TZ, seedProgram } from './program-support';
-import { captureScreen, query, resetTrainingProfile, TABS, trackConsoleErrors } from './support';
+import {
+	captureScreen,
+	openProfile,
+	query,
+	resetTrainingProfile,
+	SCREENS,
+	TABS,
+	trackConsoleErrors
+} from './support';
 import { startFromKit } from './workout-start-support';
 import { injectMutation, readOutbox, seedWorkout, workoutDay } from './workout-support';
 
@@ -229,6 +237,10 @@ test.describe('a workout in progress on this device', () => {
 			await expect(bar(page), tab.label).toBeVisible();
 			await expectClearOfBar(page, tab.label);
 		}
+		// Profile is the last screen of the walk: opened from Today's avatar, as the owner does.
+		await openProfile(page);
+		await expect(bar(page)).toBeVisible();
+		await expectClearOfBar(page, 'Profile');
 
 		// A reload, and a new page in the same context, still show it.
 		await page.reload();
@@ -523,7 +535,7 @@ test.describe('in a desktop window', () => {
 		await seedWorkout(page, strength);
 		const rail = page.getByRole('navigation', { name: 'Primary' });
 
-		for (const tab of TABS) {
+		for (const tab of SCREENS) {
 			await openTab(page, tab.path);
 			await expect(bar(page), tab.label).toBeVisible();
 			await expectCentredOver(page, bar(page), page.locator('main#main'));

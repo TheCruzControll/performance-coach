@@ -34,6 +34,9 @@ Last reviewed: 2026-11-23, against `main` at the merge of #618.
   redesigns the set screen and removes both pins and that test's 56 px expectation. The steppers'
   text is pinned there too, at its pre-v2 size: the label at 13 px and the value at 56 px. Below a
   22 rem row (a 390 px phone), the v2 value would stack 12 px taller and the logger would grow.
+  The workout keeps the 20 px gutter (`src/routes/workout/Shell.svelte`) until v2/10, for the same
+  reason: at 28 px the steppers' 22 rem row is lost on a 393 px phone. On a 390 px iPhone the
+  steppers already stack at 20 px.
 - **Twelve files still style their own underlined links; screen rows move them to `.text-link`.**
   The links in running text are styled by each file: ProposalCard, RichText, Notice,
   ReplanNotice, ProgramHeader, ArchivedSheet, KnowsSheet, ThreadList, the proposal detail, and the
@@ -54,6 +57,10 @@ Last reviewed: 2026-11-23, against `main` at the merge of #618.
 - **Toasts are at the top; v2 puts them above the tab bar (`v2/03`).** `v2/02c` restyled them and
   kept them at the top: above the tab bar they would cover the resume bar, the composer and the
   logger. Closes when `v2/03` moves them with the shell.
+- **On a phone, Profile cannot be reached while Today shows its offline or error state.** Profile
+  is not a tab; below 1024 px its only way in is the avatar in Today's header, and those states
+  replace the header, so there is no avatar. Closes in `v2/06`
+  (Today's full screen) or `v2/24` (states and toasts), whichever draws the avatar in those states.
 - **A taper splice's deload is judged by the tail's first range.** A taper spliced into a block
   (`splice` in `src/lib/domain/programming/periodisation/replan.ts`) gives the tail a new lineage,
   so the Strength view, the weekly review and the cycle review read the tail's own bands: its

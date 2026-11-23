@@ -18,7 +18,7 @@
 	import AppNav from '#lib/ui/components/AppNav.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import { afterPaint } from '../workout/lazy.ts';
-	import { activePath, APP_NAV } from './nav';
+	import { activePath, APP_NAV, PROFILE } from './nav';
 
 	interface Props {
 		pathname: string;
@@ -52,7 +52,7 @@
 </script>
 
 <div class="shell">
-	<AppNav items={APP_NAV} pathname={activePath(pathname, navigating.to?.url)} />
+	<AppNav items={APP_NAV} profile={PROFILE} pathname={activePath(pathname, navigating.to?.url)} />
 	<main id="main" class="content" tabindex="-1">
 		<div class="notice-region" role="status">
 			{#if !connectivity.online && !hideOfflineNotice}

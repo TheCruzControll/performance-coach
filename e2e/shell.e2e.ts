@@ -1,6 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
 import { isDesktopPage } from './desktop';
-import { captureScreen, gotoHydrated, signedOut, TABS, trackConsoleErrors } from './support';
+import {
+	captureScreen,
+	gotoHydrated,
+	openProfile,
+	profileEntry,
+	SCREENS,
+	signedOut,
+	TABS,
+	trackConsoleErrors
+} from './support';
 
 /**
  * Share of the primary nav's colour channels that two full-viewport screenshots of a screen
@@ -132,26 +141,69 @@ test.describe('app shell on an iPhone viewport', () => {
 		const nav = page.getByRole('navigation', { name: 'Primary' });
 		await expect(nav).toBeVisible();
 		await expect(nav.getByRole('link')).toHaveCount(TABS.length);
+		await expect(nav.getByRole('link')).toHaveText(['Today', 'Train', 'Progress', 'Coach']);
 		await expect(nav.getByRole('link', { name: 'Today' })).toHaveAttribute('aria-current', 'page');
+		// The current tab is text colour and 600, the others tertiary and 400: no pill, no accent.
+		const light = (await page.locator('html').getAttribute('data-theme')) === 'light';
+		const current = nav.getByRole('link', { name: 'Today' });
+		await expect(current).toHaveCSS('color', light ? 'rgb(17, 17, 19)' : 'rgb(242, 242, 238)');
+		await expect(current).toHaveCSS('font-weight', '600');
+		const other = nav.getByRole('link', { name: 'Train' });
+		await expect(other).toHaveCSS('color', light ? 'rgb(102, 102, 110)' : 'rgb(134, 134, 142)');
+		await expect(other).toHaveCSS('font-weight', '400');
+		for (const background of await nav
+			.locator('*')
+			.evaluateAll((els) => els.map((el) => getComputedStyle(el).backgroundColor))) {
+			expect(background, 'no accent fill in the tab bar').not.toBe('rgb(255, 176, 46)');
+		}
 
-		// Pinned to the bottom edge, full width, every target at least 44px tall.
+		// Pinned to the bottom edge, full width, every tab 64 px wide and at least 44px tall.
 		const box = await nav.boundingBox();
 		expect(box).not.toBeNull();
 		expect(Math.round(box!.y + box!.height)).toBe(viewport!.height);
 		expect(Math.round(box!.width)).toBe(viewport!.width);
 		for (const link of await nav.getByRole('link').all()) {
 			const b = await link.boundingBox();
+			expect(Math.round(b!.width)).toBe(64);
 			expect(b!.height).toBeGreaterThanOrEqual(44);
 		}
 
-		// Glass actually blurs: guards against the build pipeline dropping the standard
-		// `backdrop-filter` (Chromium and Firefox ignore the -webkit- form).
-		const glass = await nav.evaluate((el) => {
-			const style = getComputedStyle(el) as CSSStyleDeclaration & { webkitBackdropFilter?: string };
-			return style.backdropFilter || style.webkitBackdropFilter || 'none';
-		});
-		expect(glass).toContain('blur(');
+		// The bar is a solid canvas, not glass: the content scrolls under it.
+		await expect(nav).toHaveCSS(
+			'background-color',
+			light ? 'rgb(244, 244, 240)' : 'rgb(10, 10, 11)'
+		);
+		await expect(nav).toHaveCSS('backdrop-filter', 'none');
+		// The page gutter is 28 px everywhere but the workout (which keeps 20 px until v2/10).
+		await expect(page.locator('#main')).toHaveCSS('padding-left', '28px');
 		await captureScreen(page, testInfo, 'today');
+	});
+
+	test('Profile opens from the avatar on Today, and its back link returns there', async ({
+		page
+	}) => {
+		test.skip(
+			isDesktopPage(page),
+			'the avatar is hidden from 1024 px: the rail foot opens Profile there'
+		);
+		await page.goto('/today');
+		const avatar = page.getByTestId('today-avatar');
+		await expect(avatar).toHaveAccessibleName('Profile');
+		const box = await avatar.boundingBox();
+		expect(box).toMatchObject({ width: 32, height: 32 });
+		expect(
+			parseFloat(await avatar.evaluate((el) => getComputedStyle(el).borderRadius))
+		).toBeGreaterThanOrEqual(16);
+
+		await avatar.click();
+		await expect(page).toHaveURL(/\/profile$/);
+		await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
+
+		const back = page.getByTestId('back-to-today');
+		await expect(back).toBeVisible();
+		await expect(back).toHaveCSS('font-size', '15px');
+		await back.click();
+		await expect(page).toHaveURL(/\/today$/);
 	});
 
 	test('bottom navigation moves between all tabs', async ({ page }, testInfo) => {
@@ -264,7 +316,12 @@ test.describe('app shell on an iPhone viewport', () => {
 
 	test('no console errors on any screen, including interactive ones', async ({ page }) => {
 		const errors = trackConsoleErrors(page);
-		for (const path of [...TABS.map((t) => t.path), '/profile/security', '/design', '/offline']) {
+		for (const path of [
+			...SCREENS.map((t) => t.path),
+			'/profile/security',
+			'/design',
+			'/offline'
+		]) {
 			await page.goto(path);
 			await page.waitForLoadState('networkidle');
 		}
@@ -494,7 +551,12 @@ test.describe('app shell on an iPhone viewport', () => {
 	});
 
 	test('no screen scrolls sideways', async ({ page }) => {
-		for (const path of [...TABS.map((t) => t.path), '/profile/security', '/design', '/offline']) {
+		for (const path of [
+			...SCREENS.map((t) => t.path),
+			'/profile/security',
+			'/design',
+			'/offline'
+		]) {
 			await page.goto(path);
 			await page.evaluate(() => document.fonts.ready);
 			const { scrollWidth, innerWidth } = await page.evaluate(() => ({
@@ -754,16 +816,17 @@ test.describe('the root error page, loaded on demand', () => {
 		return { served: () => served };
 	}
 
-	/** Profile's data request fails as a dropped connection: SvelteKit renders the root error page. */
+	/**
+	 * Profile's data request fails as a dropped connection: SvelteKit renders the root error page.
+	 * Called on Today, so the avatar (the rail's on desktop) is the way in (openProfile would wait
+	 * for Profile's heading, which the error page does not show).
+	 */
 	async function failProfileData(page: Page) {
 		await page.route(
 			(url) => url.pathname === '/profile/__data.json',
 			(route) => route.abort('connectionrefused')
 		);
-		await page
-			.getByRole('navigation', { name: 'Primary' })
-			.getByRole('link', { name: 'Profile' })
-			.click();
+		await profileEntry(page).click();
 	}
 
 	test('a server-rendered error page hydrates the markup the server sent', async ({ page }) => {
@@ -814,12 +877,8 @@ test.describe('the root error page, loaded on demand', () => {
 		expect(chunk.served(), 'the page loaded after hydration').toBe(true);
 
 		await context.setOffline(true);
-		await page
-			.getByRole('navigation', { name: 'Primary' })
-			.getByRole('link', { name: 'Profile' })
-			.click();
+		await openProfile(page);
 		await expect(page.getByTestId('offline-state')).toBeVisible();
-		await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
 	});
 
 	test('an error before the page has loaded shows once it arrives', async ({ page }) => {

@@ -43,7 +43,7 @@ test.describe('/design → Coach on a desktop', () => {
 			const tabs = await boxOf(page.getByRole('tablist', { name: 'Component group' }));
 			expect(Math.abs(panel.x - tabs.x), 'under its tabs').toBeLessThanOrEqual(1);
 			expect(panel.width, 'about a phone column').toBeGreaterThanOrEqual(
-				(await tokenPx(page, '--content-max')) - 40
+				(await tokenPx(page, '--content-max')) - 2 * (await tokenPx(page, '--gutter'))
 			);
 			expect(panel.width, 'never wider than the readable column').toBeLessThanOrEqual(
 				await tokenPx(page, '--content-readable')
