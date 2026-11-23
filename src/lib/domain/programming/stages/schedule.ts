@@ -29,7 +29,8 @@
  *   Once the plan is final, every planned week is judged again against the week before it as the
  *   plan has it (the previous block's last week for a block's first). Each avoid finding it keeps
  *   that no decision explains gets a schedule_kept decision, found against that week before and
- *   kept because the block shares its days. Repair does not search again for these. Moves, eases
+ *   kept because the block shares its days (an OWN_WEEKS week keeps its own days instead). Repair
+ *   does not search again for these. Moves, eases
  *   and drops get schedule_repaired, load_eased and session_dropped decisions. Decisions alike
  *   across weeks are one citing each session, and every decision's refs follow the sessions to
  *   their new places, as placement's do; the schedule_kept ones are written after that, so they
@@ -236,10 +237,15 @@ function decisionOf(
 
 /**
  * Why a week keeps an avoid finding that the plan shows against the week before as planned, and no
- * decision explains: the block's days repeat, so this pairing stays. It names no other day.
+ * decision explains. A building week's days repeat each week, so this pairing stays. An OWN_WEEKS
+ * week does not share its block's days, so it says only that it keeps its own. Neither names
+ * another day.
  */
-const FOUND_KEPT =
-	'Found against the week before as planned, and kept because the block shares its days: its days repeat each week, so this pairing with the week before stays.';
+const FOUND_KEPT = {
+	shared:
+		'Found against the week before as planned, and kept because the block shares its days: its days repeat each week, so this pairing with the week before stays.',
+	own: 'Found against the week before as planned, and kept: this week keeps its own days.'
+};
 
 /**
  * Every planned week of the final plan judged with its real week before, and each avoid finding it
@@ -316,8 +322,9 @@ function recordKeptAsPlanned(
 				if (ref === undefined || named.some((r) => explained.has(r))) continue;
 				explained.add(ref);
 				const headline = clip(f.headline, 120);
-				const key = JSON.stringify([b, headline]);
-				const group = found.get(key) ?? { refs: [], facts: { headline, reason: FOUND_KEPT } };
+				const reason = OWN_WEEKS.includes(week.kind) ? FOUND_KEPT.own : FOUND_KEPT.shared;
+				const key = JSON.stringify([b, headline, reason]);
+				const group = found.get(key) ?? { refs: [], facts: { headline, reason } };
 				group.refs.push(ref);
 				found.set(key, group);
 			}
