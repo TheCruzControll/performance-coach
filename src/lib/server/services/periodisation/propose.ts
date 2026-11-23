@@ -38,19 +38,27 @@ import {
 import { inTransaction, resolveDeps, type CoachDeps } from '../coach/shared';
 import { previewReplan, type PreviewDeps, type PreviewRefusalReason } from './preview';
 
-/** Who asks for a re-plan. */
-export type ReplanSource = 'goal_priority' | 'fatigue' | 'weekly_review' | 'coach' | 'owner';
+/** The review a weekly review's re-plan names, as M6 stores its provenance. */
+export type ReplanReview = Omit<RulesProvenance, 'kind' | 'weekStartsOn'> & {
+	weekStartsOn: IsoDate;
+};
+/** The conversation, run and tool call a coach's re-plan names. */
+export type ReplanCoach = NonNullable<NewProposal['origin']>;
 
-export interface ReplanRequest {
+/**
+ * Who asked, and what that source must name: a weekly review's re-plan carries its review, the
+ * coach's carries its conversation, and no other source carries either, so the attribution is
+ * never dropped silently.
+ */
+export type ReplanRequest = {
 	/** The owner's local today. */
 	today: IsoDate;
 	directive: ReplanDirective;
-	source: ReplanSource;
-	/** weekly_review: the review that made it, as M6 stores its provenance. */
-	review?: Omit<RulesProvenance, 'kind' | 'weekStartsOn'> & { weekStartsOn: IsoDate };
-	/** coach: the conversation, run and tool call. */
-	coach?: NonNullable<NewProposal['origin']>;
-}
+} & (
+	| { source: 'goal_priority' | 'fatigue' | 'owner'; review?: never; coach?: never }
+	| { source: 'weekly_review'; review: ReplanReview; coach?: never }
+	| { source: 'coach'; coach: ReplanCoach; review?: never }
+);
 
 export type ProposedReplan =
 	| { status: 'proposed'; proposal: ProposalView; duplicate: boolean }
@@ -103,7 +111,7 @@ export async function proposeReplan(
 	return inTransaction(deps, async ({ db }) => {
 		const repo = createCoachProposalsRepository(db);
 		await repo.lockCreates(ownerId);
-		const { today, directive, source } = request;
+		const { today, directive } = request;
 		const { errorsDb, origin, reader, statementTimeoutMs } = deps;
 		const shown = await previewReplan(
 			ownerId,
@@ -124,9 +132,9 @@ export async function proposeReplan(
 		// (M5's duplicate: the same request and hashes on the same base).
 		const open = await getOpenReplan(ownerId, { db, now });
 		const provenance =
-			source === 'goal_priority' || source === 'fatigue'
-				? { kind: source }
-				: source === 'weekly_review' && request.review
+			request.source === 'goal_priority' || request.source === 'fatigue'
+				? { kind: request.source }
+				: request.source === 'weekly_review'
 					? { kind: 'weekly_review' as const, ...request.review }
 					: null;
 		const created = await createProposal(
@@ -139,7 +147,7 @@ export async function proposeReplan(
 					payload
 				},
 				revises: open?.id ?? null,
-				origin: source === 'coach' ? (request.coach ?? null) : null,
+				origin: request.source === 'coach' ? request.coach : null,
 				provenance,
 				preview: shown
 			},

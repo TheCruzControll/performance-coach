@@ -37,6 +37,7 @@ import {
 	type ProposalContext
 } from '../../../domain/coach/proposal-rules';
 import {
+	MAX_PROPOSAL_OPS,
 	PAYLOAD_VERSION,
 	payloadHash,
 	proposalSchema,
@@ -72,6 +73,7 @@ import { getExercisesByIds, resolveKeys, type ExerciseDef } from '../exercises/i
 import { isUuid } from '../ids';
 import { createContextCache, type ContextCache } from '../periodisation/context';
 import { previewReplan, type ReplanPreview } from '../periodisation/preview';
+import { replanForPriorities } from '../periodisation/priority';
 import { getAthleteProfile, listGoals } from '../profile';
 import { checkMove, getProgramVersion, type StoredSession } from '../programs';
 import { programmingInputFor } from '../programs/alternatives';
@@ -624,6 +626,25 @@ async function replanChanges(
 	return { weeks: shown.weeks, impact: shown.impact, summaryLines: shown.summaryLines };
 }
 
+/**
+ * A replan stores one row per changed session, so its rows are capped at MAX_PROPOSAL_OPS, the
+ * cap a program proposal's changes already share. When rows are dropped, its summary says how
+ * many more changes there are. Other kinds pass through: their schema caps them.
+ */
+function capRows(
+	proposal: Proposal,
+	rows: DiffRow[],
+	lines: string[]
+): { rows: DiffRow[]; lines: string[] } {
+	const more = rows.length - MAX_PROPOSAL_OPS;
+	if (proposal.kind !== 'replan' || more <= 0) return { rows, lines };
+	const words = more === 1 ? 'change' : 'changes';
+	return {
+		rows: rows.slice(0, MAX_PROPOSAL_OPS),
+		lines: [...lines, `${more} more ${words} not listed`]
+	};
+}
+
 // ---- create -----------------------------------------------------------------------------
 
 export interface NewProposal {
@@ -695,8 +716,9 @@ export async function createProposal(
 			revises = predecessor.id;
 			revisesFrom = predecessor.status;
 		}
-		const { rows, impact } = describeProposal(proposal, diffContext);
-		const lines = summaryLines(proposal, diffContext);
+		const described = describeProposal(proposal, diffContext);
+		const { rows, lines } = capRows(proposal, described.rows, summaryLines(proposal, diffContext));
+		const { impact } = described;
 		const at = resolved.now();
 		const id = await repo.insertProposal({
 			ownerId,
@@ -821,6 +843,11 @@ export async function acceptProposal(
 ): Promise<DecidedProposal> {
 	const decided = await acceptOnce(ownerId, id, deps);
 	const { kind, status, supersededReason } = decided.proposal;
+	// Once committed, an applied goal_update may have moved the goals' priorities: the trigger
+	// proposes a re-plan, and never throws, so it cannot fail the accept.
+	if (decided.changed && kind === 'goal_update' && status === 'applied') {
+		await replanForPriorities(ownerId, { cause: 'goal_update' }, deps);
+	}
 	// Any accept of a stale replan, this one or a repeat; never one the owner revised.
 	const again = kind === 'replan' && status === 'superseded' && supersededReason !== 'revised';
 	return again ? { ...decided, proposeAgain: true } : decided;

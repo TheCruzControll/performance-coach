@@ -11,6 +11,7 @@
  */
 import { fail, redirect } from '@sveltejs/kit';
 import { previousStep, type OnboardingStep } from '../../domain/profile/onboarding';
+import type { Goal } from '../../domain/profile/types';
 import {
 	advanceOnboarding,
 	completeOnboarding,
@@ -25,6 +26,12 @@ import {
 	type ChangeSource,
 	type ProfileDeps
 } from '../services/profile';
+import {
+	replanForPriorities,
+	type PriorityCause,
+	type PriorityDeps,
+	type PriorityReplan
+} from '../services/periodisation/priority';
 import { ownerId, readForm, type FormEvent } from './read';
 
 export { ownerId, type FormEvent };
@@ -62,18 +69,53 @@ export function editAction(saveSection: SaveSection) {
 	};
 }
 
-/** What a goal action runs with: a Profile change unless `source` says otherwise. */
-type GoalDeps = Pick<ProfileDeps, 'db' | 'source'>;
-const goalChange = (deps: GoalDeps) => ({ source: 'profile' as ChangeSource, ...deps });
+/**
+ * What a goal action runs with: a Profile change unless `source` says otherwise. `replan` holds
+ * the priority trigger's own deps (a test's fault or timeout).
+ */
+type GoalDeps = Pick<ProfileDeps, 'db' | 'source' | 'now'> & {
+	replan?: Omit<PriorityDeps, 'db' | 'now'>;
+};
+const goalChange = ({ replan: _replan, ...deps }: GoalDeps) => ({
+	source: 'profile' as ChangeSource,
+	...deps
+});
+
+/**
+ * A goal action's data once its change has committed, with what the priority trigger did
+ * (services/periodisation/priority.ts): it never throws, so the save stands whatever it says.
+ * `before` is the goals as they were before the change; the request is the trigger's origin.
+ */
+async function withReplan<T extends object>(
+	{ locals, request }: FormEvent,
+	before: Goal[],
+	data: T,
+	deps: GoalDeps,
+	cause?: PriorityCause
+): Promise<T & { replan: PriorityReplan }> {
+	const { db, now, replan: own } = deps;
+	const origin = {
+		requestId: locals.requestId,
+		method: request.method,
+		path: new URL(request.url).pathname
+	};
+	const replan = await replanForPriorities(
+		ownerId(locals),
+		{ cause, before },
+		{ origin, ...own, db, now }
+	);
+	return { ...data, replan };
+}
 
 /**
  * Profile → Goals' `saveGoal` action: add a goal, or change the one its `id` names (an id that
  * names no goal is a 404, never a new goal), as a Profile change. Returns the ranking the
  * services keep, so the screen shows it as stored, and the saved goal's id.
  */
-export async function saveGoalAction({ locals, request }: FormEvent, deps: GoalDeps = {}) {
-	const owner = ownerId(locals);
-	const { payload } = await readForm(request);
+export async function saveGoalAction(event: FormEvent, deps: GoalDeps = {}) {
+	const owner = ownerId(event.locals);
+	const { payload } = await readForm(event.request);
+	const before = await listGoals(owner, deps);
 	const { id, ...goal } = (payload ?? {}) as { id?: unknown };
 	const change = goalChange(deps);
 	const result = await attempt(() =>
@@ -82,7 +124,8 @@ export async function saveGoalAction({ locals, request }: FormEvent, deps: GoalD
 			: updateGoal(owner, typeof id === 'string' ? id : '', goal, change)
 	);
 	if (!result.ok) return result.failure;
-	return { goals: await listGoals(owner, deps), saved: result.value.id };
+	const data = { goals: await listGoals(owner, deps), saved: result.value.id };
+	return withReplan(event, before, data, deps);
 }
 
 /**
@@ -90,14 +133,15 @@ export async function saveGoalAction({ locals, request }: FormEvent, deps: GoalD
  * none of the owner's goals is a 404), as a Profile change. The services close the gap it leaves
  * in the ranking and keep its history; returns the ranking as stored.
  */
-export async function deleteGoalAction({ locals, request }: FormEvent, deps: GoalDeps = {}) {
-	const owner = ownerId(locals);
-	const { payload } = await readForm(request);
+export async function deleteGoalAction(event: FormEvent, deps: GoalDeps = {}) {
+	const owner = ownerId(event.locals);
+	const { payload } = await readForm(event.request);
+	const before = await listGoals(owner, deps);
 	const { id } = (payload ?? {}) as { id?: unknown };
 	const change = goalChange(deps);
 	const result = await attempt(() => deleteGoal(owner, typeof id === 'string' ? id : '', change));
 	if (!result.ok) return result.failure;
-	return { goals: await listGoals(owner, deps) };
+	return withReplan(event, before, { goals: await listGoals(owner, deps) }, deps, 'status');
 }
 
 /**
@@ -105,12 +149,13 @@ export async function deleteGoalAction({ locals, request }: FormEvent, deps: Goa
  * top priority first, as a Profile change. The services refuse a list that leaves out, repeats or
  * adds a goal (a field error, so nothing is stored); returns the ranking as stored.
  */
-export async function reorderGoalsAction({ locals, request }: FormEvent, deps: GoalDeps = {}) {
-	const owner = ownerId(locals);
-	const { payload } = await readForm(request);
+export async function reorderGoalsAction(event: FormEvent, deps: GoalDeps = {}) {
+	const owner = ownerId(event.locals);
+	const { payload } = await readForm(event.request);
+	const before = await listGoals(owner, deps);
 	const result = await attempt(() => reorderGoals(owner, payload, goalChange(deps)));
 	if (!result.ok) return result.failure;
-	return { goals: result.value };
+	return withReplan(event, before, { goals: result.value }, deps, 'reorder');
 }
 
 // ---- onboarding --------------------------------------------------------------------------------

@@ -20,6 +20,7 @@ import { sql } from 'drizzle-orm';
 import type pg from 'pg';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { addDays, type IsoDate } from '../../../src/lib/domain/calendar';
+import { MAX_PROPOSAL_OPS } from '../../../src/lib/domain/coach/proposals';
 import type { ReplanDirective } from '../../../src/lib/domain/training/replan';
 import {
 	createDatabase,
@@ -45,8 +46,7 @@ import type { ContextReader } from '../../../src/lib/server/services/periodisati
 import { previewReplan } from '../../../src/lib/server/services/periodisation/preview';
 import {
 	proposeReplan,
-	type ProposeDeps,
-	type ReplanRequest
+	type ProposeDeps
 } from '../../../src/lib/server/services/periodisation/propose';
 import { createGoal } from '../../../src/lib/server/services/profile';
 import {
@@ -102,12 +102,11 @@ async function seeded(db: Executor, name: 'block-end' | 'week-complete', today: 
 	return { owner, programId: fixture.programId!, fixture, deps };
 }
 
-/** Propose, failing the test unless a proposal comes back. */
-async function propose(
-	owner: string,
-	request: Omit<ReplanRequest, 'source'> & Partial<Pick<ReplanRequest, 'source'>>,
-	deps: ProposeDeps
-) {
+/** The owner's own request: the directive and the day it is asked on. */
+type OwnerRequest = { today: IsoDate; directive: ReplanDirective };
+
+/** Propose as the owner, failing the test unless a proposal comes back. */
+async function propose(owner: string, request: OwnerRequest, deps: ProposeDeps) {
 	const made = await proposeReplan(owner, { source: 'owner', ...request }, deps);
 	if (made.status !== 'proposed') throw new Error(`Not proposed: ${JSON.stringify(made)}`);
 	return made;
@@ -204,9 +203,15 @@ describe('the lifecycle', () => {
 			);
 			expect(duplicate).toBe(false);
 			expect(proposal).toMatchObject({ kind: 'replan', status: 'proposed', origin: null });
-			expect(proposal.rows.length).toBe(shown.weeks.flatMap((w) => w.rows).length);
+			// The rows are capped at MAX_PROPOSAL_OPS, and the summary says how many more there are.
+			const total = shown.weeks.flatMap((w) => w.rows).length;
+			expect(total).toBeGreaterThan(MAX_PROPOSAL_OPS);
+			expect(proposal.rows.length).toBe(MAX_PROPOSAL_OPS);
 			expect(proposal.rows[0]!.label.startsWith(`${shown.weeks[0]!.label} · `)).toBe(true);
-			expect(proposal.summaryLines).toEqual(shown.summaryLines);
+			expect(proposal.summaryLines).toEqual([
+				...shown.summaryLines,
+				`${total - MAX_PROPOSAL_OPS} more changes not listed`
+			]);
 			expect(proposal.impact).toEqual(shown.impact);
 
 			const accepted = await acceptProposal(owner, proposal.id, deps);
@@ -231,6 +236,31 @@ describe('the lifecycle', () => {
 			expect(again).toMatchObject({ changed: false, proposal: { status: 'applied' } });
 			expect(again.proposal.appliedVersion?.number).toBe(2);
 			expect(await versionCount(db, programId)).toBe(2);
+		});
+	});
+
+	it('stores the first MAX_PROPOSAL_OPS changes, and its summary says how many more there are', async () => {
+		await withRollback(async (db) => {
+			const { owner, deps } = await seeded(db, 'block-end', WEDNESDAY);
+			const shown = await previewReplan(
+				owner,
+				{ today: WEDNESDAY, directive: PRIORITIES },
+				{ db, statementTimeoutMs: SLOW_OK }
+			);
+			if ('refusal' in shown) throw new Error(shown.why);
+			const total = shown.weeks.flatMap((w) => w.rows).length;
+			const { proposal } = await propose(owner, { today: WEDNESDAY, directive: PRIORITIES }, deps);
+			expect(proposal.rows).toHaveLength(MAX_PROPOSAL_OPS);
+			expect(proposal.rows.map((r) => r.label)).toEqual(
+				shown.weeks
+					.flatMap((w) => w.rows.map((r) => `${w.label} · ${r.label}`))
+					.slice(0, MAX_PROPOSAL_OPS)
+			);
+			expect(proposal.summaryLines.at(-1)).toBe(
+				`${total - MAX_PROPOSAL_OPS} more changes not listed`
+			);
+			// The impact is not capped: every changed week still shows.
+			expect(proposal.impact).toEqual(shown.impact);
 		});
 	});
 

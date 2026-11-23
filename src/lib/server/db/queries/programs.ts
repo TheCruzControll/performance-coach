@@ -12,6 +12,7 @@ import {
 	getTableColumns,
 	gt,
 	inArray,
+	isNotNull,
 	isNull,
 	lt,
 	sql,
@@ -101,6 +102,19 @@ export function currentProgram(db: Executor, ownerId: string, number?: number) {
 				: and(eq(programVersions.programId, programs.id), eq(programVersions.number, number))
 		)
 		.where(and(eq(programs.ownerId, ownerId), eq(programs.status, 'active')));
+}
+
+/**
+ * The input the newest generated version of `programId` was built from (an owner's edit stores
+ * none): one row or none, through program_versions_program_number_uq read backwards.
+ */
+export function latestInput(db: Executor, programId: string) {
+	return db
+		.select({ number: programVersions.number, input: programVersions.inputSnapshot })
+		.from(programVersions)
+		.where(and(eq(programVersions.programId, programId), isNotNull(programVersions.inputSnapshot)))
+		.orderBy(desc(programVersions.number))
+		.limit(1);
 }
 
 /**
