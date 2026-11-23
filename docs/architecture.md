@@ -157,8 +157,14 @@ services, not CHECKed, so a new key needs no migration.
   `drizzle/0006_profile_time_zone.sql`: the owner's calendar day), birth year, nutrition phase,
   weight target, "I don't know my 1RMs" (`baselines_unknown`) and onboarding progress (the steps
   completed and skipped, and when it finished).
-- `body_weight_entries`: a dated series; the latest entry is the current weight, and a save on
-  the same calendar day replaces that day's entry.
+- `body_weight_entries`: a dated series with one weigh-in per owner per day
+  (`body_weight_entries_owner_day_uq`, from `drizzle/0035_body_weight_one_per_day.sql`); the
+  latest entry is the current weight, and a save on the same calendar day replaces that day's
+  entry whatever its source. A coach write also carries its run and the entry it replaced, so
+  Undo can restore it (`drizzle/0036_weight_tracking.sql`).
+- `weight_goals` and `weight_goal_milestones`, from `src/lib/server/db/schema/weight.ts`: the
+  owner's weight goal (its unit, start and target weights and dates) and the milestones along its
+  line. One goal is active per owner; a new goal ends the old one, which stays as history.
 - `training_goals`: event or general goals with their disciplines. `priority` ranks the open
   (active or paused) goals, unique and contiguous from 1, and is null once a goal is achieved or
   dropped.
@@ -192,6 +198,8 @@ services, not CHECKed, so a new key needs no migration.
   instead of interleaving. Experience, injuries and exercise preferences keep the ids of rows
   that match; race results are deleted and reinserted.
 - `src/lib/server/db/repositories/profile.ts` is plain data access over an `Executor`.
+- `src/lib/server/db/repositories/weight.ts` is the same for weigh-ins and weight goals, and every
+  method takes the owner it is scoped to.
 
 ### The save path
 
