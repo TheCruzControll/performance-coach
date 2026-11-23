@@ -276,8 +276,9 @@ const GOLDEN: Record<ScenarioKey, readonly [monday: string, thursday: string]> =
  * strength goal is held to the lower half of its band, and runs paced from current fitness
  * (generator-running, 'perfo-programming/6': hybrid's paces from its VDOT). generator-running's race
  * plans ('perfo-programming/7') left them as they were: journey's secondary marathon is time-based,
- * so it keeps M3's week. A later GENERATOR_ID
- * bump changes them, and its PR lists each.
+ * so it keeps M3's week. generator-combat ('perfo-programming/8') changed journey's: its fight camp
+ * keeps both strength sessions for their weekly sets and says which camp sessions, its sparring
+ * among them, it left out. A later GENERATOR_ID bump changes them, and its PR lists each.
  */
 const GOLDEN_SEASON: Record<ScenarioKey, readonly [monday: string, thursday: string]> = {
 	beginner: ['40ac8a97f8ac8304', 'afbafd92042977bf'],
@@ -285,7 +286,7 @@ const GOLDEN_SEASON: Record<ScenarioKey, readonly [monday: string, thursday: str
 	hybrid: ['344b9f0adb2d9183', '6377fa3e68b4861f'],
 	injuredShoulder: ['a8f751370762b759', '1133ba47aeda08ec'],
 	dumbbellsOnly: ['4bb8ea19bb964a13', '6573125a5c871f5e'],
-	journey: ['54e04d5b7941f4c8', '79a2adad7842028e'],
+	journey: ['2e987dd6a87c43af', 'e5a6be9ff2f68d30'],
 	minimal: ['c3bdcaad1afbb3e1', 'f9b8b4af0749399a']
 };
 

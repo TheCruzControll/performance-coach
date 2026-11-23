@@ -15,7 +15,12 @@
  *
  * generator-running (m7r/08): a marathon or half week's runs from its targets, and a running goal
  * that does not lead held to its dose.
+ *
+ * generator-combat (m7r/09): a fight-camp week's Muay Thai, sparring and conditioning from its
+ * targets, the room the camp takes, and a Muay Thai goal that does not lead kept to technique and
+ * pads.
  */
+import { CAMP_CONDITIONING } from '../../other.ts';
 import { HALVED_ACCESSORY_PHASES } from '../../stages/phasing.ts';
 import { HARDEST_BY, OWN_WEEKS } from '../../stages/schedule.ts';
 import type { RuleDefinition } from './types.ts';
@@ -151,6 +156,51 @@ export const rules: readonly RuleDefinition[] = [
 		rationale:
 			'Aerobic fitness holds on 60–70 % of your recent mileage, so running more would only take recovery from the goal that leads.',
 		source: `${PROGRAMMING}/running.ts#planRuns`
+	},
+	{
+		id: 'generator.camp_sessions',
+		kind: 'behaviour',
+		statement:
+			'In a fight-camp week, Muay Thai comes up to the week’s planned sessions with your classes counted, hard sparring up to its planned number with each hard class counted toward it and none in the 7 days before the fight, conditioning in 3-minute rounds when the week plans rounds, and a fight week of technique and light pads only. Your commitments stay as they are.',
+		rationale:
+			'The camp plans each week’s fight work, so the sessions are built to it; a hard class already hits like sparring, so it counts toward the cap rather than adding to it.',
+		source: `${PROGRAMMING}/other.ts#planOther`
+	},
+	{
+		id: 'generator.camp_conditioning',
+		kind: 'constant',
+		statement:
+			'A fight-camp conditioning session is a short warm-up and then the week’s rounds of 3 minutes, at RPE 7, within your session length.',
+		rationale: CAMP_CONDITIONING.why,
+		source: `${PROGRAMMING}/other.ts#CAMP_CONDITIONING`,
+		values: CAMP_CONDITIONING
+	},
+	{
+		id: 'generator.camp_room',
+		kind: 'behaviour',
+		statement:
+			'A fight-camp week fills the days left first; when they run short it takes strength sessions of goals held at maintenance, the lowest-priority first, down to the fewest their dose allows and only while every major muscle group keeps the week’s hard sets, never a run. Hard sparring and conditioning take the room by turns, then technique and pads.',
+		rationale:
+			'The fight leads, so its camp gets the days a held goal can spare, while every held goal keeps its weekly sets and the easy runs stay as the recovery between hard days.',
+		source: `${PROGRAMMING}/other.ts#CAMP_ORDER`
+	},
+	{
+		id: 'generator.camp_left_out',
+		kind: 'behaviour',
+		statement:
+			'A session a fight-camp week asks for that no day can hold, after the room the camp takes, is left out of that week with a decision that says so, one for the block and session.',
+		rationale:
+			'A camp week that quietly held less than its plan would read as a missed session in your review; saying which session gave way, and why, keeps the plan honest.',
+		source: `${PROGRAMMING}/other.ts#planOther`
+	},
+	{
+		id: 'generator.muay_thai_dose',
+		kind: 'behaviour',
+		statement:
+			'A Muay Thai goal that trains alongside the leader or is held at maintenance gets technique and pad work only, with no sparring beyond your classes. With every goal paused, the plan keeps its usual sparring.',
+		rationale:
+			'Technique and pads keep timing and shape sharp; sparring’s knocks would take recovery from the goal that leads.',
+		source: `${PROGRAMMING}/other.ts#planOther`
 	}
 ];
 
