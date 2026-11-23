@@ -21,7 +21,7 @@
  */
 import { error } from '@sveltejs/kit';
 import { addDays, mondayOf, parseIsoDate, weekdayOf, type IsoDate } from '#lib/domain/calendar.ts';
-import { cardOf, type ProposalCardRow } from '#lib/domain/coach/cards.ts';
+import { cardOf, STALE_REPLAN_REASONS, type ProposalCardRow } from '#lib/domain/coach/cards.ts';
 import type { ProgramOp } from '#lib/domain/coach/proposals.ts';
 import { cleanFloat } from '#lib/domain/units.ts';
 import { WEEKDAY_INFO } from '#lib/domain/weekdays.ts';
@@ -399,13 +399,6 @@ const NO_PROPOSAL_STATE = { no_changes: 'no_ops', boundary: 'boundary', late: 'l
 const DELOAD_PASSED_WORDS = 'No session is left in that week';
 /** A deload superseded by a change to the profile, the plan or the program, or a start that passed: Propose again asks for it. */
 const DELOAD_STALE_WORDS = 'This deload is out of date';
-const STALE_DELOAD_REASONS: readonly string[] = [
-	'profile_changed',
-	'plan_changed',
-	'start_passed',
-	'sessions_passed',
-	'program_changed'
-];
 /** The signals a deload card lists, at most. */
 const EVIDENCE_MAX = 5;
 /** A deload's own summary line, which its headline already says. */
@@ -538,7 +531,7 @@ export function nextWeekView(
 			});
 		case 'superseded':
 			// A deload the plan, the profile or the program moved past: Propose again asks for it again.
-			if (replan && STALE_DELOAD_REASONS.includes(decision.reason))
+			if (replan && (STALE_REPLAN_REASONS as readonly string[]).includes(decision.reason))
 				return deloaded('superseded_deload', DELOAD_STALE_WORDS);
 			return card(
 				'superseded',
