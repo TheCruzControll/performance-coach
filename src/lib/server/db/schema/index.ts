@@ -12,3 +12,4 @@ export * from './feedback';
 export * from './coach';
 export * from './agent-runs';
 export * from './analytics';
+export * from './backups';
