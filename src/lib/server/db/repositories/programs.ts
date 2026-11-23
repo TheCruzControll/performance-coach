@@ -80,6 +80,15 @@ export interface ProgramTreeRows {
 	details: Insert<typeof plannedSessionDetails>[];
 }
 
+/** One session with its children, as rows with their ids and lineages set (mapping.ts's sessionTreeRows). */
+export interface SessionTreeRows {
+	session: Insert<typeof plannedSessions>;
+	exercises: Insert<typeof plannedExercises>[];
+	sets: Insert<typeof setPrescriptions>[];
+	segments: Insert<typeof plannedRunSegments>[];
+	details: Insert<typeof plannedSessionDetails>[];
+}
+
 export type DecisionValues = Insert<typeof programmingDecisions>;
 export type DecisionRow = typeof programmingDecisions.$inferSelect;
 
@@ -392,6 +401,33 @@ export function createProgramsRepository(db: Executor) {
 			if (!versionIds.length || !lineages.length) return [];
 			const q = affectedNodes(db, versionIds, lineages);
 			return [...(await q.sessions), ...(await q.exercises)];
+		},
+
+		/**
+		 * New sessions with their children, one multi-row INSERT per table (a revision adds sessions to
+		 * a copied week): every session first, then its exercises, sets, segments and details.
+		 */
+		async insertSessionTrees(trees: SessionTreeRows[]): Promise<void> {
+			await insertAll(
+				plannedSessions,
+				trees.map((tree) => tree.session)
+			);
+			await insertAll(
+				plannedExercises,
+				trees.flatMap((tree) => tree.exercises)
+			);
+			await insertAll(
+				setPrescriptions,
+				trees.flatMap((tree) => tree.sets)
+			);
+			await insertAll(
+				plannedRunSegments,
+				trees.flatMap((tree) => tree.segments)
+			);
+			await insertAll(
+				plannedSessionDetails,
+				trees.flatMap((tree) => tree.details)
+			);
 		},
 
 		/** In order: their identity ids keep it. */
