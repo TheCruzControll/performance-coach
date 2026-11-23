@@ -13,6 +13,10 @@
  * - Anything an op cannot express, or that breaks the session length, is listed as not proposed
  *   with its reason, never approximated; past MAX_NEXT_WEEK_OPS, the rest are too, by priority.
  * - Next week outside this block is the cycle review's (boundary); next week ended is late.
+ * - M7: a review that proposes a deload of next week (ctx.deload; boundary 'deload') proposes no
+ *   ops, and lists every other change it found as not proposed, because the week is a deload.
+ * - M7: a recovery week is light too (LIGHT_WEEK_KINDS), and a cutback week (LIGHT_RUNNING_KINDS)
+ *   keeps M6's strength changes but takes no running change: its lower mileage is deliberate.
  * - With M7's context (ctx.evaluation, review/evaluation.ts), a conflict is resolved by repairWeek
  *   instead, and every change is judged by evaluateWeek: one that adds an avoid finding is listed
  *   as not proposed ('conflict'), with the finding's headline.
@@ -48,6 +52,10 @@ import type { ExerciseTraits, TraitsOf, Violation } from '../interference.ts';
 import { adaptRunning, decideFromResults } from '../results.ts';
 import type { LongRunResults } from '../results.ts';
 import { RESULT_RULES, RUN_RESULT_RULES } from '../rules/results.ts';
+import {
+	LIGHT_RUNNING_WEEK_KINDS,
+	LIGHT_WEEK_KINDS as PLANNED_LIGHT_KINDS
+} from '../periodisation/kinds.ts';
 import { nextWeekJudge } from './evaluation.ts';
 import type { ReviewEvaluation } from './evaluation.ts';
 import type { NextWeekState, WeeklyReviewSnapshot } from './snapshot.ts';
@@ -57,8 +65,19 @@ import type { NextWeekState, WeeklyReviewSnapshot } from './snapshot.ts';
 /** Fatigue 'high' on a normal week: the main lifts' sets × 0.6 (−40 %) and RPE at most 6. */
 export const DELOAD = { setsFactor: 0.6, rpeCap: 6 } as const;
 
-/** Weeks already light: high fatigue only caps their RPE and flags the cycle review. */
-export const LIGHT_WEEK_KINDS: readonly WeekKind[] = ['deload', 'taper', 'event'];
+/**
+ * Weeks already light: high fatigue only caps their RPE and flags the cycle review. M7's
+ * periodisation's own list (deload, taper, event and recovery), so both agree on what is light.
+ */
+export const LIGHT_WEEK_KINDS: readonly WeekKind[] = PLANNED_LIGHT_KINDS;
+
+/**
+ * Weeks light for running only (a cutback): strength changes as usual, but no running change,
+ * neither the weekly cap nor a repeated long run, since the week's lower mileage is deliberate.
+ */
+export const LIGHT_RUNNING_KINDS: readonly WeekKind[] = LIGHT_RUNNING_WEEK_KINDS.filter(
+	(kind) => !LIGHT_WEEK_KINDS.includes(kind)
+);
 
 /**
  * Decision (m6-plan open question 'Next-week changes are capped at 12'): at most M5's limit for
@@ -133,6 +152,11 @@ export interface NextWeekContext {
 	 * judged by evaluateWeek; without it, checkWeek as before.
 	 */
 	evaluation?: ReviewEvaluation;
+	/**
+	 * M7: the review proposes a deload of this week instead (boundary 'deload'): no ops, and every
+	 * other change found is listed as not proposed ('deload').
+	 */
+	deload?: boolean;
 }
 
 export type AdjustmentKind =
@@ -160,7 +184,12 @@ export interface Adjustment {
 	priority: number;
 }
 
-export type NotProposedReason = 'over_limit' | 'session_minutes' | 'not_expressible' | 'conflict';
+export type NotProposedReason =
+	'over_limit' | 'session_minutes' | 'not_expressible' | 'conflict' | 'deload';
+
+/** Why a change is not proposed when the week is deloaded instead (ctx.deload). */
+export const DELOAD_INSTEAD =
+	'Next week is proposed as a deload instead, so this change is not proposed';
 
 /** A change with its own `why`, and the `reason` and `words` for not proposing it. */
 export type NotProposed = Pick<Adjustment, 'id' | 'kind' | 'lineage' | 'sessionDate' | 'why'> & {
@@ -171,8 +200,8 @@ export type NotProposed = Pick<Adjustment, 'id' | 'kind' | 'lineage' | 'sessionD
 export interface NextWeekProposal {
 	adjustments: Adjustment[];
 	notProposed: NotProposed[];
-	/** Next week is not planned in this block: the cycle review plans it. */
-	boundary?: 'cycle';
+	/** Next week is not planned in this block (the cycle review plans it), or is deloaded (M7). */
+	boundary?: 'cycle' | 'deload';
 	/** Next week has ended: nothing is left to change. */
 	late?: true;
 	/** Why there are no adjustments, for a boundary or a late review. */
@@ -448,7 +477,8 @@ export function proposeNextWeek(
 		});
 	};
 	const single = (s: RunSegment) => s.repeats === null && s.distanceMetres !== null;
-	if (ctx.running && runs.length > 0) {
+	const runningLight = nextWeek.kind !== null && LIGHT_RUNNING_KINDS.includes(nextWeek.kind);
+	if (ctx.running && runs.length > 0 && !runningLight) {
 		const { previousPlanned, actual, lastLongRun: last } = ctx.running;
 		const planned = runs.reduce((sum, r) => sum + metresOf(r.segments), 0);
 		const long = runs.find((r) => r.type === 'long_run');
@@ -651,5 +681,16 @@ export function proposeNextWeek(
 		high && light
 			? { cycleFlag: `Fatigue stayed high going into a ${nextWeek.kind} week: ${signals}.` }
 			: {};
+	if (ctx.deload) {
+		// The deload replaces M6's own deload of the main lifts; every other change waits for it.
+		const instead = adjustments
+			.filter((a) => a.kind !== 'deload')
+			.map(({ id, kind, lineage, sessionDate, why }) => ({
+				...{ id, kind, lineage, sessionDate, why },
+				reason: 'deload' as const,
+				words: DELOAD_INSTEAD
+			}));
+		return { adjustments: [], notProposed: [...notProposed, ...instead], boundary: 'deload' };
+	}
 	return { adjustments, notProposed, ...flag };
 }
