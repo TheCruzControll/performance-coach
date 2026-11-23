@@ -437,7 +437,7 @@ const runningRules: RuleDefinition[] = [
 		'running.efforts',
 		`${R}#EFFORTS`,
 		running.EFFORTS,
-		'Each run segment has an effort: its RPE, its heart-rate zone and its pace as a range of 10K race pace.',
+		'Each run segment has an effort: its RPE and its heart-rate zone. Its pace comes from your current VDOT (rules/paces.ts SEGMENT_PACES), and a recovery jog has none.',
 		'Effort can always be followed, even with no pace or race told.'
 	),
 	constant(
@@ -489,7 +489,7 @@ const runningRules: RuleDefinition[] = [
 	behaviour(
 		'running.paces_from_told',
 		'running.ts#planRuns',
-		'Paces come from your told easy pace and your latest race, as ranges.',
+		'With no recent race, paces come from the VDOT your told easy pace implies, as ranges.',
 		'Your own numbers set paces you can actually hold.'
 	),
 	behaviour(

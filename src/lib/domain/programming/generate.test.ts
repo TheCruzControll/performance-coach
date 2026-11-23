@@ -255,11 +255,12 @@ describe('generateProgram', () => {
  * on `main` at the m7-stage-list base, before it moved the demand and blocks stages and added prepare, phasing and schedule.
  * With prepare as the identity (no season), M3's stages still plan these bytes exactly: the M7
  * hunks in demand.ts, splits.ts and input.ts change nothing without a season.
+ * generator-running ('perfo-programming/6') changed hybrid's: its paces come from paces.ts's VDOT.
  */
 const GOLDEN: Record<ScenarioKey, readonly [monday: string, thursday: string]> = {
 	beginner: ['d4bfc183ab8ee435', 'e76eed0b701d71ea'],
 	powerlifter: ['7002151f6b51da7b', 'ce338ae4b7af709d'],
-	hybrid: ['7e6b6a765e71d6f2', 'c303e9343e516474'],
+	hybrid: ['28adbd6428399d53', '8410237e96de15d5'],
 	injuredShoulder: ['e30e995669077a10', 'd692e9011fea7abd'],
 	dumbbellsOnly: ['6aadcc5f5a248f80', 'ca0638403fa56079'],
 	journey: ['06c37810c5afc2b6', 'ccb42ef23966c8c5'],
@@ -272,13 +273,14 @@ const GOLDEN: Record<ScenarioKey, readonly [monday: string, thursday: string]> =
  * boundary, which changed hybrid's). generator-phasing ('perfo-programming/4') left them as they
  * were: no M3 scenario's first block carries mainLifts, and journey's dosed weeks already sit at or
  * under the dose's cap. generator-volume ('perfo-programming/5') changed hybrid's: its secondary
- * strength goal is held to the lower half of its band. A later GENERATOR_ID bump changes them, and
- * its PR lists each.
+ * strength goal is held to the lower half of its band, and runs paced from current fitness
+ * (generator-running, 'perfo-programming/6': hybrid's paces from its VDOT). A later GENERATOR_ID
+ * bump changes them, and its PR lists each.
  */
 const GOLDEN_SEASON: Record<ScenarioKey, readonly [monday: string, thursday: string]> = {
 	beginner: ['40ac8a97f8ac8304', 'afbafd92042977bf'],
 	powerlifter: ['53368325fc4eeb18', '7cce2ec2cd815ba0'],
-	hybrid: ['e20eae45c5b2e4c2', '27d560ecd45688aa'],
+	hybrid: ['344b9f0adb2d9183', '6377fa3e68b4861f'],
 	injuredShoulder: ['a8f751370762b759', '1133ba47aeda08ec'],
 	dumbbellsOnly: ['4bb8ea19bb964a13', '6573125a5c871f5e'],
 	journey: ['54e04d5b7941f4c8', '79a2adad7842028e'],

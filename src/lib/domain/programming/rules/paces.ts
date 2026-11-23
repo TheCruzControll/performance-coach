@@ -3,7 +3,7 @@
  * a VDOT from the owner's best recent race by the Daniels–Gilbert equations, the five training
  * intensities as shares of that VDOT, the segment kind each runs at, and heart-rate zones from
  * whatever heart rates the owner gave. Every number names its source; changing one is a one-line
- * edit here. Nothing generates from this file until generator-running.
+ * edit here. The running stage paces every generated run from it.
  */
 import type { RunSegment } from '../../training/types.ts';
 import type { RunSegmentKind } from '../../training/vocabulary.ts';

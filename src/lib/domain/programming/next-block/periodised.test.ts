@@ -157,13 +157,20 @@ describe('the next block from the season', () => {
 			expect(runMetres(week)).toBeLessThanOrEqual(Math.ceil(most * 1.1));
 			most = Math.max(most, runMetres(week));
 		}
-		// Every build week targets marathon pace. The paced steady segment that carries it in the
-		// long run comes with m7r/07 (plan/m7-reslice.md), which adds that assertion back.
+		// Every build week's long run closes at marathon pace: a paced steady segment, labelled.
 		const builds = r.result.block.weeks.filter((w) => w.kind === 'build');
 		expect(builds.length).toBeGreaterThan(1);
 		for (const week of builds) {
 			expect(week.targets.running?.raceSpecific).toBe('marathon_pace');
+			const long = week.sessions.find((s) => s.kind === 'run' && s.type === 'long_run');
+			const steady =
+				long?.kind === 'run' ? long.segments.find((g) => g.kind === 'steady') : undefined;
+			expect(steady?.paceMinSecondsPerKm).toEqual(expect.any(Number));
+			expect(long?.kind === 'run' && long.instructions).toContain('at marathon pace');
 		}
+		expect(evidenceOf(r, 'quality_session')).toEqual([
+			expect.objectContaining({ ruleKey: 'endurance.marathon_pace' })
+		]);
 
 		const stronger = idOf(r.profile, 'Get stronger');
 		expect(r.modes[idOf(r.profile, 'Marathon')]).toBe('primary');
@@ -273,8 +280,10 @@ describe('the next block from the season', () => {
 		// generator-phasing (perfo-programming/4) moved two of them: journeyHybrid's week 4 cap is held
 		// to the dose's RPE 8, and hypertrophyBlock's compounds take their reps and top RPE per phase.
 		// multiGoal's hash is unchanged. generator-volume (perfo-programming/5) moved hypertrophyBlock's
-		// again: its building weeks are balanced to their own setsPerGroup.
-		expect(hashes).toEqual(['af1ce66232fc9f7f', 'd42123cacb5212c3', '072bf5a530fdb539']);
+		// again: its building weeks are balanced to their own setsPerGroup. generator-running
+		// (perfo-programming/6) moved journeyHybrid's and multiGoal's: their paces come from a VDOT,
+		// journeyHybrid's told easy pace's and multiGoal's 10K's.
+		expect(hashes).toEqual(['5b7d9036458c6ba8', '845b61773662e988', '072bf5a530fdb539']);
 	});
 });
 

@@ -186,7 +186,7 @@ describe('the stage list', () => {
 
 	it('stores an id that carries M3’s GENERATOR_ID, so an M3 or M7 bump changes the fingerprint', () => {
 		expect(GENERATOR_ID).toBe(`next-block/2+${M3_GENERATOR_ID}`);
-		expect(GENERATOR_ID).toBe('next-block/2+perfo-programming/5');
+		expect(GENERATOR_ID).toBe('next-block/2+perfo-programming/6');
 	});
 });
 
@@ -649,8 +649,9 @@ const GOLDEN_CASES: [string, Case, string][] = [
 			],
 			directives: { deload: 'last' }
 		},
-		// generator-volume: hybrid's secondary strength is held to the lower half of its band.
-		'7ecab0d033d9da1c'
+		// generator-volume: hybrid's secondary strength is held to the lower half of its band;
+		// generator-running: its paces come from its VDOT.
+		'35f8656ce8b4684d'
 	],
 	[
 		'the journey two weeks late',

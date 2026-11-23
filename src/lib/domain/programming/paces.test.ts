@@ -208,6 +208,20 @@ describe('which race sets the paces', () => {
 		expect(currentPaces({ races, easyPaceSecondsPerKm: null }, ON).source).toBe('effort');
 	});
 
+	it('skips a race too slow to pace, so it sets no paces and throws none', () => {
+		// A 5K in 4:00:00 is VDOT -0.94: no pace, and no RangeError from trainingPaces.
+		const slow = race(5000, 4 * 60 * 60, '2026-05-01');
+		expect(vdotFromPerformance(5000, 4 * 60 * 60)).toBeLessThan(0);
+		expect(bestRecentPerformance([slow], ON)).toBeNull();
+		expect(currentPaces({ races: [slow], easyPaceSecondsPerKm: 330 }, ON).source).toBe('easy_pace');
+		// The older good race counts once the 26-week tier has no valid race in it.
+		const older = race(10_000, 43 * 60, '2025-09-01');
+		expect(bestRecentPerformance([slow, older], ON)).toMatchObject({
+			race: older,
+			confidence: 'low'
+		});
+	});
+
 	it('takes a dated race over a faster undated one', () => {
 		const dated = race(5000, 24 * 60, '2025-08-01');
 		const undated = race(5000, 18 * 60, null);

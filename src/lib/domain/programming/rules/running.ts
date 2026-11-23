@@ -100,13 +100,13 @@ export const TIME_BASED_WEEK = { easyMinutes: 30, longMinutes: 45 } as const;
  */
 export const ASSUMED_EASY_PACE = 390;
 
-/** Riegel's exponent, to carry a race time to the 10K: T₂ = T₁ × (D₂ / D₁)^1.06. */
+/** Riegel's exponent: paces.ts carries a race outside the distances VDOT reads by it. T₂ = T₁ × (D₂ / D₁)^1.06. */
 export const RIEGEL_EXPONENT = 1.06;
 
 /**
- * Each segment's effort: its RPE, its heart-rate zone and its pace as a range of 10K race pace,
- * fastest first (null for a jog with no pace). A told easy pace stands for the middle of the
- * easy range, so it implies a 10K pace too.
+ * Each segment's effort: its RPE, its heart-rate zone and M3's pace as a range of 10K race pace,
+ * which no plan reads any more: paces come from paces.ts (rules/paces.ts SEGMENT_PACES). A null
+ * range still marks a jog with no pace.
  */
 export const EFFORTS = {
 	easy: { rpe: 4.5, hrZone: 2, of10k: [1.2, 1.35] },

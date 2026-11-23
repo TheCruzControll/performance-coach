@@ -92,7 +92,16 @@ function lessOf(session: SessionPlan, factor: number, technical: boolean): Sessi
 	}
 	if (session.kind === 'run') {
 		const segments = session.segments.map((s) => shorterSegment(s, factor));
-		return retimed({ ...session, segments }, session.estMinutes * factor, session.targetRpe);
+		// The marathon-pace words name the steady segment's distance, which the taper has just cut.
+		const cut = session.segments.some(
+			(s, i) => s.kind === 'steady' && segments[i]!.distanceMetres !== s.distanceMetres
+		);
+		const instructions = session.source === 'generator' && cut ? null : session.instructions;
+		return retimed(
+			{ ...session, segments, instructions },
+			session.estMinutes * factor,
+			session.targetRpe
+		);
 	}
 	const durationMinutes = Math.max(10, Math.round(session.details.durationMinutes * factor));
 	const made =

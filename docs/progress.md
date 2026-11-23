@@ -31,6 +31,10 @@ runs the criteria and updates milestones.md.
 
 ## Recently merged
 
+- Runs are paced from current fitness: the best race of the last 26 weeks sets every pace by its
+  VDOT (Daniels' formula); a race 26 to 52 weeks old, or an undated one when no race has a date, is
+  a rough guide; else the told easy pace's VDOT. A run the coach adds is paced the same way. In a
+  marathon build, peak or taper week of a next block, the long run closes at marathon pace.
 - Progress and the reviews judge an M7 week by the targets its own plan set: a hypertrophy week by
   its own sets per muscle group, a maintenance or fight-camp week by its dose, a secondary strength
   goal by the lower half of its band, and the average RPE by the week's own cap. M3's programs read
@@ -100,8 +104,10 @@ runs the criteria and updates milestones.md.
   week keeps is recorded as explained (a priority trade-off or a schedule_kept decision). m7r/04 is
   built too: each week's main lifts follow its block's phase. m7r/05 too: hypertrophy weeks get
   their own sets per muscle group, and a secondary strength goal the lower half of its band. m7r/06
-  too: Progress and the reviews judge M7 weeks by their own targets. m7r/07 to m7r/10, m7/58 and
-  m7/59 build on both. The old M7 pull requests stay open until their rows merge.
+  too: Progress and the reviews judge M7 weeks by their own targets. m7r/07 too: runs are paced from
+  the VDOT of the best recent race or the told easy pace, and a marathon block's long run closes at
+  marathon pace. m7r/08 to m7r/10, m7/58 and m7/59 build on them. The old M7 pull requests stay open
+  until their rows merge.
 - **Instrument v2 tokens (`v2/01a`).** The colours, surfaces, borders, spacing, radii and the theme
   colour follow Instrument v2 in `src/lib/ui/styles/tokens.css`, in dark and
   light; `docs/design-system.md` and `/design` show them. The 28 px gutter moves with the shell in `v2/03`: at 28 px the workout's

@@ -10,8 +10,13 @@
  *   the session length, with a decision; every other run keeps to it.
  * - One quality session a week only for an intermediate or advanced runner or one with a race
  *   ahead, never in week 1 for a new runner. A new runner with no race gets easy runs only.
- * - Paces come from the told easy pace and the latest race (carried to the 10K by Riegel), as
- *   ranges, with a decision saying which; with neither, segments carry RPE and HR zone alone.
+ * - Paces come from paces.ts currentPaces on the plan's first Monday: the best recent race's
+ *   VDOT (an undated race at low confidence when no race has a date), else the told easy
+ *   pace's, as ranges at each segment kind's training pace (rules/paces.ts SEGMENT_PACES), with
+ *   a decision saying which; with neither, segments carry RPE and HR zone alone.
+ * - In a marathon week planned with its running targets (periodisation/endurance.ts), the long
+ *   run closes at marathon pace: a steady segment at M pace for ENDURANCE.marathon_pace's
+ *   share, rising over the build.
  * - Every planned block, and a marathon's outline phases, carry the progression hooks that later
  *   periodisation (M7) adapts.
  * - Runs go on days naively, one a day and off running-commitment days where another is free,
@@ -31,15 +36,21 @@ import type { ExperienceLevel, Weekday } from '../profile/catalog.ts';
 import { sessionLoadOf } from '../training/metrics.ts';
 import type { BlockPlan, RunSegment, SessionPlan, WeekPlan } from '../training/types.ts';
 import { SESSION_TYPE_LABEL } from '../training/vocabulary.ts';
-import type { WeekKind } from '../training/vocabulary.ts';
+import type { Phase, WeekKind } from '../training/vocabulary.ts';
 import { cleanFloat, formatDuration } from '../units.ts';
-import { nextOrder, sessionPath } from './commitments.ts';
+import { inWords, nextOrder, sessionPath } from './commitments.ts';
 import type { DecisionLog } from './decisions.ts';
 import { clip, commitmentQuota, generatedFor } from './demand.ts';
 import type { WeekDemand } from './demand.ts';
 import { weeksToEvent } from './input.ts';
 import type { InputGoal, InputRunning, ProgrammingInput } from './input.ts';
+import { currentPaces, paceFor } from './paces.ts';
+import type { PaceSource, TrainingPaces } from './paces.ts';
+import { segmentOf } from './periodisation/endurance.ts';
+import { ENDURANCE } from './rules/endurance.ts';
+import type { RaceWork } from './rules/endurance.ts';
 import * as R from './rules/running.ts';
+import { RECENCY } from './rules/paces.ts';
 import type { GenerateOptions } from './stage.ts';
 
 type RunType = keyof typeof R.RUNS;
@@ -49,7 +60,6 @@ type SizedRun = { type: RunType; size: number };
 
 /** The contract's most sessions a day (orderInDay 1 to 4). */
 const ORDER_MAX = 4;
-const EASY_MID = (R.EFFORTS.easy.of10k[0] + R.EFFORTS.easy.of10k[1]) / 2;
 const steady = (type: RunType) => type === 'easy_run' || type === 'long_run';
 const km = (metres: number) => `${cleanFloat(metres / 1000, 1)} km`;
 const perKm = (seconds: number) => `${formatDuration(seconds)} /km`;
@@ -91,13 +101,18 @@ export function naiveDates(
 
 // ---- Paces ----------------------------------------------------------------------------------
 
-/** 10K paces in seconds per km, one for easy running and one for quality work; null: unknown. */
-export interface Paces {
-	easy: number | null;
-	quality: number | null;
+/** The paces a plan's runs are set at, and why: from paces.ts currentPaces (null: effort). */
+interface Paces {
+	paces: TrainingPaces | null;
 	source: string;
 	reason: string;
+	ruleKey: 'paces.vdot' | 'running.paces_from_told' | 'running.paces_from_effort';
 }
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** A date as the words name it: '2026-10-04' is '4 Oct'. */
+const dayMonth = (date: IsoDate) =>
+	`${Number(date.slice(8))} ${MONTHS[Number(date.slice(5, 7)) - 1]}`;
 
 const raceName = (metres: number) => {
 	const known = RACE_DISTANCES.find(
@@ -107,60 +122,70 @@ const raceName = (metres: number) => {
 	return label.replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase());
 };
 
-export function pacesOf(running: InputRunning | null): Paces {
-	const told = running?.easyPaceSecondsPerKm ?? null;
-	// The latest race; one with no date counts as the oldest.
-	const [race] = [...(running?.races ?? [])].sort((a, b) =>
-		(a.racedOn ?? '') === (b.racedOn ?? '') ? 0 : (a.racedOn ?? '') < (b.racedOn ?? '') ? 1 : -1
-	);
-	const fromRace = race
-		? (race.timeSeconds * (10_000 / race.distanceMetres) ** R.RIEGEL_EXPONENT) / 10
-		: null;
-	const fromEasy = told === null ? null : told / EASY_MID;
-	const easy = told === null ? null : `your easy pace of ${perKm(told)}`;
-	const raced =
-		race &&
-		`your ${raceName(race.distanceMetres)} in ${formatDuration(race.timeSeconds)}` +
-			(race.racedOn ? ` on ${race.racedOn}` : '');
-	const rough = 'One race is a rough guide, so each pace is a range.';
-	const reason =
-		easy && raced
-			? `Easy paces come from ${easy}, quality paces from ${raced} by Riegel’s formula. ${rough}`
-			: easy
-				? `Paces come from ${easy}, so they match what you run now; each is a range around it.`
-				: raced
-					? `Paces come from ${raced}, carried to the 10K by Riegel’s formula. ${rough}`
-					: 'You haven’t told the coach an easy pace or a race time, so runs are set by effort alone.';
+/** How a race that counts only as a rough guide is worded after its VDOT (paces.ts RECENCY). */
+export const ROUGH_GUIDE = {
+	undated: ', a race with no date, so treated as a rough guide',
+	old: `, a race over ${RECENCY.fullDays / 7} weeks old, so treated as a rough guide`
+} as const;
+
+/** The paces on `on`, by paces.ts currentPaces: a race's VDOT, the told easy pace's, or effort. */
+export function pacesOf(running: InputRunning | null, on: IsoDate): Paces {
+	const found: PaceSource = running ? currentPaces(running, on) : { source: 'effort', paces: null };
+	if (found.source === 'race') {
+		const { race, dated } = found.performance;
+		const vdot = Math.round(found.vdot);
+		const raced =
+			`your ${raceName(race.distanceMetres)} in ${formatDuration(race.timeSeconds)}` +
+			(race.racedOn ? ` on ${dayMonth(race.racedOn)}` : '');
+		const rough = !dated ? ROUGH_GUIDE.undated : found.confidence === 'low' ? ROUGH_GUIDE.old : '';
+		return {
+			paces: found.paces,
+			source: `your race time, a VDOT of ${vdot}`,
+			reason: clip(
+				`Paces come from ${raced}, a VDOT of ${vdot}, by Daniels’ formula${rough}. Each is a range.`,
+				200
+			),
+			ruleKey: 'paces.vdot'
+		};
+	}
+	if (found.source === 'easy_pace') {
+		return {
+			paces: found.paces,
+			source: 'your easy pace',
+			reason: clip(
+				`Paces come from your easy pace of ${perKm(running!.easyPaceSecondsPerKm!)}, a VDOT of ${Math.round(found.vdot)} by Daniels’ formula, so they match what you run now; each is a range.`,
+				200
+			),
+			ruleKey: 'running.paces_from_told'
+		};
+	}
 	return {
-		easy: fromEasy ?? fromRace,
-		quality: fromRace ?? fromEasy,
-		source:
-			[easy && 'your easy pace', raced && 'your race time'].filter(Boolean).join(' and ') ||
-			'effort',
-		reason: clip(reason, 200)
+		paces: null,
+		source: 'effort',
+		reason: running?.races.length
+			? 'None of your races is recent enough to set paces and you haven’t told the coach an easy pace, so runs are set by effort alone.'
+			: 'You haven’t told the coach an easy pace or a race time, so runs are set by effort alone.',
+		ruleKey: 'running.paces_from_effort'
 	};
 }
 
+/** A run segment of `kind` at its pace in `paces` (paces.ts paceFor), none for a jog with no pace. */
 export function segment(
 	kind: keyof typeof R.EFFORTS,
-	tenK: number | null,
+	paces: TrainingPaces | null,
 	size: { metres?: number; minutes?: number },
 	repeats: number | null = null
 ): RunSegment {
 	const { rpe, hrZone, of10k } = R.EFFORTS[kind];
-	// The pace range from a 10K pace, fastest first, inside the contract's bounds.
-	const pace = (end: 0 | 1) =>
-		tenK === null || of10k === null
-			? null
-			: Math.min(1500, Math.max(120, Math.round(tenK * of10k[end])));
+	const pace = paces === null || of10k === null ? null : paceFor(kind, paces);
 	return {
 		kind,
 		repeatGroup: repeats === null ? null : 1,
 		repeats,
 		distanceMetres: size.metres ?? null,
 		durationSeconds: size.minutes === undefined ? null : size.minutes * 60,
-		paceMinSecondsPerKm: pace(0),
-		paceMaxSecondsPerKm: pace(1),
+		paceMinSecondsPerKm: pace?.[0] ?? null,
+		paceMaxSecondsPerKm: pace?.[1] ?? null,
 		hrZone,
 		targetRpe: rpe
 	};
@@ -191,19 +216,19 @@ interface Plan {
 }
 
 /** The quality session, if the block warrants one: tempo for a half or full marathon. */
-function qualityOf(input: ProgrammingInput, paces: Paces): Quality {
+function qualityOf(input: ProgrammingInput, paces: TrainingPaces | null): Quality {
 	const { warmUpMinutes: warm, coolDownMinutes: cool, tempo, intervals } = R.QUALITY;
 	const main = input.sessionMinutes - warm - cool;
 	const ends = (middle: RunSegment[]) => [
-		segment('warm_up', paces.easy, { minutes: warm }),
+		segment('warm_up', paces, { minutes: warm }),
 		...middle,
-		segment('cool_down', paces.easy, { minutes: cool })
+		segment('cool_down', paces, { minutes: cool })
 	];
 	if (input.disciplines.includes('distance_running')) {
 		const minutes = Math.min(tempo.minutes, main);
 		return {
 			type: tempo.type,
-			segments: ends([segment('tempo', paces.quality, { minutes })]),
+			segments: ends([segment('tempo', paces, { minutes })]),
 			minutes: warm + minutes + cool,
 			words: `${warm} min easy, ${minutes} min at tempo, ${cool} min easy`
 		};
@@ -213,7 +238,7 @@ function qualityOf(input: ProgrammingInput, paces: Paces): Quality {
 	return {
 		type: intervals.type,
 		segments: ends([
-			segment('interval', paces.quality, { minutes: work }, reps),
+			segment('interval', paces, { minutes: work }, reps),
 			segment('recovery', null, { minutes: jog }, reps)
 		]),
 		minutes: warm + reps * (work + jog) + cool,
@@ -339,6 +364,46 @@ function byDay(runs: SizedRun[]): SizedRun[] {
 	];
 }
 
+// ---- Marathon pace --------------------------------------------------------------------------
+
+type Role = keyof (typeof ENDURANCE.race_work)['marathon'];
+
+/** The week kinds that carry no race-specific work: a deload, the race and a recovery week. */
+const NO_RACE_WORK: readonly WeekKind[] = ['deload', 'event', 'recovery'];
+
+/** A marathon or half phase's event and role, or null for any other phase. */
+function enduranceOf(phase: Phase): { event: 'marathon' | 'half'; role: Role } | null {
+	const [event, role] = phase.split('_') as [string, Role];
+	return (event === 'marathon' || event === 'half') && role in ENDURANCE.race_work.marathon
+		? { event, role }
+		: null;
+}
+
+/** The race work of a `phase` week of kind `kind` (ENDURANCE.race_work), the main workout first. */
+function raceWorkOf(phase: Phase, kind: WeekKind): readonly RaceWork[] {
+	const endurance = enduranceOf(phase);
+	if (!endurance || NO_RACE_WORK.includes(kind)) return [];
+	return ENDURANCE.race_work[endurance.event][endurance.role];
+}
+
+/**
+ * The share of the long run at marathon pace in week `w` of `block` (ENDURANCE.marathon_pace):
+ * climbing over the build weeks that hold it, at the top in peak and the first in the taper.
+ */
+function marathonPaceShare(block: BlockPlan, w: number): number {
+	const [low, high] = ENDURANCE.marathon_pace.share;
+	const role = enduranceOf(block.phase)?.role;
+	if (role === 'peak') return high;
+	if (role !== 'build') return low;
+	const holding = block.weeks.flatMap((week, i) =>
+		raceWorkOf(block.phase, week.kind).includes('marathon_pace') ? [i] : []
+	);
+	return low + ((high - low) * Math.max(0, holding.indexOf(w))) / Math.max(1, holding.length - 1);
+}
+
+/** Metres rounded down to whole RUN_DISTANCE_STEPs. */
+const down = (metres: number) => Math.floor(metres / R.RUN_DISTANCE_STEP) * R.RUN_DISTANCE_STEP;
+
 /** The planned weeks' runs, from week 1's volume to the deload, with the decisions explaining them. */
 export function planRuns(
 	blocks: readonly BlockPlan[],
@@ -355,8 +420,11 @@ export function planRuns(
 
 	const levels = [input.experience.running, input.experience.distance_running];
 	const running = input.running;
-	const paces = pacesOf(running);
-	const easyPace = paces.easy === null ? R.ASSUMED_EASY_PACE : paces.easy * EASY_MID;
+	const paces = pacesOf(running, startsOn);
+	// The told easy pace estimates a distance run's minutes; with none, the middle of the E range.
+	const easy = paces.paces && paceFor('easy', paces.paces);
+	const easyPace =
+		running?.easyPaceSecondsPerKm ?? (easy ? (easy[0] + easy[1]) / 2 : R.ASSUMED_EASY_PACE);
 	const mode = (running?.weeklyMetres ?? 0) > 0 ? 'distance' : 'time';
 	const perMinute = mode === 'time' ? 1 : 60_000 / easyPace;
 	const clubs = input.commitments.filter((c) => commitmentQuota(c) === 'runs');
@@ -377,7 +445,7 @@ export function planRuns(
 		perMinute
 	};
 	const why = noQuality(base);
-	const plan: Plan = { ...base, quality: why ? null : qualityOf(input, paces) };
+	const plan: Plan = { ...base, quality: why ? null : qualityOf(input, paces.paces) };
 	const discipline = input.disciplines.includes('distance_running')
 		? 'distance_running'
 		: 'running';
@@ -409,6 +477,8 @@ export function planRuns(
 	let dropped = 0;
 	const quality: string[] = [];
 	const over: string[] = [];
+	let marathonPace = 0;
+	let ownQuality = false;
 	const result = blocks.map((block, b) => {
 		if (block.outline) return { ...block, progression: hooks(block) };
 		const weeks = block.weeks.map((week, w) => {
@@ -437,16 +507,32 @@ export function planRuns(
 				week1Runs = sized.length;
 			}
 			const cap = week.targets.rpeCap;
+			// A week planned with its running targets, in distance and with a quality session.
+			const raced =
+				mode === 'distance' && week.targets.running !== undefined && plan.quality !== null;
+			const works = raced ? raceWorkOf(block.phase, week.kind) : [];
 			kept.forEach((run, d) => {
 				const date = dates[d]!;
 				const minutes = minutesOf(run);
 				const size = mode === 'distance' ? { metres: run.size } : { minutes: run.size };
-				const segments = steady(run.type)
-					? [segment(run.type === 'long_run' ? 'long' : 'easy', paces.easy, size)]
-					: plan.quality!.segments;
+				// Marathon pace closes the long run: a steady segment at M pace, labelled.
+				const atPace =
+					run.type === 'long_run' && works.includes('marathon_pace')
+						? down(run.size * marathonPaceShare(block, w))
+						: 0;
+				const segments = !steady(run.type)
+					? plan.quality!.segments
+					: atPace
+						? [
+								segment('long', paces.paces, { metres: run.size - atPace }),
+								segmentOf('marathon_pace', atPace, paces.paces).segment
+							]
+						: [segment(run.type === 'long_run' ? 'long' : 'easy', paces.paces, size)];
 				const path = sessionPath(b, w, sessions.length);
 				if (run.type === 'long_run' && minutes > input.sessionMinutes) over.push(path);
-				if (!steady(run.type)) quality.push(path);
+				if (!steady(run.type) || atPace) quality.push(path);
+				if (!steady(run.type)) ownQuality = true;
+				if (atPace) marathonPace += 1;
 				const targetRpe = Math.min(R.RUNS[run.type].sessionRpe, cap);
 				sessions.push({
 					kind: 'run',
@@ -463,7 +549,7 @@ export function planRuns(
 					targetRpe,
 					source: 'generator',
 					commitmentRef: null,
-					instructions: null,
+					instructions: atPace ? `The last ${km(atPace)} ${ENDURANCE.marathon_pace.label}.` : null,
 					notes: null,
 					segments: segments.map((s) => ({ ...s, targetRpe: Math.min(s.targetRpe!, cap) }))
 				});
@@ -476,7 +562,19 @@ export function planRuns(
 
 	recordRuns(
 		plan,
-		{ why, from: firstPlannedDay, paces, week1, planned, week1Runs, dropped, quality, over },
+		{
+			why,
+			from: firstPlannedDay,
+			paces,
+			week1,
+			planned,
+			week1Runs,
+			dropped,
+			quality,
+			over,
+			marathonPace,
+			ownQuality
+		},
 		share.goal,
 		log
 	);
@@ -495,6 +593,10 @@ interface Outcome {
 	dropped: number;
 	quality: string[];
 	over: string[];
+	/** Long runs that closed at marathon pace. */
+	marathonPace: number;
+	/** Whether M3's quality session was placed in any week. */
+	ownQuality: boolean;
 }
 
 function recordRuns(plan: Plan, o: Outcome, goal: InputGoal, log: DecisionLog) {
@@ -537,9 +639,8 @@ function recordRuns(plan: Plan, o: Outcome, goal: InputGoal, log: DecisionLog) {
 		mode,
 		week1: o.week1
 	});
-	const told = o.paces.source === 'effort' ? 'effort' : 'told';
-	const { source, reason } = o.paces;
-	log.add('run_pace_source', `running.paces_from_${told}`, [], { source, reason });
+	const { source, reason, ruleKey } = o.paces;
+	log.add('run_pace_source', ruleKey, [], { source, reason });
 	const q = plan.quality;
 	const name = q?.type === 'tempo_run' ? 'tempo run' : 'interval session';
 	const warrant = race
@@ -547,22 +648,35 @@ function recordRuns(plan: Plan, o: Outcome, goal: InputGoal, log: DecisionLog) {
 		: `You run at ${level} level`;
 	const later =
 		level === 'new' || mode === 'time' ? ' It starts after week 1, which sets your baseline.' : '';
-	log.add(
-		'quality_session',
-		q && o.quality.length ? `running.${q.type}` : 'running.easy_only',
-		o.quality,
-		{
-			choice: q && o.quality.length ? `one ${name} a week` : 'easy running only',
+	if (q && o.marathonPace) {
+		const choice = o.ownQuality
+			? inWords(['marathon pace in the long run', `one ${name} a week`])
+			: 'marathon pace in the long run';
+		log.add('quality_session', 'endurance.marathon_pace', o.quality, {
+			choice: clip(choice, 200),
 			reason: clip(
-				!q
-					? o.why!
-					: o.quality.length
-						? `${warrant}, so one ${name} a week builds your speed: ${q.words}. Lighter weeks leave it out.${later}`
-						: 'No week of this block has room for a quality session, so every run stays easy.',
+				`${warrant}, so each marathon week trains race pace: ${choice}. Deload and race weeks leave marathon pace out.`,
 				200
 			)
-		}
-	);
+		});
+	} else {
+		log.add(
+			'quality_session',
+			q && o.quality.length ? `running.${q.type}` : 'running.easy_only',
+			o.quality,
+			{
+				choice: q && o.quality.length ? `one ${name} a week` : 'easy running only',
+				reason: clip(
+					!q
+						? o.why!
+						: o.quality.length
+							? `${warrant}, so one ${name} a week builds your speed: ${q.words}. Lighter weeks leave it out.${later}`
+							: 'No week of this block has room for a quality session, so every run stays easy.',
+					200
+				)
+			}
+		);
+	}
 	if (o.over.length) {
 		log.add('priority_tradeoff', 'running.long_run_length', o.over, {
 			kept: 'The long run',
