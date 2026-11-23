@@ -1,40 +1,53 @@
 /**
- * Applying a re-plan on real Postgres (services/coach/apply/replan.ts). Each case starts from a
- * proposed replan row, stored the way the propose step stores one: its payload is the preview's
- * directive, `from`, base version and hashes, and its program and base version are the row's.
- * - the lifecycle: accepted once as version N + 1 with a replanned decision (a repeated accept
- *   returns the stored result); a full taper spliced in with the block around it kept on both sides
+ * Re-plans as M5 proposals on real Postgres (services/periodisation/propose.ts and
+ * services/coach/apply/replan.ts):
+ * - the lifecycle: proposed with its rows, accepted once as version N + 1 with a replanned
+ *   decision (a repeated accept returns the stored result), rejected with nothing changed
  * - staleness at accept: a profile edit (profile_changed), a logged set (still applies, loads
- *   refreshed), a Monday passed (start_passed), a deload accepted Thursday (only Thursday to Sunday
- *   change), accepted Saturday (applies though Friday's sparring, eased in its preview, has passed)
- *   or after its week (sessions_passed), a newer version (program_changed); every superseded one
- *   offers Propose again
- * - a weekly review's deload writes review_applied, so weekChanges names the review and its week
- * - transactions and scope: with the context's reader stalled inside the accept transaction, under
- *   the one-query guard; a foreign owner is not found and writes nothing
+ *   refreshed), a Monday passed (start_passed), a deload proposed Monday and accepted Thursday
+ *   (only Thursday to Sunday change) or after its week (sessions_passed), an owner deload whose
+ *   hold window gains an event (plan_changed), a newer version (program_changed); every superseded
+ *   one offers Propose again
+ * - a weekly review's deload writes review_applied, so weekChanges names the review
+ * - transactions and scope: the same source revises, the same shape is returned; inside a
+ *   transaction holding the owner's locks on a pool of one connection; with the context's reader
+ *   stalled inside the accept transaction under the one-query guard; a foreign owner; M5's
+ *   content guard
  * Today is Wednesday 18 Nov 2026 in Los Angeles (block-end: the block ends Sunday, an outline
  * starts Monday 23 Nov), or Monday 16 Nov for the deloads (week-complete: this week is planned).
  */
 import { sql } from 'drizzle-orm';
+import type pg from 'pg';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { addDays, type IsoDate } from '../../../src/lib/domain/calendar';
-import { PAYLOAD_VERSION, payloadHash } from '../../../src/lib/domain/coach/proposals';
 import type { ReplanDirective } from '../../../src/lib/domain/training/replan';
-import { getDb, workouts, type Executor } from '../../../src/lib/server/db';
+import {
+	createDatabase,
+	createPool,
+	getDb,
+	workouts,
+	type Executor
+} from '../../../src/lib/server/db';
 import { createCoachProposalsRepository } from '../../../src/lib/server/db/repositories/coach-proposals';
-import { createProgramsRepository } from '../../../src/lib/server/db/repositories/programs';
+import { createReviewsRepository } from '../../../src/lib/server/db/repositories/reviews';
 import { APPLIERS } from '../../../src/lib/server/services/coach/apply';
 import { applyReplan } from '../../../src/lib/server/services/coach/apply/replan';
 import {
 	acceptProposal,
+	createProposal,
 	getProposalView,
 	rejectProposal
 } from '../../../src/lib/server/services/coach/proposals';
-import { CoachNotFoundError, type CoachDeps } from '../../../src/lib/server/services/coach/shared';
+import { CoachNotFoundError } from '../../../src/lib/server/services/coach/shared';
 import { findErrorsByRequestId } from '../../../src/lib/server/services/errors';
 import { resolveKeys } from '../../../src/lib/server/services/exercises/index';
 import type { ContextReader } from '../../../src/lib/server/services/periodisation/context';
 import { previewReplan } from '../../../src/lib/server/services/periodisation/preview';
+import {
+	proposeReplan,
+	type ProposeDeps,
+	type ReplanRequest
+} from '../../../src/lib/server/services/periodisation/propose';
 import { createGoal } from '../../../src/lib/server/services/profile';
 import {
 	getProgramVersion,
@@ -63,6 +76,7 @@ const NEXT_TUESDAY = '2026-11-24';
 const SLOW_OK = 10_000;
 
 const PRIORITIES: ReplanDirective = { kind: 'priorities', cause: 'reorder' };
+const MAINTENANCE: ReplanDirective = { kind: 'block', phase: 'maintenance', weeks: 4 };
 const deloadOf = (week: IsoDate, trigger: 'owner' | 'reactive' = 'owner'): ReplanDirective => ({
 	...{ kind: 'deload', week, trigger },
 	reasons: ['Legs heavy since the weekend']
@@ -84,58 +98,19 @@ async function seeded(db: Executor, name: 'block-end' | 'week-complete', today: 
 		{ timeZone: TZ, now: now() },
 		{ db }
 	)) as unknown as ReviewFixtureResult & { exercises: Record<string, string> };
-	const deps: CoachDeps = { db, now };
+	const deps: ProposeDeps = { db, now, statementTimeoutMs: SLOW_OK };
 	return { owner, programId: fixture.programId!, fixture, deps };
 }
 
-/**
- * A proposed replan of `directive`, previewed on `today` and stored on the current program and
- * version as the propose step stores one. Its evidence is `evidence` (a review's provenance, say).
- */
-async function storedReplan(
-	db: Executor,
+/** Propose, failing the test unless a proposal comes back. */
+async function propose(
 	owner: string,
-	today: IsoDate,
-	directive: ReplanDirective,
-	evidence: Record<string, unknown> | null = null
-): Promise<string> {
-	const shown = await previewReplan(
-		owner,
-		{ today, directive },
-		{ db, statementTimeoutMs: SLOW_OK }
-	);
-	if ('refusal' in shown) throw new Error(shown.why);
-	const found = await createProgramsRepository(db).currentProgram(owner);
-	if (!found) throw new Error('No program to re-plan');
-	const payload = {
-		directive,
-		from: shown.from,
-		baseVersionNumber: shown.baseVersionNumber,
-		fingerprint: shown.fingerprint,
-		shapeDigest: shown.shapeDigest
-	};
-	const at = clock(today)();
-	return createCoachProposalsRepository(db).insertProposal({
-		ownerId: owner,
-		kind: 'replan',
-		title: 'Re-plan',
-		summary: shown.summaryLines[0]!,
-		rationale: 'Stored for the apply cases',
-		payload: payload as Record<string, unknown>,
-		evidence,
-		programId: found.program.id,
-		baseVersionId: found.version.id,
-		threadId: null,
-		runId: null,
-		toolUseId: null,
-		payloadVersion: PAYLOAD_VERSION,
-		payloadHash: payloadHash(payload),
-		diff: { rows: [], summaryLines: shown.summaryLines, warnings: [] },
-		impact: { weeks: shown.impact, lines: [] },
-		revisionOf: null,
-		createdAt: at,
-		updatedAt: at
-	});
+	request: Omit<ReplanRequest, 'source'> & Partial<Pick<ReplanRequest, 'source'>>,
+	deps: ProposeDeps
+) {
+	const made = await proposeReplan(owner, { source: 'owner', ...request }, deps);
+	if (made.status !== 'proposed') throw new Error(`Not proposed: ${JSON.stringify(made)}`);
+	return made;
 }
 
 async function versionCount(db: Executor, programId: string) {
@@ -213,7 +188,7 @@ async function writes(db: Executor) {
 }
 
 describe('the lifecycle', () => {
-	it('applies once as version 2 with a replanned decision, and repeats as stored', async () => {
+	it('proposes with rows, applies once as version 2 with a replanned decision, and repeats as stored', async () => {
 		await withRollback(async (db) => {
 			const { owner, programId, deps } = await seeded(db, 'block-end', WEDNESDAY);
 			const shown = await previewReplan(
@@ -222,9 +197,19 @@ describe('the lifecycle', () => {
 				{ db, statementTimeoutMs: SLOW_OK }
 			);
 			if ('refusal' in shown) throw new Error(shown.why);
-			const id = await storedReplan(db, owner, WEDNESDAY, PRIORITIES);
+			const { proposal, duplicate } = await propose(
+				owner,
+				{ today: WEDNESDAY, directive: PRIORITIES },
+				deps
+			);
+			expect(duplicate).toBe(false);
+			expect(proposal).toMatchObject({ kind: 'replan', status: 'proposed', origin: null });
+			expect(proposal.rows.length).toBe(shown.weeks.flatMap((w) => w.rows).length);
+			expect(proposal.rows[0]!.label.startsWith(`${shown.weeks[0]!.label} · `)).toBe(true);
+			expect(proposal.summaryLines).toEqual(shown.summaryLines);
+			expect(proposal.impact).toEqual(shown.impact);
 
-			const accepted = await acceptProposal(owner, id, deps);
+			const accepted = await acceptProposal(owner, proposal.id, deps);
 			expect(accepted).toMatchObject({ changed: true, proposal: { status: 'applied' } });
 			expect(accepted.proposeAgain).toBeUndefined();
 			expect(accepted.proposal.appliedVersion?.number).toBe(2);
@@ -242,7 +227,7 @@ describe('the lifecycle', () => {
 			});
 			expect(v2.blocks.find((b) => b.startsOn === NEXT_MONDAY)).toBeDefined();
 
-			const again = await acceptProposal(owner, id, deps);
+			const again = await acceptProposal(owner, proposal.id, deps);
 			expect(again).toMatchObject({ changed: false, proposal: { status: 'applied' } });
 			expect(again.proposal.appliedVersion?.number).toBe(2);
 			expect(await versionCount(db, programId)).toBe(2);
@@ -262,8 +247,8 @@ describe('the lifecycle', () => {
 				{ db }
 			);
 			const directive: ReplanDirective = { kind: 'taper', goalRef: race.id, form: 'full' };
-			const id = await storedReplan(db, owner, WEDNESDAY, directive);
-			const decided = await acceptProposal(owner, id, deps);
+			const { proposal } = await propose(owner, { today: WEDNESDAY, directive }, deps);
+			const decided = await acceptProposal(owner, proposal.id, deps);
 			expect(decided.proposal).toMatchObject({ status: 'applied', appliedVersion: { number: 2 } });
 			const v1 = await getProgramVersion(owner, programId, 1, { db });
 			const v2 = await getProgramVersion(owner, programId, 2, { db });
@@ -288,13 +273,23 @@ describe('the lifecycle', () => {
 			expect(planned!.affected).toEqual([taper.lineage]);
 		});
 	});
+
+	it('rejects with nothing changed', async () => {
+		await withRollback(async (db) => {
+			const { owner, programId, deps } = await seeded(db, 'block-end', WEDNESDAY);
+			const { proposal } = await propose(owner, { today: WEDNESDAY, directive: PRIORITIES }, deps);
+			const rejected = await rejectProposal(owner, proposal.id, { reason: 'Not now' }, deps);
+			expect(rejected.proposal).toMatchObject({ status: 'rejected', appliedVersion: null });
+			expect(await versionCount(db, programId)).toBe(1);
+		});
+	});
 });
 
 describe('staleness at accept', () => {
 	it('a profile edit afterwards: profile_changed, with Propose again', async () => {
 		await withRollback(async (db) => {
 			const { owner, programId, deps } = await seeded(db, 'block-end', WEDNESDAY);
-			const id = await storedReplan(db, owner, WEDNESDAY, PRIORITIES);
+			const { proposal } = await propose(owner, { today: WEDNESDAY, directive: PRIORITIES }, deps);
 			await createGoal(
 				owner,
 				{
@@ -303,13 +298,13 @@ describe('staleness at accept', () => {
 				},
 				{ db }
 			);
-			const decided = await acceptProposal(owner, id, deps);
+			const decided = await acceptProposal(owner, proposal.id, deps);
 			expect(decided).toMatchObject({
 				changed: true,
 				proposeAgain: true,
 				proposal: { status: 'superseded', supersededReason: 'profile_changed' }
 			});
-			expect(await acceptProposal(owner, id, deps)).toMatchObject({
+			expect(await acceptProposal(owner, proposal.id, deps)).toMatchObject({
 				changed: false,
 				proposeAgain: true
 			});
@@ -326,11 +321,11 @@ describe('staleness at accept', () => {
 				{ db, statementTimeoutMs: SLOW_OK }
 			);
 			if ('refusal' in before) throw new Error(before.why);
-			const id = await storedReplan(db, owner, WEDNESDAY, PRIORITIES);
+			const { proposal } = await propose(owner, { today: WEDNESDAY, directive: PRIORITIES }, deps);
 			// This morning, after the squats the fixture logged today: the latest e1RM.
 			await squatsAt(db, owner, atLocal(WEDNESDAY, '11:40', TZ), 150);
 
-			const decided = await acceptProposal(owner, id, deps);
+			const decided = await acceptProposal(owner, proposal.id, deps);
 			expect(decided.proposal.status).toBe('applied');
 			const v2 = await getProgramVersion(owner, programId, 2, { db });
 			const was = Math.max(...squatSets(before.replan.plan.blocks).map((s) => s.reference1rm ?? 0));
@@ -347,9 +342,9 @@ describe('staleness at accept', () => {
 	it('a regenerating proposal accepted after its Monday: start_passed', async () => {
 		await withRollback(async (db) => {
 			const { owner, programId, deps } = await seeded(db, 'block-end', WEDNESDAY);
-			const id = await storedReplan(db, owner, WEDNESDAY, PRIORITIES);
+			const { proposal } = await propose(owner, { today: WEDNESDAY, directive: PRIORITIES }, deps);
 			const late = { ...deps, now: clock(NEXT_TUESDAY) };
-			const decided = await acceptProposal(owner, id, late);
+			const decided = await acceptProposal(owner, proposal.id, late);
 			expect(decided).toMatchObject({
 				proposeAgain: true,
 				proposal: { status: 'superseded', supersededReason: 'start_passed' }
@@ -362,7 +357,7 @@ describe('staleness at accept', () => {
 		await withRollback(async (db) => {
 			// On a Monday a re-plan may start that same day, while nothing of it is logged.
 			const { owner, programId, deps } = await seeded(db, 'week-complete', MONDAY);
-			const id = await storedReplan(db, owner, MONDAY, PRIORITIES);
+			const { proposal } = await propose(owner, { today: MONDAY, directive: PRIORITIES }, deps);
 			const v1 = await getProgramVersion(owner, programId, 1, { db });
 			const today = sessionsOf(v1, MONDAY).find((s) => s.date === MONDAY)!;
 			const startedAt = atLocal(MONDAY, '07:00', TZ);
@@ -373,7 +368,7 @@ describe('staleness at accept', () => {
 				...{ status: 'completed', startedAt },
 				finishedAt: new Date(startedAt.getTime() + 3_600_000)
 			});
-			const decided = await acceptProposal(owner, id, deps);
+			const decided = await acceptProposal(owner, proposal.id, deps);
 			expect(decided).toMatchObject({
 				proposeAgain: true,
 				proposal: { status: 'superseded', supersededReason: 'start_passed' }
@@ -386,12 +381,12 @@ describe('staleness at accept', () => {
 		await withRollback(async (db) => {
 			const { owner, programId, deps } = await seeded(db, 'week-complete', MONDAY);
 			const directive = deloadOf(MONDAY);
-			const id = await storedReplan(db, owner, MONDAY, directive);
+			const { proposal } = await propose(owner, { today: MONDAY, directive }, deps);
 			const v1 = await getProgramVersion(owner, programId, 1, { db });
 			const week = sessionsOf(v1, MONDAY);
 			expect(week.length).toBeGreaterThan(3);
 
-			const decided = await acceptProposal(owner, id, { ...deps, now: clock(THURSDAY) });
+			const decided = await acceptProposal(owner, proposal.id, { ...deps, now: clock(THURSDAY) });
 			expect(decided.proposal).toMatchObject({ status: 'applied', appliedVersion: { number: 2 } });
 			const v2 = await getProgramVersion(owner, programId, 2, { db });
 			const after = sessionsOf(v2, MONDAY);
@@ -435,9 +430,13 @@ describe('staleness at accept', () => {
 			);
 			if ('refusal' in shown) throw new Error(shown.why);
 			expect(JSON.stringify(shown.weeks)).toContain('Muay Thai pad work');
-			const id = await storedReplan(db, owner, MONDAY, deloadOf(MONDAY));
+			const { proposal } = await propose(
+				owner,
+				{ today: MONDAY, directive: deloadOf(MONDAY) },
+				deps
+			);
 			// Monday's preview retitled the generated sparring; on Saturday it is past and kept.
-			const decided = await acceptProposal(owner, id, { ...deps, now: clock(SATURDAY) });
+			const decided = await acceptProposal(owner, proposal.id, { ...deps, now: clock(SATURDAY) });
 			expect(decided.proposal).toMatchObject({ status: 'applied', appliedVersion: { number: 2 } });
 			const v2 = await getProgramVersion(owner, programId, 2, { db });
 			const kept = sessionsOf(v2, MONDAY).find((s) => s.lineage === sparring.lineage);
@@ -448,8 +447,12 @@ describe('staleness at accept', () => {
 	it('a deload accepted after its week: sessions_passed', async () => {
 		await withRollback(async (db) => {
 			const { owner, programId, deps } = await seeded(db, 'week-complete', MONDAY);
-			const id = await storedReplan(db, owner, MONDAY, deloadOf(MONDAY));
-			const passed = await acceptProposal(owner, id, {
+			const { proposal } = await propose(
+				owner,
+				{ today: MONDAY, directive: deloadOf(MONDAY) },
+				deps
+			);
+			const passed = await acceptProposal(owner, proposal.id, {
 				...deps,
 				now: clock(NEXT_TUESDAY)
 			});
@@ -465,7 +468,11 @@ describe('staleness at accept', () => {
 		await withRollback(async (db) => {
 			const { owner, programId, deps } = await seeded(db, 'week-complete', MONDAY);
 			// The week of 16 Nov is the one planned in detail (next week is still an outline block).
-			const id = await storedReplan(db, owner, MONDAY, deloadOf(MONDAY));
+			const { proposal } = await propose(
+				owner,
+				{ today: MONDAY, directive: deloadOf(MONDAY) },
+				deps
+			);
 			// A race on Tuesday of next week, inside the hold window: its goal leads that week, so
 			// DELOAD_HOLD refuses the deload at accept.
 			await createGoal(
@@ -476,7 +483,7 @@ describe('staleness at accept', () => {
 				},
 				{ db }
 			);
-			const decided = await acceptProposal(owner, id, deps);
+			const decided = await acceptProposal(owner, proposal.id, deps);
 			expect(decided).toMatchObject({
 				proposeAgain: true,
 				proposal: { status: 'superseded', supersededReason: 'plan_changed' }
@@ -493,7 +500,7 @@ describe('staleness at accept', () => {
 	it('a newer program version: program_changed', async () => {
 		await withRollback(async (db) => {
 			const { owner, programId, deps } = await seeded(db, 'week-complete', MONDAY);
-			const id = await storedReplan(db, owner, MONDAY, PRIORITIES);
+			const { proposal } = await propose(owner, { today: MONDAY, directive: PRIORITIES }, deps);
 			const v1 = await getProgramVersion(owner, programId, 1, { db });
 			const thursday = sessionsOf(v1, MONDAY).find((s) => s.date === THURSDAY)!;
 			await skipSession(
@@ -502,7 +509,7 @@ describe('staleness at accept', () => {
 				{ version: 1, today: MONDAY },
 				{ db }
 			);
-			const decided = await acceptProposal(owner, id, deps);
+			const decided = await acceptProposal(owner, proposal.id, deps);
 			expect(decided).toMatchObject({
 				proposeAgain: true,
 				proposal: { status: 'superseded', supersededReason: 'program_changed' }
@@ -523,22 +530,34 @@ describe('a weekly review’s deload', () => {
 				{ weekStartsOn: reviewed, today: MONDAY },
 				deps
 			);
-			// As M6's review stores it: its provenance is the proposal's evidence.source.
-			const id = await storedReplan(db, owner, MONDAY, deloadOf(next, 'reactive'), {
-				source: {
-					kind: 'weekly_review',
-					reviewId: review.id,
-					revision: review.revision,
-					weekStartsOn: reviewed
-				}
-			});
-
-			const decided = await acceptProposal(owner, id, deps);
-			expect(decided.proposal.origin).toMatchObject({
+			// As M6's review proposes: through createProposal, which previews it again itself.
+			const directive = deloadOf(next, 'reactive');
+			const shown = await previewReplan(owner, { today: MONDAY, directive }, deps);
+			if ('refusal' in shown) throw new Error(shown.why);
+			const { proposal } = await createProposal(
+				owner,
+				{
+					proposal: {
+						...{ kind: 'replan', title: 'Deload next week', rationale: 'Legs heavy' },
+						payload: {
+							...{ directive, from: shown.from, baseVersionNumber: shown.baseVersionNumber },
+							...{ fingerprint: shown.fingerprint, shapeDigest: shown.shapeDigest }
+						}
+					},
+					provenance: {
+						kind: 'weekly_review',
+						...{ reviewId: review.id, revision: review.revision, weekStartsOn: reviewed }
+					}
+				},
+				deps
+			);
+			expect(proposal.origin).toMatchObject({
 				kind: 'weekly_review',
 				reviewId: review.id,
 				href: `/progress/reviews/w-${reviewed}`
 			});
+
+			await acceptProposal(owner, proposal.id, deps);
 			const v2 = await getProgramVersion(owner, programId, 2, { db });
 			const week = v2.blocks.flatMap((b) => b.weeks).find((w) => w.startsOn === next)!;
 			const applied = v2.decisions.find((d) => d.kind === 'review_applied')!;
@@ -563,6 +582,52 @@ describe('a weekly review’s deload', () => {
 });
 
 describe('transactions and scope', () => {
+	it('returns the same open replan, and revises it with a different one', async () => {
+		await withRollback(async (db) => {
+			const { owner, deps } = await seeded(db, 'block-end', WEDNESDAY);
+			const first = await propose(owner, { today: WEDNESDAY, directive: PRIORITIES }, deps);
+			const same = await propose(owner, { today: WEDNESDAY, directive: PRIORITIES }, deps);
+			expect(same).toMatchObject({ duplicate: true, proposal: { id: first.proposal.id } });
+
+			const other = await propose(owner, { today: WEDNESDAY, directive: MAINTENANCE }, deps);
+			expect(other.proposal).toMatchObject({ status: 'proposed', revisionOf: first.proposal.id });
+			expect(await getProposalView(owner, first.proposal.id, { db })).toMatchObject({
+				status: 'superseded',
+				supersededReason: 'revised'
+			});
+		});
+	});
+
+	it('completes inside a transaction holding the owner’s locks, on a pool of one connection', async () => {
+		const pool = createPool(process.env.DATABASE_URL!, { max: 1, connectionTimeoutMs: 2_000 });
+		const solo = createDatabase(pool);
+		const ROLLBACK = new Error('rollback');
+		const app = (getDb() as unknown as { $client: pg.Pool }).$client;
+		const connect = vi.spyOn(app, 'connect');
+		const query = vi.spyOn(app, 'query');
+		try {
+			await solo
+				.transaction(async (tx) => {
+					const { owner, deps } = await seeded(tx, 'block-end', WEDNESDAY);
+					connect.mockClear();
+					query.mockClear();
+					await createReviewsRepository(tx).lock(owner);
+					await createCoachProposalsRepository(tx).lockCreates(owner);
+					const made = await propose(owner, { today: WEDNESDAY, directive: PRIORITIES }, deps);
+					expect(made.proposal.status).toBe('proposed');
+					expect(connect).not.toHaveBeenCalled();
+					expect(query).not.toHaveBeenCalled();
+					throw ROLLBACK;
+				})
+				.catch((error: unknown) => {
+					if (error !== ROLLBACK) throw error;
+				});
+			expect(takeOverlaps()).toEqual([]);
+		} finally {
+			await pool.end();
+		}
+	});
+
 	it('with the context’s reader stalled inside the accept transaction, applies with no overlap', async () => {
 		const stall: ContextReader = async (db) => {
 			await db.execute(sql`select pg_sleep(1)`);
@@ -576,11 +641,15 @@ describe('transactions and scope', () => {
 		try {
 			await withCommitted(async (db) => {
 				const { owner, programId, deps } = await seeded(db, 'block-end', WEDNESDAY);
-				const id = await storedReplan(db, owner, WEDNESDAY, PRIORITIES);
+				const { proposal } = await propose(
+					owner,
+					{ today: WEDNESDAY, directive: PRIORITIES },
+					deps
+				);
 				vi.spyOn(APPLIERS, 'replan').mockImplementation((input) =>
 					applyReplan(input, { reader: stall, origin })
 				);
-				const decided = await acceptProposal(owner, id, deps);
+				const decided = await acceptProposal(owner, proposal.id, deps);
 				expect(decided.proposal.status).toBe('applied');
 				expect(await versionCount(db, programId)).toBe(2);
 				expect(takeOverlaps()).toEqual([]);
@@ -597,14 +666,50 @@ describe('transactions and scope', () => {
 	it('a foreign owner is not found and writes nothing', async () => {
 		await withRollback(async (db) => {
 			const { owner, deps } = await seeded(db, 'block-end', WEDNESDAY);
-			const id = await storedReplan(db, owner, WEDNESDAY, PRIORITIES);
+			const { proposal } = await propose(owner, { today: WEDNESDAY, directive: PRIORITIES }, deps);
 			const other = await makeSecondOwner(db);
 			const before = await writes(db);
-			await expect(acceptProposal(other, id, deps)).rejects.toBeInstanceOf(CoachNotFoundError);
-			await expect(rejectProposal(other, id, {}, deps)).rejects.toBeInstanceOf(CoachNotFoundError);
-			await expect(getProposalView(other, id, { db })).rejects.toBeInstanceOf(CoachNotFoundError);
+			expect(
+				await proposeReplan(
+					other,
+					{ today: WEDNESDAY, directive: PRIORITIES, source: 'owner' },
+					deps
+				)
+			).toMatchObject({ status: 'refused', refusal: 'no_program' });
+			await expect(acceptProposal(other, proposal.id, deps)).rejects.toBeInstanceOf(
+				CoachNotFoundError
+			);
+			await expect(rejectProposal(other, proposal.id, {}, deps)).rejects.toBeInstanceOf(
+				CoachNotFoundError
+			);
+			await expect(getProposalView(other, proposal.id, { db })).rejects.toBeInstanceOf(
+				CoachNotFoundError
+			);
 			expect(await writes(db)).toEqual(before);
-			expect((await getProposalView(owner, id, { db })).status).toBe('proposed');
+			expect((await getProposalView(owner, proposal.id, { db })).status).toBe('proposed');
+		});
+	});
+
+	it('holds M5’s content guard: a stored replan’s payload never changes', async () => {
+		await withRollback(async (db) => {
+			const { owner, deps } = await seeded(db, 'block-end', WEDNESDAY);
+			const { proposal } = await propose(owner, { today: WEDNESDAY, directive: PRIORITIES }, deps);
+			const error = await db
+				.transaction(async (tx) => {
+					await tx.execute(
+						sql`update coach_proposals set payload = jsonb_set(payload, '{from}', '"2026-11-30"')
+							where id = ${proposal.id}`
+					);
+				})
+				.then(
+					() => null,
+					(err: unknown) =>
+						((err as { cause?: object }).cause ?? err) as {
+							code: string;
+							constraint: string;
+						}
+				);
+			expect(error).toMatchObject({ code: '23001', constraint: 'coach_proposals_content_guard' });
 		});
 	});
 });

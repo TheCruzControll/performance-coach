@@ -71,6 +71,7 @@ import { DECISION_NOTE_MAX, type AppliedRef } from '../../db/schema/coaching';
 import { getExercisesByIds, resolveKeys, type ExerciseDef } from '../exercises/index';
 import { isUuid } from '../ids';
 import { createContextCache, type ContextCache } from '../periodisation/context';
+import { previewReplan, type ReplanPreview } from '../periodisation/preview';
 import { getAthleteProfile, listGoals } from '../profile';
 import { checkMove, getProgramVersion, type StoredSession } from '../programs';
 import { programmingInputFor } from '../programs/alternatives';
@@ -194,21 +195,38 @@ export interface RulesProvenance {
 	trimmed?: number;
 }
 
-/** Where a review's proposal came from, and the review page that shows it. */
-export interface ProposalOrigin {
-	kind: RulesProvenance['kind'];
-	reviewId: string;
-	href: string;
-	/** A weekly review's Monday ('From your weekly review · Week of 2 Nov'); null for a cycle's. */
-	weekStartsOn: IsoDate | null;
-	/** The review as a coach source, whose action opens that page (sourceAction). */
-	source: SourceRef;
+/**
+ * A re-plan the rules made with no review behind it (M7): from a change to the goals'
+ * priorities, or from the training load. Stored as evidence.source, like a review's.
+ */
+export interface EngineProvenance {
+	kind: 'goal_priority' | 'fatigue';
 }
 
-/** What a review's source is called wherever the coach reads it. */
-export const REVIEW_SOURCE_LABEL: Record<RulesProvenance['kind'], string> = {
+/** Where a rules-made proposal came from, and the page that shows it. */
+export interface ProposalOrigin {
+	kind: RulesProvenance['kind'] | EngineProvenance['kind'];
+	/** The review that proposed it; null for an engine's. */
+	reviewId: string | null;
+	href: string;
+	/** A weekly review's Monday ('From your weekly review · Week of 2 Nov'); null otherwise. */
+	weekStartsOn: IsoDate | null;
+	/** The review as a coach source, whose action opens that page (sourceAction); null otherwise. */
+	source: SourceRef | null;
+}
+
+/** What a rules-made proposal's source is called wherever the coach reads it. */
+export const REVIEW_SOURCE_LABEL: Record<ProposalOrigin['kind'], string> = {
 	weekly_review: 'Weekly review',
-	cycle_review: 'Cycle review'
+	cycle_review: 'Cycle review',
+	goal_priority: 'Goal priorities',
+	fatigue: 'Training load'
+};
+
+/** The page an engine's re-plan leads to: the goals it follows, or Progress for the load. */
+export const ENGINE_ORIGIN_HREF: Record<EngineProvenance['kind'], string> = {
+	goal_priority: '/profile/goals',
+	fatigue: '/progress'
 };
 
 const origin = (
@@ -228,6 +246,11 @@ const origin = (
 export function originOf(source: unknown): ProposalOrigin | null {
 	if (typeof source !== 'object' || source === null) return null;
 	const { kind, reviewId, weekStartsOn } = source as Partial<RulesProvenance>;
+	const engine = (source as Partial<EngineProvenance>).kind;
+	if (engine === 'goal_priority' || engine === 'fatigue') {
+		const href = ENGINE_ORIGIN_HREF[engine];
+		return { kind: engine, reviewId: null, href, weekStartsOn: null, source: null };
+	}
 	if (typeof reviewId !== 'string') return null;
 	if (kind === 'weekly_review' && typeof weekStartsOn === 'string')
 		return origin(kind, reviewId, reviewKey({ kind: 'weekly', weekStartsOn }), weekStartsOn);
@@ -575,6 +598,32 @@ async function checkAgainstToday(
 	};
 }
 
+/** Why a replan whose preview no longer matches its payload is refused at create. */
+export const PREVIEW_AGAIN = 'The plan has changed since this was previewed: preview it again';
+
+/**
+ * A replan's card rows, impact and summary lines: its preview's describeChanges, run on `db`
+ * unless `given`. Refused when the preview is refused, or its hashes no longer match the payload.
+ */
+async function replanChanges(
+	ownerId: string,
+	{ payload }: Extract<Proposal, { kind: 'replan' }>,
+	today: IsoDate,
+	db: Executor,
+	given?: ReplanPreview
+): Promise<NonNullable<DiffContext['replan']>> {
+	const shown =
+		given ?? (await previewReplan(ownerId, { today, directive: payload.directive }, { db }));
+	if ('refusal' in shown) throw new ProposalRefusedError({ 'payload.directive': shown.why });
+	const same =
+		shown.fingerprint === payload.fingerprint &&
+		shown.shapeDigest === payload.shapeDigest &&
+		shown.from === payload.from &&
+		shown.baseVersionNumber === payload.baseVersionNumber;
+	if (!same) throw new ProposalRefusedError({ 'payload.fingerprint': PREVIEW_AGAIN });
+	return { weeks: shown.weeks, impact: shown.impact, summaryLines: shown.summaryLines };
+}
+
 // ---- create -----------------------------------------------------------------------------
 
 export interface NewProposal {
@@ -586,8 +635,10 @@ export interface NewProposal {
 	origin?: { threadId: string; runId: string; toolUseId: string } | null;
 	/** What the coach read to propose it. */
 	evidence?: Record<string, unknown> | null;
-	/** A review's rules proposed it, with no conversation: stored as evidence.source. */
-	provenance?: RulesProvenance | null;
+	/** A review's or an engine's rules proposed it, with no conversation: evidence.source. */
+	provenance?: RulesProvenance | EngineProvenance | null;
+	/** A replan's preview, already run on this executor (proposeReplan): not run again. */
+	preview?: ReplanPreview;
 }
 
 export interface CreatedProposal {
@@ -614,11 +665,15 @@ export async function createProposal(
 		: (input.evidence ?? null);
 	return inTransaction(deps, async (resolved) => {
 		const repo = createCoachProposalsRepository(resolved.db);
-		const { proposal, program, diffContext, warnings } = await checkAgainstToday(
+		const { proposal, today, program, diffContext, warnings } = await checkAgainstToday(
 			ownerId,
 			input.proposal,
 			resolved
 		);
+		if (proposal.kind === 'replan') {
+			const { db } = resolved;
+			diffContext.replan = await replanChanges(ownerId, proposal, today, db, input.preview);
+		}
 		const base = ON_PROGRAM.has(proposal.kind) ? program : null;
 		const hash = payloadHash(proposal.payload);
 		const of = { kind: proposal.kind, payloadHash: hash, baseVersionId: base?.versionId ?? null };
