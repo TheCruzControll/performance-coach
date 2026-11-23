@@ -68,6 +68,8 @@ import {
 	type CurrentProgram,
 	type TrainingWeek
 } from '#lib/server/services/programs/index.ts';
+import { DEFAULT_INTENT } from '#lib/domain/programming/rules/added.ts';
+import { SESSIONS_A_DAY } from '#lib/server/services/programs/edits.ts';
 import { getLiveCycleReview } from '#lib/server/services/reviews/index.ts';
 import { getSessionsInRange } from '#lib/server/services/training/history.ts';
 import type { TrainingDeps } from '#lib/server/services/training/shared.ts';
@@ -141,6 +143,16 @@ export type TrainWeekData =
 			openGoals: number;
 			/** The open re-plan the goal priorities asked for, by its proposal id; null otherwise. */
 			replanNote: { proposalId: string } | null;
+			/** The current version's number: what an add (Add session) is made on. */
+			version: number;
+			/**
+			 * The days of the week an owner can add a session to (AddSessionSheet): today or later, from
+			 * the program's first planned day, with fewer than SESSIONS_A_DAY sessions. Empty unless the
+			 * week is a planned week of the current version (not an outline or a bridge week).
+			 */
+			addable: IsoDate[];
+			/** The effort an add takes until the owner picks one, by kind (rules/added.ts). */
+			addIntents: typeof DEFAULT_INTENT;
 	  };
 
 export interface TrainRequest {
@@ -393,6 +405,19 @@ export async function loadTrainWeek(
 						? blockCompleteCard(program, shown.phase, await cycleReviewKey(ownerId, program, db))
 						: notPlannedCard(number, shown.phase),
 			offPlan,
+			version: shown.version.number,
+			addIntents: DEFAULT_INTENT,
+			addable:
+				shown.planned && !bridge
+					? shown.days
+							.filter(
+								(d) =>
+									d.date >= today &&
+									d.date >= program.firstPlannedDay &&
+									d.sessions.length < SESSIONS_A_DAY
+							)
+							.map((d) => d.date)
+					: [],
 			plan: timelineView(program, { today, goals }),
 			openGoals: laneCount(goals),
 			replanNote: await softly('replanNote', () => replanNoteOf(ownerId, replanDeps?.db ?? db), {

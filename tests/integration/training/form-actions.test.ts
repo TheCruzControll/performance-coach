@@ -18,6 +18,7 @@ import {
 	getPlannedSession
 } from '../../../src/lib/server/services/programs/index';
 import { ProgramConflictError } from '../../../src/lib/server/services/training/shared';
+import { addActions } from '../../../src/routes/(app)/train/add.server';
 import { programFixture } from '../../../src/lib/server/test-support/program-fixtures';
 import { withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
@@ -178,5 +179,65 @@ describe('a program form action', () => {
 		expect(await thrown(action({ locals: session(crypto.randomUUID()), request: post({}) }))).toBe(
 			boom
 		);
+	});
+});
+
+describe('the Train add action', () => {
+	const NOW = new Date('2026-11-09T08:00:00Z');
+	const adds = (db: Executor) => addActions({ db, now: () => NOW });
+
+	it('adds a session to the current version and returns its version and warnings', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			await createProgramFromPlan(owner, plan(), { source: 'rules' }, { db });
+			const result = await adds(db).addSession({
+				locals: session(owner),
+				request: post({ date: '2026-11-18', kind: 'run', intent: 'easy', version: 1 })
+			});
+			expect(result).toEqual({ version: 2, warnings: expect.any(Array) });
+			expect(await getCurrentProgram(owner, MONDAY, { db })).toMatchObject({
+				version: { number: 2 }
+			});
+		});
+	});
+
+	it('answers an add made on a stale version with 409 and its reason, and writes nothing', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			await createProgramFromPlan(owner, plan(), { source: 'rules' }, { db });
+			const action = adds(db).addSession;
+			await action({
+				locals: session(owner),
+				request: post({ date: '2026-11-18', kind: 'run', version: 1 })
+			});
+			const result = await action({
+				locals: session(owner),
+				request: post({ date: '2026-11-19', kind: 'run', version: 1 })
+			});
+			expect(isActionFailure(result)).toBe(true);
+			expect(result).toMatchObject({ status: 409, data: { reason: 'version' } });
+			expect(await getCurrentProgram(owner, MONDAY, { db })).toMatchObject({
+				version: { number: 2 }
+			});
+		});
+	});
+
+	it('says a refused day at its field (400), and writes nothing', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			await createProgramFromPlan(owner, plan(), { source: 'rules' }, { db });
+			const result = await adds(db).addSession({
+				locals: session(owner),
+				request: post({ date: '2026-11-08', kind: 'run', version: 1 })
+			});
+			expect(isActionFailure(result)).toBe(true);
+			expect(result).toMatchObject({
+				status: 400,
+				data: { errors: { date: 'That day has passed' } }
+			});
+			expect(await getCurrentProgram(owner, MONDAY, { db })).toMatchObject({
+				version: { number: 1 }
+			});
+		});
 	});
 });
