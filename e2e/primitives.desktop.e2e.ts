@@ -12,7 +12,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { DESKTOP } from './desktop';
-import { openMore } from './program-support';
+import { moreSheet, openMore } from './program-support';
 import { captureScreen, gotoHydrated, query, toastWith, trackConsoleErrors } from './support';
 import { addVirtualAuthenticator, signInAsOwner, toBase64Url } from './webauthn';
 
@@ -88,6 +88,8 @@ async function audit(page: Page, label: string) {
 interface OpenSheet {
 	opener: Locator;
 	dialog: Locator;
+	/** The sheet it opened over, still open once it closes (Train's More under its tools). */
+	under?: Locator;
 }
 
 async function openPlates(page: Page): Promise<OpenSheet> {
@@ -97,7 +99,7 @@ async function openPlates(page: Page): Promise<OpenSheet> {
 	await opener.click();
 	const dialog = page.getByRole('dialog', { name: 'Plate calculator' });
 	await settled(dialog);
-	return { opener, dialog };
+	return { opener, dialog, under: moreSheet(page) };
 }
 
 async function openFeedback(page: Page): Promise<OpenSheet> {
@@ -210,7 +212,9 @@ test.describe('a sheet from 1024 px', () => {
 			page
 		}) => {
 			const errors = trackConsoleErrors(page);
-			const { opener, dialog } = await sheet.open(page);
+			const { opener, dialog, under } = await sheet.open(page);
+			// The page stays locked while a sheet it opened over is still open.
+			const locked = under ? 'hidden' : '';
 			const before = await boxOf(panelOf(dialog));
 			await mouseDrag(page, dialog, 300, async () => {
 				expect(await boxOf(panelOf(dialog)), 'mid-drag, the dialog stays put').toEqual(before);
@@ -222,7 +226,7 @@ test.describe('a sheet from 1024 px', () => {
 			await page.keyboard.press('Escape');
 			await expect(dialog).toBeHidden();
 			await expect(opener).toBeFocused();
-			expect(await scrollLock(page)).toBe('');
+			expect(await scrollLock(page)).toBe(locked);
 
 			await opener.click();
 			await settled(dialog);
@@ -230,7 +234,14 @@ test.describe('a sheet from 1024 px', () => {
 			await page.mouse.click(window.x + 24, window.y + window.height - 24); // the backdrop
 			await expect(dialog).toBeHidden();
 			await expect(opener).toBeFocused();
-			expect(await scrollLock(page)).toBe('');
+			expect(await scrollLock(page)).toBe(locked);
+			if (under) {
+				// The sheet beneath closes on Escape too, and then the page scrolls again.
+				await expect(under).toBeVisible();
+				await page.keyboard.press('Escape');
+				await expect(under).toBeHidden();
+				expect(await scrollLock(page)).toBe('');
+			}
 			expect(errors).toEqual([]);
 		});
 	}
@@ -709,6 +720,10 @@ test.describe('on a phone', () => {
 		await touchSwipe(page, dialog, 320);
 		await expect(dialog).toBeHidden();
 		await expect(opener).toBeFocused();
+		// Train's More, which the calculator opened over, still holds the page until it closes.
+		expect(await scrollLock(page)).toBe('hidden');
+		await page.keyboard.press('Escape');
+		await expect(moreSheet(page)).toBeHidden();
 		expect(await scrollLock(page)).toBe('');
 	});
 });

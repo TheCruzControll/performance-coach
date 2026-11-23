@@ -11,7 +11,8 @@
   a length the session cannot take). A new week finding never blocks the add: the toast counts it.
   A stale version is a conflict, which Reload clears. Validation (zod) runs in the sheet first, as
   SkipSheet's does; the server checks again.
-  On success the sheet closes and a toast names the session and its day, with its version and any
+  On success the sheet closes (and `onadded` runs: Train closes More, which it opened over, so the
+  new line is in view) and a toast names the session and its day, with its version and any
   findings to look at, and links to History.
 -->
 <script lang="ts">
@@ -52,6 +53,8 @@
 		/** The effort each kind takes until the owner picks one (WeekView's rule, from the server). */
 		addIntents: Record<AddedKind, AddIntent>;
 		onclose: () => void;
+		/** An add was saved: the sheet has closed. */
+		onadded?: () => void;
 	}
 
 	/** What the server says an add made: its version, the built title and the week's new findings. */
@@ -61,7 +64,7 @@
 		warnings: { severity: string; message: string }[];
 	}
 
-	let { open = $bindable(), version, addable, day, addIntents, onclose }: Props = $props();
+	let { open = $bindable(), version, addable, day, addIntents, onclose, onadded }: Props = $props();
 
 	const UNREACHABLE = 'Can’t reach the server. Check your connection, then try again.';
 	const NOT_SAVED = 'That didn’t save. Try again.';
@@ -168,6 +171,7 @@
 			const weekday = WEEKDAY_INFO[weekdayOf(checked.data.date)].label;
 			const looks = added.warnings.length ? ` · ${added.warnings.length} to look at` : '';
 			open = false;
+			onadded?.();
 			toast.show(`Added ${added.title} on ${weekday} · version ${added.version}${looks}`, {
 				tone: 'positive',
 				action: {

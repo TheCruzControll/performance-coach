@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { isDesktopPage } from './desktop';
-import { openMore } from './program-support';
+import { moreSheet, openMore } from './program-support';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -388,7 +388,11 @@ test.describe('app shell on an iPhone viewport', () => {
 
 	test('plate calculator sheet: stepper, unit switch, focus return', async ({ page }, testInfo) => {
 		await gotoHydrated(page, '/train');
-		await openMore(page);
+		// More from the keyboard, so its row holds the focus to come back to on every engine.
+		const more = page.getByTestId('open-more');
+		await more.focus();
+		await page.keyboard.press('Enter');
+		await expect(moreSheet(page)).toBeVisible();
 		const opener = page.getByTestId('open-plates');
 		await opener.click();
 
@@ -435,6 +439,11 @@ test.describe('app shell on an iPhone viewport', () => {
 		await sheet.getByRole('button', { name: 'Close' }).click();
 		await expect(sheet).toBeHidden();
 		await expect(opener).toBeFocused();
+		// The calculator opened over More, which stayed open: Escape closes it, back to its row.
+		await expect(moreSheet(page)).toBeVisible();
+		await page.keyboard.press('Escape');
+		await expect(moreSheet(page)).toBeHidden();
+		await expect(more).toBeFocused();
 
 		// The calculator's unit switch is local: the app-wide preference is still kg.
 		await page.goto('/profile/appearance');
@@ -475,8 +484,9 @@ test.describe('app shell on an iPhone viewport', () => {
 	test('leaving a screen while a sheet is open releases the page scroll lock', async ({ page }) => {
 		const overflow = () => page.evaluate(() => document.documentElement.style.overflow);
 
-		// Arrive client-side with the sheet opening by itself (?tool=plates), then go Back. Today no
-		// longer links the calculator, so the test adds the link for the router to follow.
+		// Arrive client-side with the sheet opening by itself (?tool=plates, over More), then go
+		// Back. Today no longer links the calculator, so the test adds the link for the router to
+		// follow.
 		await gotoHydrated(page, '/today');
 		await page.evaluate(() => {
 			const link = Object.assign(document.createElement('a'), {
@@ -488,6 +498,7 @@ test.describe('app shell on an iPhone viewport', () => {
 		await page.getByRole('link', { name: 'Plate calculator', exact: true }).click();
 		const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
 		await expect(sheet).toBeVisible();
+		await expect(moreSheet(page)).toBeVisible();
 		expect(await overflow()).toBe('hidden');
 		await page.goBack();
 		await expect(page).toHaveURL(/\/today$/);

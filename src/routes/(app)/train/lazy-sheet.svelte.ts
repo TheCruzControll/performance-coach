@@ -48,9 +48,15 @@ export class LazySheet<Props extends Record<string, any>> {
 			(module) => (this.component = module.default),
 			() => {
 				this.#fetching = null;
-				// Resolved against Train's own URL: the same screen, asking for the sheet.
-				if (this.#retrying && this.open && navigator.onLine)
-					return location.replace(`?tool=${this.#tool}`);
+				// Resolved against Train's own URL: the same screen and week (?week= kept), asking
+				// for the sheet.
+				if (this.#retrying && this.open && navigator.onLine) {
+					const kept = location.search
+						.slice(1)
+						.split('&')
+						.filter((part) => part && part.split('=')[0] !== 'tool');
+					return location.replace(`?${[...kept, `tool=${this.#tool}`].join('&')}`);
+				}
 				// A failed tap is reported; a failed prefetch (hover) says nothing, and never takes
 				// away a notice already shown.
 				this.failed ||= this.open;

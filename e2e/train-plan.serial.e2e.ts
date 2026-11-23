@@ -1,11 +1,12 @@
 /**
  * Train's plan overview (src/lib/ui/program/PlanOverviewSheet.svelte, BlockTimeline.svelte):
- * See the whole plan, a row in Train's More, opens a sheet code-split out of Train that lists
- * every block with its phase, dates and weeks. This week is marked, an outline block's weeks are
- * not planned yet and never links, and a dated goal sits in its week. A planned week opens on
- * Train through the week change's pending state; Close and Escape give the focus back to its
- * row; and a sheet whose code fails to load offers Retry under its row, which opens it. Serial: the
- * program and the goals are the one owner's (e2e/program-support.ts).
+ * See the whole plan, a row in Train's More sheet, opens over it a sheet code-split out of Train
+ * that lists every block with its phase, dates and weeks. This week is marked, an outline block's
+ * weeks are not planned yet and never links, and a dated goal sits in its week. A planned week
+ * opens on Train through the week change's pending state, More closing with the plan; Close and
+ * Escape give the focus back to its row in More; and a sheet whose code fails to load offers Retry
+ * under its row, which opens it. Serial: the program and the goals are the one owner's
+ * (e2e/program-support.ts).
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -15,7 +16,13 @@ import { addDays } from '../src/lib/domain/calendar';
 import { FIXTURE_GOAL } from '../src/lib/server/test-support/program-fixtures';
 import { shortDate } from '../src/lib/ui/program/words';
 import { DESKTOP, expectNoSideScroll } from './desktop';
-import { openMore, PROGRAM_TZ, seedProgram, type SeededProgram } from './program-support';
+import {
+	moreSheet,
+	openMore,
+	PROGRAM_TZ,
+	seedProgram,
+	type SeededProgram
+} from './program-support';
 import {
 	captureScreen,
 	gotoHydrated,
@@ -135,7 +142,9 @@ test.describe('a program this week', () => {
 			await sheet(page)
 				.getByRole('link', { name: /^Week 3\b/ })
 				.click();
+			// The plan and More, which it opened over, both close: the week shows.
 			await expect(sheet(page)).toBeHidden();
+			await expect(moreSheet(page)).toBeHidden();
 			await expect(page.getByTestId('train-week')).toHaveAttribute('aria-busy', 'true');
 			await expect(position(page)).toHaveText('Week 1 of 5 · Baseline week');
 
@@ -163,6 +172,8 @@ test.describe('a program this week', () => {
 		await page.keyboard.press('Escape');
 		await expect(sheet(page)).toBeHidden();
 		await expect(plan(page)).toBeFocused();
+		// More stayed open beneath the plan.
+		await expect(moreSheet(page)).toBeVisible();
 	});
 
 	test('the open sheet passes axe in dark and light', async ({ page }) => {

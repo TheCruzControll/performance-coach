@@ -2,13 +2,14 @@
  * Train's week findings (m7/04 train-week-findings), seeded with the periodisation-week fixture:
  * next week the owner moved Lower A from Friday to Monday, the day before Tuesday's hard Muay
  * Thai. The week's one line under its lines counts what is still ahead ('1 heads-up this week')
- * and opens, in place and even without JavaScript, the finding once, as its label and headline
- * ('Heads-up · …'), with its why. The week after reads 'No clashes this week'; this week's clash
- * has passed, so it shows nothing and reads 'No clashes ahead this week'; a past week and an
- * outline week show no findings line, a bridge week and 'First block complete' no line at all.
- * The findings match domain evaluateWeek over the week as Postgres holds it
- * (periodisation-support.ts). The lines keep their place while the page hydrates; axe is clean in
- * both themes, at 393 × 659 and in a 1440 × 900 window.
+ * and opens the week's note, a sheet (the right-hand panel from 1024 px), which lists the finding
+ * once, as its label and headline ('Heads-up · …'), with its why. Without JavaScript the line is
+ * still there, and the note needs JavaScript. The week after reads 'No clashes this week', a
+ * plain line; this week's clash has passed, so it shows nothing and reads 'No clashes ahead this
+ * week'; a past week and an outline week show no findings line, a bridge week and 'First block
+ * complete' no line at all. The findings match domain evaluateWeek over the week as Postgres
+ * holds it (periodisation-support.ts). The lines keep their place while the page hydrates; axe is
+ * clean in both themes, at 393 × 659 and in a 1440 × 900 window.
  *
  * Serial: the program is the one owner's, which every browser and worker shares.
  */
@@ -23,7 +24,7 @@ import {
 } from './analytics-support';
 import { DESKTOP, expectNoShift, expectNoSideScroll } from './desktop';
 import { weekEvaluation } from './periodisation-support';
-import { sessionLine } from './program-support';
+import { expectRightPanel, sessionLine } from './program-support';
 import { seedReview } from './review-support';
 import { captureScreen, gotoHydrated } from './support';
 
@@ -75,6 +76,8 @@ test.describe('the periodisation week', () => {
 		await expect(line(page)).toHaveText('1 heads-up this week');
 		await expect(findings(page)).toBeHidden();
 		await line(page).click();
+		// The note's sheet is titled by the line that opened it.
+		await expect(page.getByRole('dialog', { name: '1 heads-up this week' })).toBeVisible();
 		// The finding once, though it names Monday's moved Lower A and Tuesday's class, with no
 		// words that place it on either. Wednesday's Upper A is in no finding.
 		const notes = findings(page).locator('.finding');
@@ -95,6 +98,8 @@ test.describe('the periodisation week', () => {
 		expect((await weekEvaluation(seeded.mondays.clean, seeded.today)).findings).toEqual([]);
 		await gotoHydrated(page, `/train?week=${WEEK.clean}`);
 		await expect(line(page)).toHaveText('No clashes this week');
+		// With nothing to open, the line stays a plain line.
+		await expect(line(page)).toHaveJSProperty('tagName', 'P');
 		await expect(findings(page)).toHaveCount(0);
 	});
 
@@ -135,21 +140,19 @@ test.describe('the periodisation week', () => {
 	test.describe('without JavaScript', () => {
 		test.use({ javaScriptEnabled: false });
 
-		// v2/07a1 opens the week's note in place, a native disclosure, so it opens without
-		// JavaScript too (a sheet, from v2/07a2, will need it).
-		test('the server renders the week line, and the heads-up opens from it', async ({ page }) => {
+		// The week's note is a sheet, which needs JavaScript: without it, the line
+		// still says what the week holds.
+		test('the server renders the week line', async ({ page }) => {
 			await page.goto(`/train?week=${WEEK.moved}`);
 			await expect(line(page)).toHaveText('1 heads-up this week');
-			await line(page).click();
-			await expect(findings(page).locator('.finding')).toHaveText([NOTE]);
-			await expect(findings(page)).toContainText('You moved Lower A here from Friday.');
+			await expect(findings(page)).toHaveCount(0);
 		});
 	});
 
 	test.describe('in a desktop window', () => {
 		test.use({ ...DESKTOP });
 
-		test('the week line sits under the lines in the column, with hover and focus states', async ({
+		test('the week line sits under the lines in the column, with hover and focus states; its note is the right-hand panel', async ({
 			page
 		}, testInfo) => {
 			await gotoHydrated(page, `/train?week=${WEEK.moved}`);
@@ -167,8 +170,13 @@ test.describe('the periodisation week', () => {
 			await line(page).focus();
 			await page.keyboard.press('Enter');
 			await expect(findings(page)).toBeVisible();
+			await expectRightPanel(page.getByTestId('week-note'));
 			await auditBothThemes(page, 'Train findings, desktop');
 			await captureScreen(page, testInfo, 'train-findings-desktop');
+			// Escape closes it, and the focus is back on the line.
+			await page.keyboard.press('Escape');
+			await expect(page.getByTestId('week-note')).toBeHidden();
+			await expect(line(page)).toBeFocused();
 		});
 	});
 });

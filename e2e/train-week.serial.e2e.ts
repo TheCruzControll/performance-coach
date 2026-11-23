@@ -1,11 +1,11 @@
 /**
  * Train's week (src/routes/(app)/train, Instrument v2): the current program's week and its place,
  * server-rendered, as one line per session (strength, running and Muay Thai on their days, Rest on
- * a day off), week 1's brief behind the week's one line, the tools behind More, week arrows that
- * keep focus and show a pending state, and the designed not-started, not-planned-yet,
- * first-block-complete, no-program, error and offline states. Serial: programs
- * are the one owner's, which every browser and worker shares. Fixture programs come from the
- * test-only route at dates the server computes (e2e/program-support.ts).
+ * a day off), week 1's brief in the sheet the week's one line opens, the tools in More's sheet (a
+ * right-hand panel from 1024 px), week arrows that keep focus and show a pending state, and the
+ * designed not-started, not-planned-yet, first-block-complete, no-program, error and offline
+ * states. Serial: programs are the one owner's, which every browser and worker shares. Fixture
+ * programs come from the test-only route at dates the server computes (e2e/program-support.ts).
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -21,11 +21,14 @@ import {
 } from './desktop';
 import {
 	dayLines,
+	expectRightPanel,
 	lineDay,
+	moreSheet,
 	openMore,
 	PROGRAM_TZ,
 	seedProgram,
 	sessionLine,
+	sheetPanel,
 	type SeededProgram
 } from './program-support';
 import { captureScreen, gotoHydrated, resetTrainingProfile, trackConsoleErrors } from './support';
@@ -138,20 +141,31 @@ test.describe('a program this week', () => {
 		await rest.last().scrollIntoViewIfNeeded();
 		await captureScreen(page, testInfo, 'train-rest-day');
 
-		// Week 1's brief is behind the week's one line (a finding, if the week had one, names
-		// the line first).
+		// Week 1's brief is behind the week's one line, in its sheet (a finding, if the week had
+		// one, names the line first); Escape closes it, back to the line.
 		const note = page.getByTestId('week-line');
 		await expect(note).toHaveText(/^(What week 1 is for|.+ this week.*)$/);
-		await note.click();
-		await expect(page.getByTestId('baseline-brief')).toContainText(
+		await expect(note).toHaveAttribute('aria-haspopup', 'dialog');
+		// From the keyboard: WebKit focuses no button on a click, and the focus comes back to it.
+		await note.focus();
+		await page.keyboard.press('Enter');
+		const sheet = page.getByTestId('week-note');
+		await expect(sheet).toBeVisible();
+		await expect(sheet.getByTestId('baseline-brief')).toContainText(
 			'Log weight, reps and effort for every set'
 		);
+		await expect(sheet.getByRole('link', { name: 'Ask the coach about it' })).toBeVisible();
+		await page.keyboard.press('Escape');
+		await expect(sheet).toBeHidden();
+		await expect(note).toBeFocused();
 
-		// The plan, history and tools are behind More.
+		// The plan, history and tools are behind More, in its sheet.
 		await expect(page.getByTestId('open-more')).toBeVisible();
 		await openMore(page);
-		await expect(page.getByTestId('open-plates')).toBeVisible();
-		await expect(page.getByTestId('open-history')).toBeVisible();
+		await expect(moreSheet(page).getByTestId('open-plates')).toBeVisible();
+		await expect(moreSheet(page).getByTestId('open-history')).toBeVisible();
+		await page.keyboard.press('Escape');
+		await expect(moreSheet(page)).toBeHidden();
 
 		expect(await shifts(page), 'layout shifts no input explains').toEqual([]);
 		expect(errors).toEqual([]);
@@ -375,11 +389,12 @@ test.describe('a program this week', () => {
 			expect(Math.round(row.height)).toBe(60);
 			expect(await more.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe('1px');
 
-			// More opens its rows in place, in the column.
+			// More opens as the right-hand panel, the week still in view beside it.
 			await openMore(page);
-			const tools = (await page.getByTestId('more-tools').boundingBox())!;
-			expect(Math.abs(tools.x - week.x)).toBeLessThanOrEqual(1);
-			expect(tools.y).toBeGreaterThanOrEqual(row.y + row.height - 1);
+			await expectRightPanel(moreSheet(page));
+			const panel = (await sheetPanel(moreSheet(page)).boundingBox())!;
+			expect(panel.x, 'the week stays in view').toBeGreaterThanOrEqual(week.x + week.width - 1);
+			await expect(moreSheet(page).getByTestId('open-plates')).toBeVisible();
 			await expectNoSideScroll(page);
 			await captureScreen(page, testInfo, 'train-week-desktop');
 		});
