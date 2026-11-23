@@ -11,20 +11,25 @@
  *   building week they miss moves a session on its own, the next hardest week's are tried, and the
  *   days fewest weeks lapse from are kept. Never pinned into a finding repair without pins would
  *   fix.
- * - Then every week, the OWN_WEEKS kinds included, is repaired on its own, in order, with the load
- *   of the week before as repaired, and the day before and the next Monday's commitments judged
- *   beside it, as placement judges a week. A building week's shared sessions stay pinned to their
- *   shared days and only what is left is repaired, unless the week as placed keeps fewer avoid
- *   findings that no trade-off explains. Where placement already succeeded, nothing changes.
+ * - The week before is planned across the boundary. A block's first week has the real week before
+ *   (the previous block's last week, or the owner's logged history). Every later week has the
+ *   block's pattern, week t's repaired sessions, shifted back a week: the Sunday the block repeats
+ *   precedes the Monday after it, so a hard Monday after a hard Sunday is repaired as it will be.
+ * - Then every week, the OWN_WEEKS kinds included, is repaired on its own, in order, with that
+ *   week before and the day before and the next Monday's commitments judged beside it, as placement
+ *   judges a week. A building week's shared sessions stay pinned to their shared days and only what
+ *   is left is repaired, unless the week as placed keeps fewer avoid findings that no decision
+ *   explains. Where placement already succeeded, nothing changes.
  * - A strength session is never left out (KEEPS_ITS_DOSE).
  * - An eased session's prescription matches its new target: each main lift whose top set the ease
  *   lowered is loaded again by M3's loads rules at that RPE, its sRPE follows, and the time fit is
  *   checked again for it.
- * - What repair cannot fix is kept. A finding a higher-priority goal holds, or one between a goal's
- *   session and a session no goal trains, gets a priority_tradeoff decision. Moves, eases and drops
- *   get schedule_repaired, load_eased and session_dropped decisions. Decisions alike across weeks
- *   are one citing each session, and every decision's refs follow the sessions to their new places,
- *   as placement's do.
+ * - What repair cannot fix is kept, and says why. An avoid finding a higher-priority goal holds, or
+ *   one between a goal's session and a session no goal trains, gets a priority_tradeoff decision;
+ *   any other avoid finding the week keeps gets a schedule_kept decision with its headline and the
+ *   reason repair kept it. Moves, eases and drops get schedule_repaired, load_eased and
+ *   session_dropped decisions. Decisions alike across weeks are one citing each session, and every
+ *   decision's refs follow the sessions to their new places, as placement's do.
  *
  * Pure and deterministic, like every stage.
  */
@@ -88,6 +93,10 @@ export const HARDEST_BY = 'estLoad' satisfies keyof SessionPlan;
  * with a priority_tradeoff instead, never dropped.
  */
 export const KEEPS_ITS_DOSE = (s: { kind: string }) => s.kind !== 'strength';
+
+/** `sessions` moved `days` days later (negative: earlier), each keeping its slot otherwise. */
+const shiftDays = <S extends SessionPlan>(sessions: readonly S[], days: number): S[] =>
+	sessions.map((s) => ({ ...s, date: addDays(s.date, days) }));
 
 /** The tag of a session judged beside a week but not in it: the day before, the next Monday. */
 const AROUND = 'around ';
@@ -207,6 +216,18 @@ function overUngoaled(
 	};
 }
 
+/**
+ * The decision an avoid finding repair keeps is recorded with: a goal's priority that holds it
+ * (priority_tradeoff), else the goal over an ungoaled session, else repair's schedule_kept.
+ */
+function decisionOf(
+	kept: KeptFinding,
+	week: { all: readonly Tagged[]; priorities: readonly GoalPriority[] | undefined }
+): RepairDecision | null {
+	if (kept.decision?.kind === 'priority_tradeoff') return kept.decision;
+	return overUngoaled(kept, week.all, week.priorities) ?? kept.decision ?? null;
+}
+
 export const schedule: Stage = (draft, { input, options, log }) => {
 	const { budget } = demandIn(draft);
 	const notes = new Map<string, { refs: PlanPath[]; write: (refs: PlanPath[]) => void }>();
@@ -285,16 +306,21 @@ export const schedule: Stage = (draft, { input, options, log }) => {
 			(x, y) => weekLoad(block.weeks[y]!) - weekLoad(block.weeks[x]!) || x - y
 		);
 
-		/** Week `t`'s day and time changes, made in every building week they fit. */
+		/**
+		 * Week `t`'s day and time changes, made in every building week they fit, and the pattern: week
+		 * t's repaired sessions, which the block's weeks after the first are planned with (`pass`).
+		 */
 		const sharedFrom = (t: number | undefined) => {
 			const shared: ({
 				sessions: Tagged[];
 				pinned: string[];
 				notes: [RepairDecision, PlanPath][];
 			} | null)[] = placed.map(() => null);
-			if (t === undefined) return shared;
+			if (t === undefined) return { shared, pattern: null };
 			const week = block.weeks[t]!;
-			const around = t > 0 ? block.weeks[t - 1]!.sessions : before;
+			// The pattern's own last days precede its first, as they will in the next week: its week
+			// before is itself shifted back a week. The block's first week has the real week before.
+			const around = t > 0 ? shiftDays(placed[t]!, -7) : before;
 			const repair = repairIn(block, t, placed[t]!, around);
 			const kept = new Set(repair.sessions.map((s) => s.lineage));
 			const changes = repair.actions.filter(
@@ -328,34 +354,48 @@ export const schedule: Stage = (draft, { input, options, log }) => {
 				const pinned = sessions.flatMap((s, i) => (next[i] === s ? [] : [s.lineage]));
 				shared[w] = { sessions: ordered(next), pinned, notes };
 			}
-			return shared;
+			return { shared, pattern: { from: t, sessions: repair.sessions.map(untag) } };
 		};
 
-		// The avoid findings a week keeps; `open`, only those no trade-off explains.
+		// The avoid findings a week keeps; `open`, only those no decision explains (a priority_tradeoff
+		// or a schedule_kept alike).
 		const avoids = (r: ReturnType<typeof repairIn>, open = true) =>
 			r.kept.filter(
 				(k) =>
 					k.finding.severity === 'avoid' &&
 					k.finding.resolution?.kind !== 'commitment_fixed' &&
-					!(open && (k.decision ?? overUngoaled(k, r.all, r.priorities)))
+					!(open && decisionOf(k, r))
 			).length;
 
 		/**
-		 * Every week repaired on its own, in order, with the load of the week before, sharing week
-		 * `t`'s days. A building week keeps its shared sessions pinned to the shared days, unless they
+		 * Every week repaired on its own, in order, sharing week `t`'s days. The week before each week
+		 * is the block's real week before for its first week, and for every later week the pattern
+		 * (week `t`'s sessions) shifted back a week, so a Sunday the block repeats precedes the Monday
+		 * after it. A building week keeps its shared sessions pinned to the shared days, unless they
 		 * leave it an avoid finding no trade-off explains that the week as placed avoids, or one that
 		 * repair without the pins would fix: a `lapse`, as is a building week with no shared days whose
 		 * own repair moves a generated session.
 		 * What it records is made by `commit`.
 		 */
 		const pass = (t: number | undefined) => {
-			const shared = sharedFrom(t);
-			let [prev, lapses] = [before, 0];
+			const { shared, pattern } = sharedFrom(t);
+			let [lapses, last] = [0, before];
 			const cites: [RepairDecision, PlanPath][] = [];
 			const trimmed: [Trim['facts'], PlanPath][] = [];
 			const moved: [PlanPath, PlanPath | null][] = [];
 			const weeks = placed.map((given, w): WeekPlan => {
 				const week = block.weeks[w]!;
+				// The week before: the real one for the block's first week, then the pattern shifted back a
+				// week (week t's days, dated into week w - 1); without a pattern, the week before as repaired.
+				const prev =
+					w === 0
+						? before
+						: pattern
+							? shiftDays(
+									pattern.sessions,
+									daysBetween(block.weeks[pattern.from]!.startsOn, block.weeks[w - 1]!.startsOn)
+								)
+							: last;
 				const own = shared[w];
 				const pinned = own && repairIn(block, w, own.sessions, prev, own.pinned);
 				// Never pinned into a finding that repair without the pins would fix: an avoid, or a
@@ -394,7 +434,7 @@ export const schedule: Stage = (draft, { input, options, log }) => {
 					]);
 				}
 				for (const kept of r.kept) {
-					const decision = kept.decision ?? overUngoaled(kept, r.all, r.priorities);
+					const decision = decisionOf(kept, r);
 					// It cites the first session of this week it names.
 					const tag = kept.finding.sessions.find((n) => !n.lineage?.startsWith(AROUND))?.lineage;
 					if (decision && tag !== undefined) cites.push([decision, path(tag)]);
@@ -405,7 +445,7 @@ export const schedule: Stage = (draft, { input, options, log }) => {
 					moved.push([path(`${i}`), n < 0 ? null : sessionPath(b, w, n)]);
 				});
 				const sessions = final.map(untag);
-				prev = sessions;
+				last = sessions;
 				return { ...week, sessions };
 			});
 			const commit = () => {
@@ -415,7 +455,7 @@ export const schedule: Stage = (draft, { input, options, log }) => {
 					trims.set(id, { facts, refs: [...(trims.get(id)?.refs ?? []), ref] });
 				}
 				for (const [from, to] of moved) moves.set(from, to);
-				before = prev;
+				before = last;
 			};
 			return { weeks, lapses, commit };
 		};
