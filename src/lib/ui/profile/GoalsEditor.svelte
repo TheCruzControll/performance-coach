@@ -13,6 +13,9 @@
   puts the order back and says so. A pointer can also drag a goal by the handle after its
   arrows; the handle is hidden from assistive tech and never focused, so the arrows stay the
   accessible way. Let go, the goal takes the place it was dragged to and is stored the same way.
+  Whatever the priority trigger made of a change (a re-plan to review, or that none is needed)
+  shows under the list as ReplanNotice, after a reorder, a save or a delete; its Try again runs
+  `?/replan`. The notice never holds up the list.
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
@@ -33,6 +36,8 @@
 	import type { EditorProps } from './editors';
 	import { goalDraft, goalSummary, newGoal, type GoalDraft } from './goals';
 	import type GoalSheet from './GoalSheet.svelte';
+	import ReplanNotice from './ReplanNotice.svelte';
+	import type { ReplanResult } from './replan-notice.ts';
 
 	let { value = $bindable(), manage = false, heading }: EditorProps<Goal[]> = $props();
 	const id = $props.id();
@@ -75,8 +80,14 @@
 		edit(newGoal(path === 'general' ? 'general' : 'event'));
 	}
 
-	function changed(goals: Goal[], message: string) {
+	/** The priority trigger's answer for the last goal change (ReplanNotice); null before one. */
+	let replan = $state<ReplanResult | null>(null);
+	/** Try again runs the trigger again: the notice is busy until it answers. */
+	let checking = $state(false);
+
+	function changed(goals: Goal[], message: string, next?: ReplanResult) {
 		value = goals;
+		if (next) replan = next;
 		open = false;
 		toast.show(message, { tone: 'positive' });
 	}
@@ -117,7 +128,10 @@
 		unanswered--;
 		if (sent !== round) return;
 		if (result?.type === 'success') {
-			if (unanswered === 0 && result.data) value = result.data.goals as Goal[];
+			if (unanswered === 0 && result.data) {
+				value = result.data.goals as Goal[];
+				if (result.data.replan) replan = result.data.replan as ReplanResult;
+			}
 		} else if (result?.type === 'redirect') {
 			await applyAction(result); // the session ended: sign in again
 		} else {
@@ -125,6 +139,20 @@
 			value = before;
 			announcement = '';
 			toast.show('The new order didn’t save. Try again.', { tone: 'danger' });
+		}
+	}
+
+	/** Try again: the trigger runs again for the goals as they stand; a failure stays failed. */
+	async function retry() {
+		checking = true;
+		const result = await post('?/replan').catch(() => null);
+		checking = false;
+		if (result?.type === 'success' && result.data?.replan) {
+			replan = result.data.replan as ReplanResult;
+		} else if (result?.type === 'redirect') {
+			await applyAction(result); // the session ended: sign in again
+		} else {
+			replan = { state: 'failed' };
 		}
 	}
 
@@ -330,6 +358,11 @@
 		{/if}
 	{/if}
 
+	{#if manage}
+		<!-- Profile only: onboarding has no program to re-plan, and no ?/replan action. -->
+		<ReplanNotice {replan} {checking} onretry={retry} />
+	{/if}
+
 	{#if manage && past.length > 0}
 		<div class="past">
 			<Section title="Past goals" data-testid="past-goals">
@@ -383,8 +416,8 @@
 			bind:open
 			draft={current}
 			{manage}
-			onsaved={(goals) => changed(goals, 'Goal saved')}
-			ondeleted={(goals) => changed(goals, 'Goal deleted')}
+			onsaved={(goals, next) => changed(goals, 'Goal saved', next)}
+			ondeleted={(goals, next) => changed(goals, 'Goal deleted', next)}
 		/>
 	{/each}
 {/if}

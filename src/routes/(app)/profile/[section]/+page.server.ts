@@ -3,6 +3,7 @@ import {
 	deleteGoalAction,
 	editAction,
 	ownerId,
+	replanAction,
 	reorderGoalsAction,
 	saveGoalAction
 } from '#lib/server/forms/profile.ts';
@@ -25,7 +26,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	return { key: info.key, title: info.title, saved, context, saveBar };
 };
 
-/** Goal actions exist on the goals section only. */
+/** Goal actions exist on the goals section only (the re-plan's Retry included). */
 const goals =
 	<T>(action: (event: RequestEvent) => T) =>
 	(event: RequestEvent) => {
@@ -41,5 +42,6 @@ export const actions: Actions = {
 	},
 	saveGoal: goals(saveGoalAction),
 	deleteGoal: goals(deleteGoalAction),
-	reorderGoals: goals(reorderGoalsAction)
+	reorderGoals: goals(reorderGoalsAction),
+	replan: goals(replanAction)
 };

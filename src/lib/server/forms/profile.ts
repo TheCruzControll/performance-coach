@@ -81,30 +81,44 @@ const goalChange = ({ replan: _replan, ...deps }: GoalDeps) => ({
 	...deps
 });
 
+/** The request a priority trigger's failure is recorded from (its origin). */
+const originOf = ({ locals, request }: FormEvent) => ({
+	requestId: locals.requestId,
+	method: request.method,
+	path: new URL(request.url).pathname
+});
+
 /**
  * A goal action's data once its change has committed, with what the priority trigger did
  * (services/periodisation/priority.ts): it never throws, so the save stands whatever it says.
  * `before` is the goals as they were before the change; the request is the trigger's origin.
  */
 async function withReplan<T extends object>(
-	{ locals, request }: FormEvent,
+	event: FormEvent,
 	before: Goal[],
 	data: T,
 	deps: GoalDeps,
 	cause?: PriorityCause
 ): Promise<T & { replan: PriorityReplan }> {
 	const { db, now, replan: own } = deps;
-	const origin = {
-		requestId: locals.requestId,
-		method: request.method,
-		path: new URL(request.url).pathname
-	};
 	const replan = await replanForPriorities(
-		ownerId(locals),
+		ownerId(event.locals),
 		{ cause, before },
-		{ origin, ...own, db, now }
+		{ origin: originOf(event), ...own, db, now }
 	);
 	return { ...data, replan };
+}
+
+/**
+ * Profile → Goals' `replan` action: run the priority trigger again for the owner's goals, as the
+ * notice's Retry does after a failed re-plan. It answers with the trigger's state, as a goal
+ * action's `replan` does. A ranking the plan already follows proposes nothing.
+ */
+export async function replanAction(event: FormEvent, deps: GoalDeps = {}) {
+	const owner = ownerId(event.locals);
+	const { db, now, replan: own } = deps;
+	const replan = await replanForPriorities(owner, {}, { origin: originOf(event), ...own, db, now });
+	return { replan };
 }
 
 /**
