@@ -186,7 +186,7 @@ describe('the stage list', () => {
 
 	it('stores an id that carries M3’s GENERATOR_ID, so an M3 or M7 bump changes the fingerprint', () => {
 		expect(GENERATOR_ID).toBe(`next-block/2+${M3_GENERATOR_ID}`);
-		expect(GENERATOR_ID).toBe('next-block/2+perfo-programming/3');
+		expect(GENERATOR_ID).toBe('next-block/2+perfo-programming/4');
 	});
 });
 

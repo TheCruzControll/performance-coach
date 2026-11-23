@@ -799,6 +799,12 @@ hybrid, injured shoulder, dumbbells only, the journey, the minimal onboarding pr
   planned day falls in it; a stage that plans before a 'This week' start's first day or outside its
   week throws `GeneratedPlanError` with every dotted path. The public entry point exports exactly
   the generator, its input, the fingerprint and the checks.
+- **Phasing** (`src/lib/domain/programming/generate-phasing.test.ts`): the phasing stage and per-week
+  bands. meetPrep's main lifts take each phase's reps and top RPE (accumulation, intensification,
+  realization, taper), with measured, estimated and blank 1RMs loaded distinctly; realization and
+  taper weeks halve the accessories. runnerLifter's strength at maintenance in a marathon peak stays
+  within 4–10 on the maintenance split. Timefit still fits, plans are deterministic, and longSeason
+  stays within PLAN_BUDGET.
 - **Preview and build** (`tests/integration/training/programming.test.ts`): the brief chain through
   the M2 services (hybrid and minimal profiles), preview determinism, reproduction from the stored
   snapshot, dislikes and dumbbells-only equipment, the profile, library and start_date conflicts
