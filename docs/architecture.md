@@ -165,6 +165,11 @@ services, not CHECKed, so a new key needs no migration.
 - `weight_goals` and `weight_goal_milestones`, from `src/lib/server/db/schema/weight.ts`: the
   owner's weight goal (its unit, start and target weights and dates) and the milestones along its
   line. One goal is active per owner; a new goal ends the old one, which stays as history.
+- `backup_runs`, from `src/lib/server/db/schema/backups.ts`: the backups' own run log, one row
+  per run (`running`, then `succeeded`, `failed` or `skipped`), with codes and counts only. A
+  finished row never changes, and a row is deleted only once it is older than 400 days
+  (`drizzle/0038_backup_runs_guards.sql`). It is excluded from the backups it describes
+  (`src/lib/server/db/backup/tables.ts`).
 - `training_goals`: event or general goals with their disciplines. `priority` ranks the open
   (active or paused) goals, unique and contiguous from 1, and is null once a goal is achieved or
   dropped.

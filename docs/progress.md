@@ -74,6 +74,12 @@ runs the criteria and updates milestones.md.
 
 ## In flight
 
+- **Backup run log (m9/51).** The `backup_runs` table (`drizzle/0037_backup_runs.sql`, with its
+  guards in `drizzle/0038_backup_runs_guards.sql`) and its repository
+  (`src/lib/server/db/backup/runs.ts`) are built: a run opens, finishes once, is expired after 15
+  minutes, and is read newest first. Nothing writes to it yet; the cron, the CLI and the Profile
+  status do, in m9/52. The `e2e/text-columns.ts` entry and the BACKUP_CLASSIFICATION line wait on
+  xss-stored-text and backup-fidelity-all-tables, which have not merged.
 - **Abuse limits (m9/35).** Every public POST has a rate-limit bucket (`PUBLIC_POST_BUCKETS`), every declared request body is capped in the hook (`src/lib/server/body-limit.ts`), and every cookie write goes through `src/lib/server/auth/http.ts` or `guard.ts`, each proven by a unit guard; no e2e leg was added.
 - **Weight tracking, started.** The trend, weekly rate, stats and log book are in the domain
   (`src/lib/domain/analytics/weight.ts`), and the goal line, milestones, verdicts and phase
