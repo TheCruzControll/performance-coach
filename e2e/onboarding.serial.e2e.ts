@@ -343,9 +343,9 @@ test('stopped at schedule: a new browser context picks up there, from /onboardin
 			'exercises'
 		]);
 
-		// Profile's Training profile section links to the same step while setup is unfinished.
+		// Profile links to the same step, above its list, while setup is unfinished.
 		await gotoHydrated(again, '/profile');
-		const row = again.getByTestId('training-profile').getByTestId('continue-setup');
+		const row = again.getByTestId('continue-setup');
 		await expect(row).toContainText('Continue setting up');
 		await expect(row).toContainText('You stopped at Schedule');
 		await expect(row).toHaveAttribute('href', '/onboarding/schedule');

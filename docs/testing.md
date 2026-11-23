@@ -381,7 +381,7 @@ The desktop specs (most also run axe and take screenshots in both themes):
   sections and Sign out read and Tab in order; /design up to `--content-wide` with Color beside
   Type (one column at 1023 px); a 404 inside the shell, a 404 outside it and /offline centred.
 - `profile-desktop.serial.e2e.ts` (`resetTrainingProfile()` before each test): Profile in two
-  columns; each section's editor beside `SectionList` (the open section `aria-current`), Save as
+  columns; each section's editor beside `ProfileList` (the open section `aria-current`), Save as
   column chrome, the discard prompt from the list, the centred goal sheet, Tab list → editor →
   Save; the skeleton (`expectNoShift`), a chunk error with Retry, an offline save and the 404; on
   an iPhone, the 28rem skeleton and the fixed Save bar.

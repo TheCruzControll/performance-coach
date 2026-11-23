@@ -206,6 +206,47 @@ test.describe('app shell on an iPhone viewport', () => {
 		await expect(page).toHaveURL(/\/today$/);
 	});
 
+	test('Profile is one list, each row with its answer, then About this app with Backups first', async ({
+		page
+	}) => {
+		// Today makes the profile row, so the list's read-only load finds it.
+		await gotoHydrated(page, '/today');
+		await openProfile(page);
+		const list = page.getByTestId('profile-list');
+		await expect(list.getByRole('heading', { level: 2 })).toHaveText([
+			'You',
+			'Training',
+			'Security'
+		]);
+		const goals = page.getByTestId('section-goals');
+		await expect(goals).toHaveAccessibleName(/^Goals/);
+		await expect(goals).toHaveAttribute('href', '/profile/goals');
+
+		// A blank profile's units, at the row's end: 15 px, secondary, in a 60 px row.
+		const basics = page.getByTestId('section-basics');
+		await expect(basics).toContainText('kg, km');
+		const value = basics.locator('.value');
+		await expect(value).toHaveCSS('color', 'rgb(163, 163, 168)');
+		await expect(value).toHaveCSS('font-size', '15px');
+		const row = await basics.boundingBox();
+		expect(Math.abs(row!.height - 60), 'the row is 60 px tall').toBeLessThanOrEqual(1);
+
+		// Status rows under About this app, Backups first.
+		const about = page.getByTestId('system-card');
+		await expect(about.getByTestId('db-status')).toBeVisible();
+		await expect(about.getByTestId('backup-status')).toBeVisible();
+		const backupsFirst = await page.evaluate(() => {
+			const [backups, db] = ['backup-status', 'db-status'].map((id) =>
+				document.querySelector(`[data-testid="${id}"]`)!
+			);
+			return Boolean(backups!.compareDocumentPosition(db!) & Node.DOCUMENT_POSITION_FOLLOWING);
+		});
+		expect(backupsFirst, 'Backups comes before Database').toBe(true);
+
+		// No account card: only the legacy cards left (Preferences, Real-user performance) are boxed.
+		await expect(page.locator('main .surface')).toHaveCount(2);
+	});
+
 	test('bottom navigation moves between all tabs', async ({ page }, testInfo) => {
 		const errors = trackConsoleErrors(page);
 		await page.goto('/today');

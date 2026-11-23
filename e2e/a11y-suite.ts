@@ -170,7 +170,7 @@ export function a11ySuite(theme: 'dark' | 'light'): void {
 			await page.getByRole('radio', { name: 'Strength club' }).check();
 			// Leaving: Back on a phone; from 1024 px, where Back is hidden, another section.
 			const leave = isDesktopPage(page)
-				? page.getByRole('navigation', { name: 'Training profile' }).getByTestId('section-goals')
+				? page.getByRole('navigation', { name: 'Profile' }).getByTestId('section-goals')
 				: page.getByTestId('back-to-profile');
 			await leave.click();
 			await expect(page.getByTestId('discard-sheet')).toBeVisible();

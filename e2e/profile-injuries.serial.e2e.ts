@@ -28,9 +28,7 @@ test.beforeEach(async () => {
 test('with nothing saved, Injuries says there is nothing to work around', async ({ page }) => {
 	const errors = trackConsoleErrors(page);
 	await gotoHydrated(page, '/profile');
-	const row = page
-		.getByRole('region', { name: 'Training profile' })
-		.getByRole('link', { name: /Injuries/ });
+	const row = page.getByTestId('section-injuries');
 	await expect(row).toHaveAttribute('href', '/profile/injuries');
 	await row.click();
 	await expect(page).toHaveURL('/profile/injuries');

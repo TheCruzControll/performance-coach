@@ -106,10 +106,7 @@ test('event goals are added and edited from Profile, ranked, and still there aft
 }, testInfo) => {
 	const errors = trackConsoleErrors(page);
 	await gotoHydrated(page, '/profile');
-	await page
-		.getByRole('region', { name: 'Training profile' })
-		.getByRole('link', { name: /Goals/ })
-		.click();
+	await page.getByTestId('section-goals').click();
 	await expect(page).toHaveURL('/profile/goals');
 	await expect(page.getByRole('heading', { level: 1, name: 'Goals' })).toBeVisible();
 	await editorReady(page);

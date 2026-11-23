@@ -71,9 +71,7 @@ test('with nothing saved, Schedule suggests 4 days of 60 minutes and says so unt
 }) => {
 	const errors = trackConsoleErrors(page);
 	await gotoHydrated(page, '/profile');
-	const row = page
-		.getByRole('region', { name: 'Training profile' })
-		.getByRole('link', { name: /Schedule/ });
+	const row = page.getByTestId('section-schedule');
 	await expect(row).toHaveAttribute('href', '/profile/schedule');
 	await row.click();
 	await expect(page).toHaveURL('/profile/schedule');

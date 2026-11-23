@@ -63,12 +63,9 @@ test('today’s weight is recorded once a day from Profile, and re-saving replac
 }) => {
 	const errors = trackConsoleErrors(page);
 	await gotoHydrated(page, '/profile');
-	await page
-		.getByRole('region', { name: 'Training profile' })
-		.getByRole('link', { name: /Body & nutrition/ })
-		.click();
+	await page.getByTestId('section-body').click();
 	await expect(page).toHaveURL('/profile/body');
-	await expect(page.getByRole('heading', { level: 1, name: 'Body & nutrition' })).toBeVisible();
+	await expect(page.getByRole('heading', { level: 1, name: 'Body and nutrition' })).toBeVisible();
 	await editorReady(page);
 	// A blank profile: no weight yet, and no phase is "Not focusing on it".
 	await expect(weight(page)).toHaveValue('');

@@ -464,10 +464,7 @@ test.describe('platform: health, PWA, observability', () => {
 				}).observe(document, { childList: true, subtree: true });
 			});
 			await gotoHydrated(page, '/profile');
-			await page
-				.getByRole('region', { name: 'Training profile' })
-				.getByRole('link', { name: /Goals/ })
-				.click();
+			await page.getByTestId('section-goals').click();
 			await expect(page.getByRole('heading', { level: 1, name: 'Goals' })).toBeVisible();
 
 			let data: Route | undefined;
@@ -508,10 +505,7 @@ test.describe('platform: health, PWA, observability', () => {
 		}) => {
 			// Only a leave holds a failed navigation back (see the test above).
 			await gotoHydrated(page, '/profile');
-			await page
-				.getByRole('region', { name: 'Training profile' })
-				.getByRole('link', { name: /Goals/ })
-				.click();
+			await page.getByTestId('section-goals').click();
 			await expect(page.getByRole('heading', { level: 1, name: 'Goals' })).toBeVisible();
 			await page.route(
 				(url) => url.pathname === '/profile/__data.json',

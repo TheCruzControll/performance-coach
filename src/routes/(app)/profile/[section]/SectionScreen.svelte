@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { beforeNavigate, goto, type BeforeNavigate } from '$app/navigation';
+	import { beforeNavigate, goto, invalidate, type BeforeNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import type { SectionForm } from '#lib/client/section-form.svelte.ts';
 	import Button from '#lib/ui/components/Button.svelte';
@@ -80,6 +80,7 @@
 		// instead of adding it once more. Edits made while it saved stay, unsaved.
 		if (!form.dirty && formFor) form = formFor(outcome.data.section);
 		toast.show('Saved', { tone: 'positive' });
+		void invalidate('app:profile-answers');
 	}
 
 	// ---- leaving with unsaved changes ----------------------------------------------------------

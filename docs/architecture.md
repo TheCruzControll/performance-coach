@@ -230,6 +230,8 @@ section has no whole-section `save`.
   to its load and save, `src/lib/ui/profile/sections.ts` lists them for Profile, and
   `src/lib/ui/profile/editors.ts` is the lazy registry of editors;
   `tests/integration/profile/edit-route.test.ts` keeps the three in step.
+- `/(app)/profile/+layout.server.ts` streams each list row's answer (`findTrainingProfile`,
+  `listPasskeys`) once for the Profile screens; a save invalidates `app:profile-answers`.
 - `/onboarding/[[step]]` is one URL per step (`/onboarding` is the welcome). Each step edits
   the Profile section of the same name (the welcome edits name and units) through the same
   services, recorded as `onboarding` changes. Continue saves and marks the step done, Skip is
