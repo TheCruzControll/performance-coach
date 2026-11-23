@@ -18,14 +18,25 @@ import {
 	TAPER_LEAD_DAYS,
 	weekTargets
 } from '../blocks.ts';
-import { COMMITMENT_QUOTA, DOUBLES, SESSIONS_WANTED } from '../days.ts';
+import * as added from '../added.ts';
+import { COMMITMENT_QUOTA, DOUBLES, OTHER_END_OF_DAY, SESSIONS_WANTED } from '../days.ts';
 import { DEFAULTS, GYM_PRESETS } from '../defaults.ts';
 import type { DefaultKey } from '../defaults.ts';
 import { LOAD_RULES } from '../loads.ts';
 import * as running from '../running.ts';
 import * as strength from '../strength.ts';
 import type { LayoutKey } from '../strength.ts';
-import { HARD_SET_RANGES, MAJOR_GROUPS, PHASES, PULL_PER_PUSH } from '../volume.ts';
+import {
+	HARD_SET_RANGES,
+	MAJOR_GROUPS,
+	MAX_ADDED_EXERCISES,
+	MAX_LINE_SETS,
+	PHASES,
+	PULL_PATTERNS,
+	PULL_PER_PUSH,
+	PUSH_PATTERNS,
+	VOLUME_WEEK_MIN
+} from '../volume.ts';
 import type { RuleDefinition } from './types.ts';
 
 const AT = 'src/lib/domain/programming';
@@ -61,6 +72,21 @@ const behaviour = (
 });
 
 const pct = (share: number) => `${Math.round(share * 1000) / 10} %`;
+
+/** 'a, b and c', or with `or`; 'a, b and c, and d' when an item holds the conjunction itself. */
+const list = (items: readonly string[], conjunction = 'and') => {
+	if (items.length < 2) return items.join('');
+	const serial = items.some((item) => item.includes(` ${conjunction} `)) ? ',' : '';
+	return `${items.slice(0, -1).join(', ')}${serial} ${conjunction} ${items[items.length - 1]}`;
+};
+
+/** An RPE per intent or intensity, as '6 when easy, 7 when moderate and 8 when hard'. */
+const rpeWhen = (byIntent: Readonly<Record<string, number>>) =>
+	list(Object.entries(byIntent).map(([intent, rpe]) => `${rpe} when ${intent}`));
+
+/** Seconds per km as m:ss. */
+const paceOf = (seconds: number) =>
+	`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
 // ---- Days -----------------------------------------------------------------------------------
 
@@ -616,14 +642,295 @@ const exercises: RuleDefinition[] = [
 	)
 ];
 
+// ---- Numbers no decision cites (m7/58 rules-reference) ---------------------------------------
+// Every export of rules/ is a registered rule or a listed non-rule
+// (scripts/programming-rules-doc.test.ts), so these coaching numbers are registered here too.
+
+const dayNumbers: RuleDefinition[] = [
+	constant(
+		'days.other_end_of_day',
+		'rules/days.ts#OTHER_END_OF_DAY',
+		OTHER_END_OF_DAY,
+		'Beside a commitment at a set time, with no preferred time (‘it varies’), a second session goes at the other end of the day: after an early-morning, morning or midday commitment in the evening, after an afternoon or evening one in the morning. With one preferred time, it goes at that time only if it is at the other end of the day from the commitment; otherwise there is no second session.',
+		'Two sessions in one day recover best far apart, so the second goes as far from the first as the day allows.'
+	)
+];
+
+/** LAYOUT_BY_DAYS as 'full-body up to 3, upper/lower at 4 … and push/pull/legs from 6'. */
+const layoutByDays = list(
+	strength.LAYOUT_BY_DAYS.map(([most, key], i) => {
+		const fewest = i === 0 ? null : strength.LAYOUT_BY_DAYS[i - 1]![0] + 1;
+		const days =
+			fewest === null
+				? `up to ${most}`
+				: most === Infinity
+					? `from ${fewest}`
+					: most === fewest
+						? `at ${most}`
+						: `from ${fewest} to ${most}`;
+		return `${strength.LAYOUTS[key].name} ${days}`;
+	})
+);
+
+/** INTENSITY_BY_RPE as 'under 6.5 easy … and very hard from 9': a row matches a cap under its bound. */
+const intensityByRpe = list(
+	strength.INTENSITY_BY_RPE.map(([under, intensity], i) => {
+		const name = intensity.replace('_', ' ');
+		return under === Infinity
+			? `${name} from ${strength.INTENSITY_BY_RPE[i - 1]![0]}`
+			: `under ${under} ${name}`;
+	})
+);
+
+const strengthNumbers: RuleDefinition[] = [
+	constant(
+		'strength.slot_kinds',
+		`${S}#SLOT_KINDS`,
+		strength.SLOT_KINDS,
+		'Each slot is filled by the movement patterns it names: squat, hinge, single-leg, horizontal and vertical push and pull, core, and each isolation slot by its muscles.',
+		'Filling slots by pattern keeps a session balanced whichever exercise fills each one.'
+	),
+	constant(
+		'strength.days',
+		`${S}#DAYS`,
+		strength.DAYS,
+		'Each strength day holds its slots in order, main lifts first, then secondary work and accessories; the splits pick their days from these.',
+		'Main lifts go first, while you are fresh, and each day trains a balanced set of patterns.'
+	),
+	constant(
+		'strength.layout_by_days',
+		`${S}#LAYOUT_BY_DAYS`,
+		strength.LAYOUT_BY_DAYS,
+		`Without a split of its own, strength goes by its number of days: ${layoutByDays}.`,
+		'Each layout trains every muscle about twice a week at that many days, the frequency strength and size respond to best.'
+	),
+	constant(
+		'strength.general_style',
+		`${S}#GENERAL_STYLE`,
+		strength.GENERAL_STYLE,
+		'Every strength discipline trains in the strength style, with your baseline lifts in its main slots, unless it has a style of its own.',
+		'Most strength goals are judged by the main lifts, so those lifts lead the sessions.'
+	),
+	constant(
+		'strength.working_rpe',
+		`${S}#WORKING_RPE`,
+		strength.WORKING_RPE,
+		`Work other than the top and back-off sets is held to RPE ${strength.WORKING_RPE}, or the week’s cap if that is lower.`,
+		'Secondary and accessory work supports the main lifts, so it stops a few reps short of failure and leaves recovery for them.'
+	),
+	constant(
+		'strength.intensity_by_rpe',
+		`${S}#INTENSITY_BY_RPE`,
+		strength.INTENSITY_BY_RPE,
+		`A strength session’s intensity comes from its week’s RPE cap: ${intensityByRpe}.`,
+		'How hard a week may go sets how hard its sessions are, so the interference rules and the load model read each session by it.'
+	),
+	constant(
+		'strength.default_metres',
+		`${S}#DEFAULT_METRES`,
+		strength.DEFAULT_METRES,
+		`A carry or sled set is ${strength.DEFAULT_METRES} metres.`,
+		'The library gives carries and sleds no distance, and that is a common working distance that fits in a gym.'
+	)
+];
+
+const volumeNumbers: RuleDefinition[] = [
+	constant(
+		'volume.week_min',
+		'rules/volume.ts#VOLUME_WEEK_MIN',
+		VOLUME_WEEK_MIN,
+		'A group’s hard-set range holds only in full-volume weeks, whose volume factor is at least 1.',
+		'A deload or taper week is meant to fall below the range, so it is not held to it.'
+	),
+	constant(
+		'volume.push_patterns',
+		'rules/volume.ts#PUSH_PATTERNS',
+		PUSH_PATTERNS,
+		'Pushing is counted from the horizontal and vertical push patterns.',
+		'Pulling is balanced against pushing set for set, so both must be counted the same way.'
+	),
+	constant(
+		'volume.pull_patterns',
+		'rules/volume.ts#PULL_PATTERNS',
+		PULL_PATTERNS,
+		'Pulling is counted from the horizontal and vertical pull patterns.',
+		'Pulling is balanced against pushing set for set, so both must be counted the same way.'
+	),
+	constant(
+		'volume.max_line_sets',
+		'rules/volume.ts#MAX_LINE_SETS',
+		MAX_LINE_SETS,
+		`No exercise grows past ${MAX_LINE_SETS} sets in a session: more work for a group comes as another exercise.`,
+		'Past about five hard sets an exercise’s later sets add little, so another exercise spreads the work.'
+	),
+	constant(
+		'volume.max_added_exercises',
+		'rules/volume.ts#MAX_ADDED_EXERCISES',
+		MAX_ADDED_EXERCISES,
+		`At most ${MAX_ADDED_EXERCISES} exercises are added to one session to reach a group’s range.`,
+		'A session keeps its length and its focus, so a group still short goes to another day.'
+	)
+];
+
+const runningNumbers: RuleDefinition[] = [
+	constant(
+		'running.commitment_rpe',
+		`${R}#COMMITMENT_RPE`,
+		running.COMMITMENT_RPE,
+		`A commitment is planned at RPE ${rpeWhen(running.COMMITMENT_RPE)}, and moderate when you gave no intensity.`,
+		'A class or club run has its own effort, so the week counts it at the effort you told.'
+	),
+	constant(
+		'running.commitment_run',
+		`${R}#COMMITMENT_RUN`,
+		running.COMMITMENT_RUN,
+		'A running commitment is one timed segment: an easy run in zone 2 when light, a steady run in zone 3 when moderate, a tempo run in zone 4 when hard.',
+		'The club sets the pace, so the plan records only the effort, and a hard club run counts as a hard session.'
+	),
+	constant(
+		'running.commitment_type',
+		`${R}#COMMITMENT_TYPE`,
+		running.COMMITMENT_TYPE,
+		'Any other commitment is planned as its own class: a strength, powerlifting, weightlifting or hypertrophy class as a strength class, an athletic one as S&C, Muay Thai as Muay Thai, anything else as custom.',
+		'A class’s content is its own, so the plan names it by what it trains and counts its load without writing its exercises.'
+	),
+	constant(
+		'running.under_volume',
+		`${R}#UNDER_VOLUME`,
+		running.UNDER_VOLUME,
+		`A week planned under ${pct(running.UNDER_VOLUME)} of its running volume says why in its run_volume decision.`,
+		'A week well short of the volume you told should explain itself rather than look like a mistake.'
+	),
+	constant(
+		'running.min_run',
+		`${R}#MIN_RUN`,
+		running.MIN_RUN,
+		`No run is planned under ${running.MIN_RUN.metres / 1000} km, or ${running.MIN_RUN.minutes} minutes in a week by time: a week too small for its runs has fewer, all easy.`,
+		'A shorter run costs a session for little training, so fewer, longer runs hold the week’s volume better.'
+	),
+	constant(
+		'running.distance_step',
+		`${R}#RUN_DISTANCE_STEP`,
+		running.RUN_DISTANCE_STEP,
+		`Distances are planned in whole steps of ${running.RUN_DISTANCE_STEP} metres, rounded down.`,
+		'A round distance is easy to follow and to log, and rounding down never takes a week over its volume.'
+	),
+	constant(
+		'running.time_based_week',
+		`${R}#TIME_BASED_WEEK`,
+		running.TIME_BASED_WEEK,
+		`With no weekly running told, easy runs are ${running.TIME_BASED_WEEK.easyMinutes} minutes and the long run, for a runner who is not new, ${running.TIME_BASED_WEEK.longMinutes} minutes; later weeks scale both.`,
+		'With no mileage to build from, short timed runs are a safe start at any fitness.'
+	),
+	constant(
+		'running.assumed_easy_pace',
+		`${R}#ASSUMED_EASY_PACE`,
+		running.ASSUMED_EASY_PACE,
+		`With no pace or race known, an easy pace of ${paceOf(running.ASSUMED_EASY_PACE)} per km estimates a distance run’s minutes. It is never a target.`,
+		'A week still has to fit your session length, and a conservative easy pace keeps the estimate from running short.'
+	),
+	constant(
+		'running.riegel_exponent',
+		`${R}#RIEGEL_EXPONENT`,
+		running.RIEGEL_EXPONENT,
+		`A race at a distance VDOT does not read is carried to one it does by Riegel’s formula, with the exponent ${running.RIEGEL_EXPONENT}.`,
+		'Riegel’s formula is the standard model of how pace slows with distance, so any race you told can set your paces.'
+	),
+	constant(
+		'running.runs',
+		`${R}#RUNS`,
+		running.RUNS,
+		`An easy run is planned at session RPE ${running.RUNS.easy_run.sessionRpe} and the long run at ${running.RUNS.long_run.sessionRpe}; tempo and interval runs take their quality session’s.`,
+		'Most running should be easy, so it adds aerobic volume without taking recovery from the hard sessions.'
+	),
+	constant(
+		'running.custom_session_rpe',
+		`${R}#CUSTOM_SESSION_RPE`,
+		running.CUSTOM_SESSION_RPE,
+		`A custom-discipline goal with no commitment gets sessions of your session length at RPE ${running.CUSTOM_SESSION_RPE}.`,
+		'Without knowing what the discipline trains, a moderate effort keeps the session useful without costing the rest of the week.'
+	)
+];
+
+// ---- Added sessions -------------------------------------------------------------------------
+
+const A = 'rules/added.ts';
+/** The weeks a sparring session is planned in, as 'accumulation, … or peak'. */
+const sparringWeeks = list(
+	running.MUAY_THAI.sparringWeeks.map((kind) =>
+		WEEK_KIND_LABEL[kind].replace(/ week$/, '').toLowerCase()
+	),
+	'or'
+);
+const addedRules: RuleDefinition[] = [
+	constant(
+		'added.strength_rpe',
+		`${A}#STRENGTH_RPE`,
+		added.STRENGTH_RPE,
+		`A strength or hypertrophy session you add is planned at RPE ${rpeWhen(added.STRENGTH_RPE)}, before the week’s cap.`,
+		'The intent you pick sets the effort, and the week’s cap still keeps a deload light.'
+	),
+	constant(
+		'added.conditioning',
+		`${A}#CONDITIONING`,
+		added.CONDITIONING,
+		`A conditioning session you add is ${added.CONDITIONING.minutes} minutes, or your session length if shorter, unless you give a length, at RPE ${rpeWhen(added.CONDITIONING.rpe)}.`,
+		'A short session at the effort you pick adds conditioning without crowding the week.'
+	),
+	constant(
+		'added.run_type',
+		`${A}#RUN_TYPE`,
+		added.RUN_TYPE,
+		'A run you add is an easy run when easy, a tempo run when moderate and intervals when hard.',
+		'Each intent maps to the run that trains at that effort, so an added run is a real session, not a guess.'
+	),
+	constant(
+		'added.muay_thai_kind',
+		`${A}#MUAY_THAI_KIND`,
+		added.MUAY_THAI_KIND,
+		`A Muay Thai session you add is technical when easy, pad work when moderate and sparring when hard, or pad work if you do no sparring or the week is not a sparring week (${sparringWeeks}).`,
+		'The intent sets the format, and sparring is never planned for someone who does not spar.'
+	)
+];
+
+// ---- Provenance the services record ----------------------------------------------------------
+
+/** The decisions the program services add to a plan they store, by the function that adds them. */
+const serviceRules: RuleDefinition[] = [
+	{
+		id: 'program.confirmed',
+		kind: 'behaviour',
+		statement:
+			'A program is saved only when you or the coach confirm the plan shown, unchanged: the same profile, exercise library and start dates, recorded as the confirmation.',
+		rationale:
+			'Nothing changes your training without your say, and a plan that changed after you saw it is shown again rather than saved.',
+		source: 'src/lib/server/services/programming/build.ts#buildProgram'
+	},
+	{
+		id: 'program.start_moved',
+		kind: 'behaviour',
+		statement:
+			'Moving a program’s start plans it again from the new date as a new version, recording who moved it, from when and to when.',
+		rationale:
+			'Every week is planned from its start date, so a moved start is planned again rather than shifted, and the history says why.',
+		source: 'src/lib/server/services/programming/move.ts#moveProgramStart'
+	}
+];
+
 export const rules: readonly RuleDefinition[] = [
 	...days,
+	...dayNumbers,
 	...blocks,
 	...strengthRules,
+	...strengthNumbers,
 	...selected,
 	...volume,
+	...volumeNumbers,
 	...runningRules,
+	...runningNumbers,
 	...placement,
 	...defaults,
-	...exercises
+	...exercises,
+	...addedRules,
+	...serviceRules
 ];

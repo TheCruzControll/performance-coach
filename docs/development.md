@@ -69,6 +69,7 @@ one setup).
 | `pnpm db:explain`       | query plans on a two-year dataset in `coach_explain`, gated (see below)          |
 | `pnpm icons`            | re-render PNG icons from `static/icons/*.svg`                                    |
 | `pnpm icons:sprite`     | regenerate the icon sprite and names from `src/lib/ui/icons/icons.ts`            |
+| `pnpm docs:rules`       | regenerate `docs/programming-rules.md` from the rules registry                   |
 
 ### The live coach suite (`pnpm test:live`)
 

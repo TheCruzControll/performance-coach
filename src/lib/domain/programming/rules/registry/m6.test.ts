@@ -31,14 +31,18 @@ import { FATIGUE_RULES, RESULT_RULES, RUN_RESULT_RULES } from '../results';
 import { RULE_BY_ID } from './index';
 import { rules } from './m6';
 
-/** M6's code: results, the reviews, the next block and its stages, and the reviews service. */
+/**
+ * M6's code: results, the reviews, the next block and its stages, the reviews service, and the
+ * applier that records a review's changes (review_applied).
+ */
 const M6_SOURCES = [
 	'src/lib/domain/programming/results.ts',
 	'src/lib/domain/programming/rules/results.ts',
 	'src/lib/domain/programming/review/**/*.ts',
 	'src/lib/domain/programming/next-block/**/*.ts',
 	'src/lib/domain/programming/stages/{carryover,next-shape,results}.ts',
-	'src/lib/server/services/reviews/**/*.ts'
+	'src/lib/server/services/reviews/**/*.ts',
+	'src/lib/server/services/coach/apply/program.ts'
 ];
 
 /** Three sessions a full RPE easier than prescribed: each lift goes up by its results. */

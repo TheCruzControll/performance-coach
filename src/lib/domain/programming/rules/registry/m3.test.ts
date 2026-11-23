@@ -20,7 +20,7 @@ import { rules } from './m3';
 
 /**
  * M3's code: the programming domain but M6's review, next block, results and next-block stages,
- * and the edits.
+ * and the edits, and the services that build a program and move its start.
  */
 const M3_SOURCES = [
 	'src/lib/domain/programming/**/*.ts',
@@ -28,7 +28,8 @@ const M3_SOURCES = [
 	'!src/lib/domain/programming/next-block/**',
 	'!src/lib/domain/programming/results.ts',
 	'!src/lib/domain/programming/stages/{carryover,next-shape,results}.ts',
-	'src/lib/server/services/programs/**/*.ts'
+	'src/lib/server/services/programs/**/*.ts',
+	'src/lib/server/services/programming/**/*.ts'
 ];
 
 let cited: Set<string>;

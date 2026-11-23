@@ -3,7 +3,7 @@
 What is built, what is in flight, and what is next. Acceptance criteria and evidence stay in
 [milestones.md](milestones.md). Update this file in the change that moves a line.
 
-Last updated: 2026-11-23, from `main` at the merge of #628.
+Last updated: 2026-11-23, from `main` at the merge of #633.
 
 ## Milestones
 
@@ -37,6 +37,14 @@ updates milestones.md.
 - Running the schedule stage on its own plan changes nothing, for every scenario: a deload, taper or
   other week that keeps its own days is repaired against the week before it as planned, not against
   the week whose days the block shares. journeyHybrid is back in the run-twice check.
+- `docs/programming-rules.md` lists every programming rule the registry holds, 401 of them, by the
+  key decisions cite: what it does, why, its severity and source, and a constant's live values.
+  `pnpm docs:rules` writes it, and a unit test fails when it is stale, when a module under
+  `src/lib/domain/programming/rules/` exports a number no rule names, or when code cites a key no
+  active rule has. 28 coaching numbers that no decision cited are registered with it (commitment
+  efforts, the shortest run and the time-based week, strength's days and working RPE, the volume
+  caps, added sessions), and so are the three keys the services cite (`program.confirmed`,
+  `program.start_moved`, `review.weekly`).
 - The owner can enter max, resting and threshold heart rate in Profile → Running & Muay Thai and in
   onboarding, and a run session shows each segment's zone in beats per minute ('Zone 2 · 134–148 bpm',
   or 'Zone 2' with none told). A plan built with a heart rate records the zones and the method
@@ -146,7 +154,8 @@ updates milestones.md.
   and race work, and a running goal that does not lead holds its dose. m7r/10 and m7r/09 too: heart
   rate on Profile and run sessions in bpm, and Muay Thai that follows the fight camp's sessions,
   sparring cap, conditioning rounds and fight week. m7r/03b too: the schedule stage is a fixed point,
-  so a second run changes no session. m7/58 and m7/59 build on them. The old M7 pull
+  so a second run changes no session. m7/58 too: every programming rule, its values and its why, in
+  `docs/programming-rules.md`, generated from the registry. m7/59 builds on them. The old M7 pull
   requests stay open until their rows merge.
 - **Instrument v2 tokens (`v2/01a`).** The colours, surfaces, borders, spacing, radii and the theme
   colour follow Instrument v2 in `src/lib/ui/styles/tokens.css`, in dark and
