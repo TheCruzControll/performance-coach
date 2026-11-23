@@ -3,7 +3,7 @@
 What is built, what is in flight, and what is next. Acceptance criteria and evidence stay in
 [milestones.md](milestones.md). Update this file in the change that moves a line.
 
-Last updated: 2026-11-23, from `main` at the merge of #619.
+Last updated: 2026-11-23, from `main` at the merge of #622.
 
 ## Milestones
 
@@ -11,23 +11,26 @@ Last updated: 2026-11-23, from `main` at the merge of #619.
 distinct slice branches (`m4/57`, `m5/46`, and so on) named in the git history, so it shows where
 work has landed even though the milestone has not been signed off.
 
-| #   | Milestone                       | Recorded status                                                        | Merged slices       |
-| --- | ------------------------------- | ---------------------------------------------------------------------- | ------------------- |
-| M1  | Foundation & infrastructure     | Done                                                                   | one PR              |
-| M2  | Auth & profile                  | Done                                                                   | 34, plus 17 desktop |
-| M3  | Training data model & programs  | Done                                                                   | 42 named in history |
-| M4  | Workout application             | In progress: owner screenshot review pending                           | 55                  |
-| M5  | AI performance coach            | In progress: launched; screenshot review and first live-suite run open | 55                  |
-| M6  | Analytics & reviews             | Planned                                                                | 59                  |
-| M7  | Advanced coaching               | Planned                                                                | 17                  |
-| M8  | Performance & design refinement | Planned                                                                | none                |
-| M9  | Final QA & production release   | Planned                                                                | 19                  |
+| #   | Milestone                       | Recorded status                                                         | Merged slices       |
+| --- | ------------------------------- | ----------------------------------------------------------------------- | ------------------- |
+| M1  | Foundation & infrastructure     | Done                                                                    | one PR              |
+| M2  | Auth & profile                  | Done                                                                    | 34, plus 17 desktop |
+| M3  | Training data model & programs  | Done                                                                    | 42 named in history |
+| M4  | Workout application             | In progress: owner screenshot review pending                            | 55                  |
+| M5  | AI performance coach            | In progress: launched; screenshot review and first live-suite run open  | 55                  |
+| M6  | Analytics & reviews             | In progress: 61 slice PRs merged; the performance slice closed unmerged | 61                  |
+| M7  | Advanced coaching               | Planned                                                                 | 17                  |
+| M8  | Performance & design refinement | Planned                                                                 | none                |
+| M9  | Final QA & production release   | Planned                                                                 | 19                  |
 
 M4 has evidence recorded per criterion and waits only on the owner's screenshot review and the
 real-device checklist's workout item. M5 has evidence recorded per criterion; its screenshot review
-and first live-suite run are open. M6, M7 and M9 have substantial merged work but no recorded
-verification against their acceptance criteria. Treat them as built and unverified until someone
-runs the criteria and updates milestones.md.
+and first live-suite run are open. M6 has evidence recorded per criterion, with its numbers in
+docs/performance.md; it is in progress because its performance slice was closed unmerged and one
+page load misses its target. Its merged-slice count is its 61 merged PRs, which the branch names in
+the history undercount. M7 and M9 have substantial merged work but no recorded verification against
+their acceptance criteria. Treat them as built and unverified until someone runs the criteria and
+updates milestones.md.
 
 ## Recently merged
 
@@ -81,6 +84,14 @@ runs the criteria and updates milestones.md.
 
 ## In flight
 
+- **Backup run log (m9/51).** The `backup_runs` table (`drizzle/0037_backup_runs.sql`, with its
+  guards in `drizzle/0038_backup_runs_guards.sql`) and its repository
+  (`src/lib/server/db/backup/runs.ts`) are built: a run opens, finishes once, is expired after 15
+  minutes, and is read newest first. Nothing writes to it yet; the cron, the CLI and the Profile
+  status do, in m9/52. Neither `BACKUP_CLASSIFICATION` nor `e2e/text-columns.ts` exists yet:
+  `BACKUP_CLASSIFICATION` is not on main, though m9/26's queue row says merged, and the
+  `e2e/text-columns.ts` entry (m9/36) is not queued. Each must classify `backup_runs` as
+  exclude/operational and not owner-writable when it lands.
 - **Abuse limits (m9/35).** Every public POST has a rate-limit bucket (`PUBLIC_POST_BUCKETS`), every declared request body is capped in the hook (`src/lib/server/body-limit.ts`), and every cookie write goes through `src/lib/server/auth/http.ts` or `guard.ts`, each proven by a unit guard; no e2e leg was added.
 - **Weight tracking, started.** The trend, weekly rate, stats and log book are in the domain
   (`src/lib/domain/analytics/weight.ts`), and the goal line, milestones, verdicts and phase

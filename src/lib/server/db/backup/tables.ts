@@ -28,7 +28,8 @@ export const EXCLUDED_TABLES: Readonly<Record<string, string>> = {
 	webauthn_challenges: 'Single-use passkey challenges that expire within minutes',
 	auth_rate_limits: 'Rate-limit counters that reset on their own',
 	email_sign_in_links: 'Single-use email sign-in links that expire within minutes',
-	backup_runs: "The backups' own run log, which describes the database rather than being in it"
+	backup_runs:
+		"Operational: the backups' own run log, which describes the database rather than being in it"
 };
 
 /**

@@ -87,9 +87,10 @@ describe('src/lib/server/backup under plain Node', () => {
 			const { backupClient } = await import(${db('connect.ts')});
 			const { tableDigests } = await import(${db('digest.ts')});
 			const { exportPlan, EXCLUDED_TABLES } = await import(${db('tables.ts')});
+			const { startRun } = await import(${db('runs.ts')});
 			const plan = exportPlan({ tables: [{ name: 'owners', columns: [], primaryKey: ['id'], foreignKeys: [] }], sequences: [] });
 			console.log(JSON.stringify({
-				functions: [exportDatabase, backupClient, tableDigests].map((f) => typeof f),
+				functions: [exportDatabase, backupClient, tableDigests, startRun].map((f) => typeof f),
 				order: plan.tables.map((t) => t.name),
 				absent: plan.absentExcluded.length === Object.keys(EXCLUDED_TABLES).length,
 				loaded: loadedFiles()
@@ -99,7 +100,7 @@ describe('src/lib/server/backup under plain Node', () => {
 		expect(result.status).toBe(0);
 		const output = JSON.parse(result.stdout) as Record<string, unknown>;
 		expect(output).toMatchObject({
-			functions: ['function', 'function', 'function'],
+			functions: ['function', 'function', 'function', 'function'],
 			order: ['owners'],
 			absent: true
 		});
@@ -108,9 +109,11 @@ describe('src/lib/server/backup under plain Node', () => {
 				'src/lib/server/db/backup/export.ts',
 				'src/lib/server/db/backup/catalog.ts',
 				'src/lib/server/db/backup/sql.ts',
+				'src/lib/server/db/backup/runs.ts',
 				'src/lib/server/db/connection.ts',
 				'src/lib/domain/backup/plan.ts',
-				'src/lib/domain/backup/format.ts'
+				'src/lib/domain/backup/format.ts',
+				'src/lib/domain/backup/run-log.ts'
 			])
 		);
 	});

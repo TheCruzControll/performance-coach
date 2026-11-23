@@ -4,17 +4,17 @@ Source of scope: [`product-requirements.md`](product-requirements.md) (section n
 brackets). Each milestone ships as its own PR to `main` with evidence (PRD §20). "Done" means the
 acceptance criteria were verified by running them — compiling is not done.
 
-| #   | Milestone                       | Status                                                                                                                                                       |
-| --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| M1  | Foundation & infrastructure     | **Done** (PR #1, merged 2026-11-05); deferred items carried below                                                                                            |
-| M2  | Auth & profile                  | **Done**: auth, production (#50), onboarding, Profile, Today (#60–#181), desktop (#85–#265); email link dropped by the owner on 2026-11-07                   |
-| M3  | Training data model & programs  | **Done**: 49 slice PRs, #41 to #233; evidence per criterion below                                                                                            |
-| M4  | Workout application             | **In progress**: the workout app merged, #87 to #410; the owner's screenshot review pending                                                                  |
-| M5  | AI performance coach            | **In progress**: every slice built, #101 to #463; launched (#449) and live in production; the screenshot review (#405) and the first live-suite run are open |
-| M6  | Analytics & reviews             | Planned                                                                                                                                                      |
-| M7  | Advanced coaching               | Planned                                                                                                                                                      |
-| M8  | Performance & design refinement | Planned                                                                                                                                                      |
-| M9  | Final QA & production release   | Planned                                                                                                                                                      |
+| #   | Milestone                       | Status                                                                                                                                                              |
+| --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M1  | Foundation & infrastructure     | **Done** (PR #1, merged 2026-11-05); deferred items carried below                                                                                                   |
+| M2  | Auth & profile                  | **Done**: auth, production (#50), onboarding, Profile, Today (#60–#181), desktop (#85–#265); email link dropped by the owner on 2026-11-07                          |
+| M3  | Training data model & programs  | **Done**: 49 slice PRs, #41 to #233; evidence per criterion below                                                                                                   |
+| M4  | Workout application             | **In progress**: the workout app merged, #87 to #410; the owner's screenshot review pending                                                                         |
+| M5  | AI performance coach            | **In progress**: every slice built, #101 to #463; launched (#449) and live in production; the screenshot review (#405) and the first live-suite run are open        |
+| M6  | Analytics & reviews             | **In progress**: 61 slice PRs merged, #119 to #482; the performance slice was closed unmerged, and the criteria are verified only at merge, not on the current head |
+| M7  | Advanced coaching               | Planned                                                                                                                                                             |
+| M8  | Performance & design refinement | Planned                                                                                                                                                             |
+| M9  | Final QA & production release   | Planned                                                                                                                                                             |
 
 ---
 
@@ -349,6 +349,44 @@ Acceptance criteria:
 1. Analytics computed by tested domain functions (e1RM trends, volume per muscle, mileage, load).
 2. Playwright: weekly review and "generate next week" journeys (iPhone and desktop viewports).
 3. Charts accessible (text alternatives) and within budgets.
+
+Status: **in progress**. 61 slice PRs are merged to `main`, #119 (m6/01) to #482 (m6/62, the
+architecture docs). The M6 plan has 63 slices. m6/59, the performance slice, was closed unmerged on
+2026-11-22, after the owner decided not to test performance in CI; this docs slice is m6/63. The
+engine is in docs/architecture.md ("Analytics (M6)", "Reviews and replanning (M6)") and ADRs 0015
+to 0017. The security review is in docs/security.md ("Analytics and reviews (M6) review"), the
+tests in docs/testing.md ("Analytics and reviews (M6)") and the numbers in docs/performance.md
+("M6 (analytics and reviews)"). Evidence per criterion:
+
+- Criterion 1: 13 domain test files in `src/lib/domain/analytics/`. Strength and volume are in
+  `strength.test.ts`, mileage in `running.test.ts`, load in `workload.test.ts`, and noise against
+  trend on synthetic series in `trend.test.ts`. 11 integration files in `tests/integration/analytics/`
+  run on real Postgres. The Unit tests job passed on `main` at `33daa812` (CI run 45222564000).
+  The integration job is skipped on main pushes, so it ran on each pull request.
+- Criterion 2: `e2e/journey-weekly-review.serial.e2e.ts` (#412) and
+  `e2e/journey-cycle-review.serial.e2e.ts` (#414) each have an iPhone block and a desktop block
+  (`DESKTOP`), and both PRs merged with all 30 checks green. "Generate next week" is
+  `e2e/review-next-week.serial.e2e.ts`, and the next block of a cycle is
+  `e2e/next-cycle.serial.e2e.ts`. This docs slice did not re-run them.
+- Criterion 3: the charts are hand-built (ADR 0016). Each chart has a table twin (`ChartTable`), and
+  6 unit test files sit in `src/lib/ui/charts/`. axe is clean in both themes on the four Progress
+  views, exercise detail and the review screens (`progress*.serial.e2e.ts`, `progress-exercise`,
+  `review-narrative`, `review-next-week`, `next-cycle`). On `33daa812`, `pnpm budgets` passes:
+  every route's initial JS is within 62 KB, and the heaviest, `/(app)/progress/reviews/[[key]]`,
+  is 60.8 KB. Its route CSS is within 14.5 KB, and the heaviest, `/(app)/today`, is 14.2 KB. The
+  plan set 60 KB for initial JS until the owner raised the limit to 62 KB on 2026-11-22.
+
+Still open:
+
+- Two-year server time: the `/progress` overview at 'all' has a median of 192.0 ms (p95 204.9 ms)
+  against the 150 ms target. It passes the 300 ms bar, and the other ten gated page loads are
+  within 150 ms (docs/performance.md, "M6 (analytics and reviews)", explain run 45220282661).
+- Main-thread blocking and Lighthouse for Progress, exercise detail and the reviews are not
+  measured on `main`. The perf project and Lighthouse run locally only, and the slice that would
+  have guarded these screens was closed unmerged.
+- Chart chunk sizes are not recorded, because the budget script reports per route.
+- The docs' quoted commands (`pnpm budgets`, `pnpm db:explain`) were not re-run on this docs
+  slice's merged head. Both are heavy, and this slice is not merged.
 
 ## M7 — Advanced coaching [§2, §5]
 
