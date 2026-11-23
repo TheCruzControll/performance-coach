@@ -26,6 +26,7 @@ const EXPECTED: Record<SourceType, SourceAction | null> = {
 	note: null,
 	exercise: { kind: 'exercise_history', exerciseId: 'w1' },
 	pain_report: { kind: 'link', href: '/progress/workouts/wk9' },
+	weight: { kind: 'link', href: '/progress' },
 	date: null
 };
 

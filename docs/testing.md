@@ -1324,7 +1324,7 @@ tool group, plus `general.ts`, `reviews.ts`, `summaries.ts`, the pain and ground
   owner-named properties refused; canonical outputs capped at 8 KB; every call answered in order
   in one message; three tools at a time on the pool, one on a transaction; reading tools stop at
   10 s, drafting tools at 85 s (25 s at 60 s), never past the turn. `registry-complete.test.ts`:
-  all 29 tools registered once, in their group's file, with an output schema.
+  all 30 tools registered once, in their group's file, with an output schema.
 - **Prompt** (`src/lib/server/agent/prompt/*.test.ts`): a pinned prompt hash; the prefix is
   append-only across turns, tool steps and a version bump (a mock cache read on turn 2); planted
   instructions reach the model only as `untrusted_text`.

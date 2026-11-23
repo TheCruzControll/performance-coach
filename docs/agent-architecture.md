@@ -249,8 +249,8 @@ blocks however it was chunked, and parses a small markdown subset into a rich-te
 
 ## Tools
 
-29 tools in five groups, named once in `src/lib/domain/coach/tools.ts` (`TOOL_CATALOGUE`): the
-brief's 21 plus `get_program_history`, `get_exercise_alternatives`, `get_coach_proposals`, and the two M7 engine reads, `evaluate_week_interference` and `explain_schedule_tradeoffs`.
+30 tools in five groups, named once in `src/lib/domain/coach/tools.ts` (`TOOL_CATALOGUE`): the
+brief's 21 plus `get_program_history`, `get_exercise_alternatives`, `get_coach_proposals`, and the two M7 engine reads, `evaluate_week_interference` and `explain_schedule_tradeoffs`, and the weight read `get_body_weight`.
 Each is `defineTool({name, description, input, output, run})` (`agent/tools/define.ts`), where
 `input` and `output` are zod/mini schemas:
 
@@ -270,7 +270,7 @@ Each is `defineTool({name, description, input, output, run})` (`agent/tools/defi
 
 `agent/tools/registry.ts` builds `COACH_TOOLS` from one file per group (programming in two),
 sorted by name; a tool outside the catalogue or its group's file throws, and
-`registry-complete.test.ts` proves all 29 are registered. Three tools draft their payload with a
+`registry-complete.test.ts` proves all 30 are registered. Three tools draft their payload with a
 structured-output call (`agent/proposals/draft.ts`, effort high, `DRAFTER_PROMPT`), so their
 deadline adds the draft time.
 
@@ -286,6 +286,7 @@ output schema are in [coach-tools.md](coach-tools.md).
 | [`create_training_program`](coach-tools.md#create_training_program)         | Programming | propose | no     |
 | [`evaluate_week_interference`](coach-tools.md#evaluate_week_interference)   | Programming | read    | no     |
 | [`explain_schedule_tradeoffs`](coach-tools.md#explain_schedule_tradeoffs)   | Programming | read    | no     |
+| [`get_body_weight`](coach-tools.md#get_body_weight)                         | Analytics   | read    | no     |
 | [`get_coach_proposals`](coach-tools.md#get_coach_proposals)                 | Programming | read    | no     |
 | [`get_current_program`](coach-tools.md#get_current_program)                 | Programming | read    | no     |
 | [`get_current_training_week`](coach-tools.md#get_current_training_week)     | Programming | read    | no     |

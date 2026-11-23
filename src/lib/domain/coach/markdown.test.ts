@@ -154,7 +154,7 @@ describe('parseRich: the supported subset', () => {
 			});
 			if (action?.kind === 'link') hrefs.add(action.href);
 		}
-		expect(hrefs.size).toBe(8);
+		expect(hrefs.size).toBe(9); // Progress for a weigh-in joins the eight
 		for (const href of hrefs)
 			expect(parseRich(`See [this one](${href}).`)).toEqual([
 				p(t('See '), link(href, t('this one')), t('.'))
