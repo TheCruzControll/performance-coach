@@ -1,13 +1,14 @@
 <!--
   @component
-  Profile → Goals (PRD §2): the goals in priority order, #1 marked "Top priority" because it wins
-  when goals compete for time or recovery, or a designed empty state with PRD §2's three ways in:
-  a specific event, a general goal, or several at once (added one by one, each ranked below the
-  ones before, as a note under "Add another goal" says). A goal saves the moment it changes,
-  through the route's `?/saveGoal` action, so the screen has no Save bar. The sheet that adds or
-  edits a goal is code-split: it starts loading on first intent (pointerdown), and a tap that
-  lands before it arrives still opens it. On Profile (`manage`) the sheet also pauses, achieves
-  or drops a goal, and the goals that left the ranking are listed apart under Past goals.
+  Profile → Goals (PRD §2): the goals in priority order under a lede that says the higher one wins
+  when goals compete, each a plain row that says when the goal is for (goals.ts `goalWhen`), or,
+  with none yet, the question and the ways in: a specific event or a general goal, and in
+  onboarding several at once too (added one by one, each ranked below the ones before, as a note
+  under "Add another goal" says). A goal saves the moment it changes, through the route's
+  `?/saveGoal` action, so the screen has no Save bar. The sheet that adds or edits a goal is
+  code-split: it starts loading on first intent (pointerdown), and a tap that lands before it
+  arrives still opens it. On Profile (`manage`) the sheet also pauses, achieves or drops a goal,
+  and Past goals is one row away (/profile/goals/past).
   Each ranked goal moves up or down with its arrows: the list moves at once, the new rank is
   announced politely, `?/reorderGoals` stores it and its answer replaces the list; a failed save
   puts the order back and says so. A pointer can also drag a goal by the handle after its
@@ -18,24 +19,20 @@
   `?/replan`. The notice never holds up the list.
 -->
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { applyAction } from '$app/forms';
 	import { invalidate } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { post } from '#lib/client/profile-form.ts';
-	import { DISCIPLINE_INFO, GOAL_STATUS_LABEL } from '#lib/domain/profile/catalog.ts';
 	import type { Goal } from '#lib/domain/profile/types.ts';
-	import Badge from '../components/Badge.svelte';
 	import Button from '../components/Button.svelte';
-	import Chip from '../components/Chip.svelte';
-	import EmptyState from '../components/EmptyState.svelte';
 	import Icon from '../components/Icon.svelte';
 	import IconButton from '../components/IconButton.svelte';
 	import ListRow from '../components/ListRow.svelte';
 	import Notice from '../components/Notice.svelte';
-	import Section from '../components/Section.svelte';
 	import { toast } from '../toast.svelte';
 	import type { EditorProps } from './editors';
-	import { goalDraft, goalSummary, newGoal, type GoalDraft } from './goals';
+	import { goalDraft, goalWhen, newGoal, type GoalDraft } from './goals';
 	import type GoalSheet from './GoalSheet.svelte';
 	import ReplanNotice from './ReplanNotice.svelte';
 	import type { ReplanResult } from './replan-notice.ts';
@@ -47,8 +44,12 @@
 	const ranked = $derived(
 		value.filter((g) => g.priority !== null).sort((a, b) => a.priority! - b.priority!)
 	);
-	/** Achieved and dropped goals, as the services list them: the latest to leave first. */
+	/** Achieved and dropped goals: Past goals' row counts them (Profile only). */
 	const past = $derived(value.filter((g) => g.priority === null));
+
+	/** The device's date, for when each goal is for: known once mounted, never on the server. */
+	let today = $state<Date | null>(null);
+	onMount(() => (today = new Date()));
 
 	let Sheet = $state<typeof GoalSheet | null>(null);
 	let loading: Promise<unknown> | null = null;
@@ -230,42 +231,39 @@
 
 <div class="goals" data-testid="goals-editor">
 	{#if ranked.length === 0}
-		<EmptyState
-			icon="target"
-			title={emptyTitle}
-			description="Add a goal and the coach plans your training around it."
-			compact
-			data-testid="goals-empty"
-		/>
+		<div class="empty" data-testid="goals-empty">
+			{#if emptyTitle}<h2 class="question">{emptyTitle}</h2>{/if}
+			<p class="lede">Add a goal and the coach plans your training around it.</p>
+		</div>
 		<div class="paths">
 			<ListRow
-				icon="today"
 				title="A specific event"
-				subtitle="A meet, race, fight or test day"
+				value="Race, fight, meet"
 				onpointerdown={preload}
 				onclick={() => start('event')}
 				data-testid="goal-path-event"
 			/>
 			<ListRow
-				icon="progress"
 				title="A general goal"
-				subtitle="Get stronger, faster or fitter"
+				value="Stronger, faster, fitter"
 				onpointerdown={preload}
 				onclick={() => start('general')}
 				data-testid="goal-path-general"
 			/>
-			<ListRow
-				icon="plus"
-				title="Several goals at once"
-				subtitle="One by one, top priority first"
-				onpointerdown={preload}
-				onclick={() => start('several')}
-				data-testid="goal-path-several"
-			/>
+			{#if !manage}
+				<!-- Onboarding only, until v2/05: Profile adds one goal, then another (Paper). -->
+				<ListRow
+					title="Several goals at once"
+					value="One by one"
+					onpointerdown={preload}
+					onclick={() => start('several')}
+					data-testid="goal-path-several"
+				/>
+			{/if}
 		</div>
 	{:else}
-		<p class="rule" id="{id}-rule">
-			<Icon name="info" size={16} />When goals compete for time or recovery, the higher one wins.
+		<p class="lede" id="{id}-rule">
+			What you’re training for, most important first. When goals compete, the higher one wins.
 		</p>
 		<ol
 			class="ranked"
@@ -275,7 +273,6 @@
 			bind:this={list}
 		>
 			{#each ranked as goal, i (goal.id)}
-				{@const summary = goalSummary(goal)}
 				{@const dy = offset(i)}
 				<li
 					class="row"
@@ -286,31 +283,15 @@
 					<button
 						type="button"
 						class="goal"
-						class:top={i === 0}
 						onpointerdown={preload}
 						onclick={() => edit(goalDraft(goal))}
 						data-testid="goal-row"
 					>
-						<span class="rank numeric" aria-hidden="true">{i + 1}</span>
-						<span class="text">
-							<span class="visually-hidden">Priority {i + 1}:</span>
-							<span class="heading">
-								<span class="title">{goal.title}</span>
-								{#if i === 0}<Badge tone="accent">Top priority</Badge>{/if}
-								{#if goal.status === 'paused'}<Badge>Paused</Badge>{/if}
-							</span>
-							{#if summary}<span class="summary">{summary}</span>{/if}
-							<span class="chips">
-								{#each goal.disciplines as discipline (discipline)}
-									<Chip tone={DISCIPLINE_INFO[discipline].tone}>
-										{discipline === 'custom' && goal.customDiscipline
-											? goal.customDiscipline
-											: DISCIPLINE_INFO[discipline].short}
-									</Chip>
-								{/each}
-							</span>
-						</span>
-						<span class="chevron"><Icon name="chevron-right" size={20} /></span>
+						<span class="title"
+							><span class="visually-hidden">Priority {i + 1}:</span> {goal.title}</span
+						>
+						{#if today}<span class="when">{goalWhen(goal, today)}</span>{/if}
+						<span class="chevron"><Icon name="chevron-right" size={14} /></span>
 					</button>
 					{#if ranked.length > 1}
 						<span class="order">
@@ -343,17 +324,18 @@
 				</li>
 			{/each}
 		</ol>
-		<Button
-			variant="secondary"
-			icon="plus"
-			block
-			onpointerdown={preload}
-			onclick={() => edit(newGoal())}
-			aria-describedby={several ? `${id}-several` : undefined}
-			data-testid="add-goal"
-		>
-			{several || ranked.length > 1 ? 'Add another goal' : 'Add a goal'}
-		</Button>
+		<!-- A text link as wide as its words (Paper), not stretched across the column. -->
+		<div>
+			<Button
+				variant="link"
+				onpointerdown={preload}
+				onclick={() => edit(newGoal())}
+				aria-describedby={several ? `${id}-several` : undefined}
+				data-testid="add-goal"
+			>
+				{several || ranked.length > 1 ? 'Add another goal' : 'Add a goal'}
+			</Button>
+		</div>
 		{#if several}
 			<p class="note" id="{id}-several" data-testid="goals-several-note">
 				Goals rank in the order you add them, so add the next most important one.
@@ -368,33 +350,12 @@
 
 	{#if manage && past.length > 0}
 		<div class="past">
-			<Section title="Past goals" data-testid="past-goals">
-				<ul class="list">
-					{#each past as goal (goal.id)}
-						{@const summary = goalSummary(goal)}
-						<li>
-							<button
-								type="button"
-								class="goal closed"
-								onpointerdown={preload}
-								onclick={() => edit(goalDraft(goal))}
-								data-testid="past-goal-row"
-							>
-								<span class="text">
-									<span class="heading">
-										<span class="title">{goal.title}</span>
-										<Badge tone={goal.status === 'achieved' ? 'positive' : 'neutral'}>
-											{GOAL_STATUS_LABEL[goal.status]}
-										</Badge>
-									</span>
-									{#if summary}<span class="summary">{summary}</span>{/if}
-								</span>
-								<span class="chevron"><Icon name="chevron-right" size={20} /></span>
-							</button>
-						</li>
-					{/each}
-				</ul>
-			</Section>
+			<ListRow
+				title="Past goals"
+				value={String(past.length)}
+				href={resolve('/(app)/profile/goals/past')}
+				data-testid="past-goals"
+			/>
 		</div>
 	{/if}
 
@@ -432,15 +393,30 @@
 		gap: var(--space-4);
 	}
 
+	/* The question as a statement over its line: kept at the top, clear of the tab bar. */
+	.empty {
+		display: grid;
+		gap: var(--space-4);
+	}
+
+	.question {
+		font: var(--type-statement);
+		letter-spacing: var(--tracking-statement);
+	}
+
+	.lede {
+		font: var(--type-body);
+		color: var(--color-text-secondary);
+	}
+
+	/* The ways in are ListRows, whose hairlines part them. */
 	.paths {
 		display: grid;
-		gap: var(--space-2);
 	}
 
 	.note {
 		font-size: var(--text-sm);
 		color: var(--color-text-secondary);
-		text-align: center;
 	}
 
 	.unavailable {
@@ -448,18 +424,8 @@
 		gap: var(--space-3);
 	}
 
-	.rule {
-		display: flex;
-		align-items: center;
-		gap: var(--space-2);
-		font-size: var(--text-sm);
-		color: var(--color-text-secondary);
-	}
-
-	.ranked,
-	.list {
+	.ranked {
 		display: grid;
-		gap: var(--space-2);
 		padding: 0;
 		list-style: none;
 	}
@@ -498,9 +464,7 @@
 	}
 
 	.lifted > .goal {
-		border-color: var(--color-border-strong);
 		background: var(--color-surface-2);
-		box-shadow: var(--elevation-3);
 	}
 
 	/*
@@ -547,88 +511,49 @@
 		cursor: grabbing;
 	}
 
-	/* One row per goal, shaped like ListRow, with the rank where ListRow has its icon. */
+	/* One row per goal, drawn as ListRow draws one: its title, when it is for, a chevron; a
+	   hairline under each but the last, and a tint reaching 8 px past it when pressed. */
 	.goal {
 		display: flex;
 		align-items: center;
-		gap: var(--space-3);
+		gap: var(--space-3-5);
 		width: 100%;
-		padding: var(--space-3) var(--space-3) var(--space-3) var(--space-2);
-		border-radius: var(--radius-lg);
-		border: 1px solid var(--color-border);
-		background: var(--color-surface-1);
-		box-shadow: var(--elevation-1);
-		text-align: left;
-		transition:
-			transform var(--duration-fast) var(--ease-out),
-			border-color var(--duration-fast) var(--ease-standard);
-	}
-
-	.goal.top {
-		border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
-	}
-
-	/* Out of the ranking: no rank, and flat, so it reads as history rather than a goal in play. */
-	.goal.closed {
-		min-height: var(--touch-target);
-		padding-left: var(--space-4);
+		min-height: 3.75rem;
+		padding: var(--space-2) 0;
+		border: 0;
+		border-bottom: 1px solid var(--color-hairline);
 		background: transparent;
-		box-shadow: none;
+		color: var(--color-text);
+		text-align: left;
+	}
+
+	.row:last-child > .goal {
+		border-bottom-color: transparent;
 	}
 
 	.goal:active {
-		transform: scale(0.985);
-		border-color: var(--color-border-strong);
-		transition-duration: var(--duration-instant);
+		background: var(--color-surface-2);
+		box-shadow: 0 0 0 var(--space-2) var(--color-surface-2);
 	}
 
 	@media (hover: hover) and (pointer: fine) {
 		.goal:hover {
-			border-color: var(--color-border-strong);
+			background: var(--color-surface-2);
+			box-shadow: 0 0 0 var(--space-2) var(--color-surface-2);
 		}
 	}
 
-	.rank {
-		flex: none;
-		width: 2.5rem;
-		font-size: var(--text-2xl);
-		font-weight: var(--weight-bold);
-		text-align: center;
-		color: var(--color-text-tertiary);
-	}
-
-	.top .rank {
-		color: var(--color-accent-text);
-	}
-
-	.text {
-		display: grid;
-		flex: 1;
-		gap: var(--space-1);
-		min-width: 0;
-	}
-
-	.heading {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: var(--space-2);
-	}
-
 	.title {
-		font-weight: var(--weight-semibold);
+		flex: 1;
+		min-width: 0;
+		font: var(--type-row);
 	}
 
-	.summary {
-		font-size: var(--text-sm);
+	.when {
+		flex: none;
+		font: var(--type-secondary);
 		color: var(--color-text-secondary);
-	}
-
-	.chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-1-5);
-		margin-top: var(--space-1);
+		font-variant-numeric: tabular-nums;
 	}
 
 	.chevron {
@@ -637,6 +562,6 @@
 	}
 
 	.past {
-		margin-top: var(--space-4);
+		margin-top: var(--space-3);
 	}
 </style>

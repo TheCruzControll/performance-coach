@@ -218,6 +218,12 @@ milestones.md.
   behind a hairline, `--content-profile` (68 rem) in all, centred right of the rail, so at 1440 px
   the list starts at 248 px (Paper draws 288). On `/profile` the open side is About this app;
   Goals open first waits for `v2/22`. Goals is `v2/21c`. The e2e run is CI's to prove.
+- **Instrument v2 Goals (`v2/21c`).** Each goal is a plain row saying when it is for (14 Mar, By
+  June, Ongoing, Paused), with no rank numeral, badge or chips, under a lede; Add a goal is a text
+  link, and Past goals is its own screen (`/profile/goals/past`), one row away, where a goal opens
+  the same sheet. With no goal, Profile offers an event or a general goal; onboarding keeps several
+  at once until `v2/05`. The arrows and handle stay until `v2/22`, and Today still lists the goals
+  until `v2/06`. The e2e run is CI's to prove.
 - **Instrument v2 at a desk (`v2/03c`), which completes the Instrument v2 shell (`v2/03`).** The
   rail is the canvas with a hairline, the four tabs 28 px apart and the avatar at its foot, with
   no brand mark. A readable screen is 616 px (560 of text) centred right of the rail but at most
