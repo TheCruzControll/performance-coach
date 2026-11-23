@@ -160,7 +160,8 @@ Not used: the SDK's Tool Runner, message threads, server-side compaction and tas
 
 The events are a closed set (`domain/coach/events.ts`): `run_started`, `activity`,
 `block_started`, `text_delta`, `block_completed`, `block_replaced`, `answer_reset`, `proposal`,
-`answer_completed`, `error` and `done`. The browser never parses markdown or model JSON.
+`recorded` (a weigh-in the coach logged, with its Undo card), `answer_completed`, `error` and
+`done`. The browser never parses markdown or model JSON.
 
 Cancellation: `request.signal` stops the run when the client leaves, and Stop also POSTs
 `/api/coach/runs/[run]/cancel`, which sets a flag in Postgres that the loop reads between steps.

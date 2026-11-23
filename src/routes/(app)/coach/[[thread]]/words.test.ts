@@ -178,6 +178,29 @@ describe('shownMessages', () => {
 		]);
 	});
 
+	it('shows a weigh-in its run logged after that run’s last row, and leaves out one whose run has no row here', () => {
+		const runId = crypto.randomUUID();
+		const ask = row({ kind: 'owner_message', display: { text: 'I weighed 82.4' } });
+		const answer = row({ runId, display: { blocks: [block(0)] } });
+		const logged = { runId, entryId: 41, label: 'Logged 82.4 kg for today' };
+		const elsewhere = {
+			runId: crypto.randomUUID(),
+			entryId: 7,
+			label: 'Logged 80 kg for yesterday'
+		};
+		expect(shownMessages([ask, answer], [], [logged, elsewhere])).toEqual([
+			{ id: ask.id, from: 'owner', text: 'I weighed 82.4', clientId: null },
+			{ id: answer.id, from: 'coach', blocks: [block(0)], ended: null, retryable: false },
+			{
+				id: `weigh-in:41:${runId}`,
+				from: 'recorded',
+				entryId: 41,
+				runId,
+				label: 'Logged 82.4 kg for today'
+			}
+		]);
+	});
+
 	it('keeps the id the owner’s message was sent with, for Retry', () => {
 		const clientMessageId = crypto.randomUUID();
 		const ask = row({ kind: 'owner_message', display: { text: 'Again?' }, clientMessageId });

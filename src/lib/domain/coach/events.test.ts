@@ -44,6 +44,7 @@ const EVENTS: CoachEvent[] = [
 	{ ...block, type: 'block_replaced', reason: 'ungrounded', grounded: false },
 	{ type: 'answer_reset', reason: 'fallback' },
 	{ type: 'proposal', id: 'p1', kind: 'workout_update', title: 'Swap the leg press' },
+	{ type: 'recorded', kind: 'body_weight', id: 41, label: 'Logged 82.4 kg for today' },
 	{ type: 'answer_completed', messageId: 'm2' },
 	{ type: 'error', kind: 'unavailable', reason: 'not_launched' },
 	{ type: 'error', kind: 'rate_limited', retryAfterS: 42 },

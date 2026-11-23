@@ -82,7 +82,10 @@ runs the criteria and updates milestones.md.
   weigh-in makes the review stale. The coach records a weight the owner states in their
   message (`log_body_weight`, `src/lib/server/agent/tools/weight.ts`, with the check in
   `src/lib/domain/coach/weight-statement.ts`) at once, with source `coach`; its answer says so and
-  mentions Undo. The Undo card is the next PR, and the screens come after it.
+  mentions Undo. The coach's Undo card (`src/lib/ui/coach/RecordedCard.svelte`) shows each weigh-in
+  it logged, 'Logged 82.4 kg for today · Undo', after the run's answer and again on reload while
+  the weigh-in still holds that run's write. Undo says 'Undone', or 'Nothing to undo' when the
+  weigh-in is gone or changed, and a failed request can be tried again. The screens come after it.
 - **M7, re-sliced.** On 2026-11-22 the parked M7 pull requests were re-sliced into 38 `m7r/`
   rows in `plan/m7-reslice.md`. By the end of that day every row that does not wait on m7r/03
   had merged, along with m7/47 to m7/51. That covers the generator's stages and season, Train's
