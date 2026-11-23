@@ -364,6 +364,7 @@ describe('every M7 scenario', () => {
 				JSON.stringify(plan)
 			);
 		},
+		// Each case generates the plan twice, near the 5 s default on a loaded runner.
 		30_000
 	);
 
