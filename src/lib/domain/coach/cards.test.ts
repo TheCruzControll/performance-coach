@@ -235,3 +235,32 @@ describe("M6's reviews on the card", () => {
 		expect(parseCard({ ...weekly, origin: { ...weekly.origin, kind: 'coach' } })).toBeNull();
 	});
 });
+
+describe("M7's engine re-plans on the card", () => {
+	const engine = (kind: 'goal_priority' | 'fatigue') =>
+		({
+			...view,
+			kind: 'replan',
+			origin: { kind, href: kind === 'goal_priority' ? '/profile/goals' : '/progress' }
+		}) as const;
+
+	it('names the engine a re-plan came from, with no review in its words', () => {
+		expect(cardOf(engine('goal_priority')).origin).toEqual({
+			words: 'From your goal change',
+			href: '/profile/goals'
+		});
+		expect(cardOf(engine('fatigue')).origin).toEqual({
+			words: 'From your training load',
+			href: '/progress'
+		});
+	});
+
+	it('reads both engine origins through JSON, and refuses any other kind', () => {
+		for (const kind of ['goal_priority', 'fatigue'] as const) {
+			expect(parseCard(JSON.parse(JSON.stringify(engine(kind))))).toEqual(cardOf(engine(kind)));
+		}
+		expect(
+			parseCard({ ...engine('fatigue'), origin: { kind: 'owner', href: '/progress' } })
+		).toBeNull();
+	});
+});
