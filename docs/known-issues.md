@@ -4,7 +4,7 @@ Open problems, stale docs and claims nobody has verified. Add an entry when you 
 delete it in the change that fixes it. Each entry says what is wrong, how it was found, and what
 would close it.
 
-Last reviewed: 2026-11-21, against `main` at the merge of #501.
+Last reviewed: 2026-11-23, against `main` at the merge of #618.
 
 ## Product limits
 
@@ -67,12 +67,12 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
 
 ## Stale documentation
 
-- **milestones.md lists M6 to M9 as Planned.** The git history holds merged slices for M6 (59), M7
-  (17) and M9 (19), and 25 M7 pull requests are open. No evidence is recorded against those
-  milestones' criteria. Closes when each milestone's criteria are run and the table is updated.
-- **The README status block stops at Milestone 5.** It says nothing of the analytics, reviews or
-  periodisation work (M6 and M7) that has merged. Closes when the README status is rewritten from
-  [progress.md](progress.md).
+- **milestones.md lists M7 to M9 as Planned.** M6's row and criteria are updated. The git history
+  holds merged slices for M7 and M9, and some M7 pull requests are open; the current counts are in
+  [progress.md](progress.md). No evidence is recorded against those milestones' criteria. Closes
+  when each milestone's criteria are run and the table is updated.
+- **The README status block stops at Milestone 6.** It says nothing of the periodisation work (M7)
+  that has merged. Closes when the README status is rewritten from [progress.md](progress.md).
 - **The README repository map marks the coach as "(M5)" and the offline store as "(M4)"**, as if
   both were still to come. Both folders hold shipped code.
 - **Three ADRs are still named `NNNN-` and Proposed**: encrypted backups, the periodisation
@@ -156,6 +156,23 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   covers every weigh-in up to the Sunday and the review reads the goal in force then.
 
 - **A weekly review with no body-weight finding does not go stale when a weigh-in is back-dated into its window.** Such a review was digested without weigh-ins, so the view judges it without them, which keeps reviews stored before the finding from going stale on deploy (migration 0036 stamped every weigh-in's `updated_at`). A weigh-in logged into its window later is therefore not shown as a change, and the view offers no refresh; a refresh still computes the finding. Closes when the digest of such a review covers the weigh-ins in its window too, without making reviews stored before the deploy stale.
+
+- **M6's performance slice was closed unmerged, so the Progress and review screens have no
+  main-thread, Lighthouse or chart-body budget on `main`.** m6/59 would have put those screens in
+  the main-thread guard and Lighthouse, and added the chart-body check to `pnpm budgets`. It was
+  closed on 2026-11-22, after the owner decided not to test performance in CI. Found reading the M6
+  plan against `main` and `scripts/check-budgets.ts`. Closes when perf specs for the Progress and
+  review screens exist (or m6/59's are revived), are run locally, and the numbers are recorded in
+  docs/performance.md ("M6 (analytics and reviews)").
+
+- **The `/progress` overview at 'all' misses its 150 ms page-load target.** Its median is 192.0 ms
+  (p95 204.9 ms) on the explain run 45220282661, which is under the 300 ms gate. Found by that run,
+  recorded in docs/performance.md ("M6 (analytics and reviews)"). Closes when a measured head puts
+  the median under 150 ms, or the owner changes the target.
+
+- **Chart chunk sizes are not measured.** `pnpm budgets` reports each route's totals and not its
+  chart chunks, so no chart's gzip size is recorded. Closes when the budget output or
+  docs/performance.md lists each chart body's size.
 
 ## Working on this repo
 

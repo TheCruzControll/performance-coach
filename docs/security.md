@@ -499,6 +499,42 @@ for a refused request (`bad_request`) includes the API's reason. A failure's `er
   against the real model (the owner's go-ahead of 2026-11-10 replaced it; #449).
 - The kill switch takes a redeploy; there is no runtime toggle.
 
+## Analytics and reviews (M6) review
+
+Scope: the test-only analytics route, the review actions on `/progress/reviews`, the write-up
+endpoint `POST /api/reviews/narrate` (`src/routes/api/reviews/narrate/+server.ts`), and the review
+services and the coach turn behind them.
+
+- **Test-only route.** `POST /api/test-support/analytics` seeds one analytics fixture for the
+  signed-in owner, through the real services. It answers 404 unless `testRoutesEnabled()`
+  (`ENABLE_TEST_ROUTES` on, and allowed on this deployment); see "Test-only routes" above. The
+  fixture name must be one of the
+  fixture list, and the time zone must pass the profile's validation. It answers 409 when the owner
+  already has a program, workouts or recovery notes, and writes nothing then.
+- **Owner and CSRF checks.** Every review action reads the owner from the session (`ownerId`), and
+  create, refresh and propose-again record a failure with the request's id, method and path. The
+  write-up endpoint is owner-only and Origin-checked by the guard, as every state-changing request
+  is (the CSRF section, layer 1). Without a session it answers 401, and a recovery session gets 403.
+- **Review guards.** The write-up endpoint answers 400 for a body that is not a weekly or cycle
+  review with a UUID id, and 404 for a review that is not the owner's. It answers 409 for a review
+  that a refresh has superseded, which is never written up. The body is capped at 1 KB, and every
+  answer is `no-store`.
+- **Read-only narration.** The write-up turn may only read (`NARRATION_TOOL_EFFECTS` is `['read']`),
+  so it cannot make a proposal, and the owner decides on any change. It takes no abort signal: a
+  client that leaves does not cancel the run, and the next visit shows the stored result.
+- **Narration inputs as data.** The turn's context names the review's proposal and the owner's
+  decision on it as data, not as instructions. What is stored is the released text of the run's
+  display blocks, with the output policy's replacements applied, never the model's raw output.
+- **Hidden narration threads.** A write-up runs in its own thread, a `weekly_review_writeup` or
+  `cycle_review_writeup` entry, which the owner's conversation lists, thread summaries and memory
+  leave out (`src/lib/domain/coach/review-entries.ts`). "Discuss with your coach" starts a separate,
+  visible conversation. Whether a write-up runs on first opening or only on "Ask your coach" is
+  still the owner's choice to make; changing it does not touch this code.
+
+Tests: `tests/integration/reviews/narrate.test.ts` (the write-up on real Postgres with the
+MockProvider), `src/routes/api/reviews/narrate/config.test.ts`, `e2e/review-narrative.serial.e2e.ts`
+and the test route's `e2e/analytics-support.selftest.serial.e2e.ts`.
+
 ## Self-review (OWASP ASVS 4.0, level 2, the relevant chapters)
 
 | ASVS                                         | Status  | Evidence                                                                                                                           |
