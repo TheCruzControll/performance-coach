@@ -92,10 +92,10 @@
 	const askFailed = $derived(proposeOutcome?.status === 'failed' && !proposing);
 
 	const id = $props.id();
-	const state = $derived(cardState(card));
+	const shown = $derived(cardState(card));
 	/** Where accepting it left the program: the version in Train. */
 	const versionHref = $derived(
-		state.kind === 'applied' && state.version !== null ? `/train/history/${state.version}` : null
+		shown.kind === 'applied' && shown.version !== null ? `/train/history/${shown.version}` : null
 	);
 
 	/** Focus goes where a Propose again answer leaves the owner: its Try again, or its note. */
@@ -200,10 +200,10 @@
 				<p id="{id}-hint" class="quiet">{idle}</p>
 			{/if}
 		{/snippet}
-		{#if state.kind === 'choose'}
+		{#if shown.kind === 'choose'}
 			<div class="actions choose">
-				<Button href={state.href} iconEnd="chevron-right" data-testid="proposal-choose-start"
-					>{state.words}</Button
+				<Button href={shown.href} iconEnd="chevron-right" data-testid="proposal-choose-start"
+					>{shown.words}</Button
 				>
 				<Button
 					variant="secondary"
@@ -214,7 +214,7 @@
 				>
 			</div>
 			{@render hint('Its start and a fresh preview are chosen in the review.')}
-		{:else if state.kind === 'proposed'}
+		{:else if shown.kind === 'proposed'}
 			<div class="actions">
 				<Button
 					icon="check"
@@ -240,9 +240,9 @@
 				>
 			</div>
 			{@render hint('Nothing changes until you accept.')}
-		{:else if state.kind === 'applied'}
+		{:else if shown.kind === 'applied'}
 			<p class="outcome">
-				<Badge tone="positive" icon="check">{state.words}</Badge>
+				<Badge tone="positive" icon="check">{shown.words}</Badge>
 				{#if versionHref}
 					<span class="dot" aria-hidden="true">·</span>
 					<a class="view" href={versionHref} data-testid="proposal-version"
@@ -250,28 +250,28 @@
 					>
 				{/if}
 			</p>
-		{:else if state.kind === 'waiting'}
-			{#if state.href}
-				<a class="view" href={state.href} data-testid="proposal-review"
-					><Badge tone="accent" icon="clock">{state.words}</Badge>
+		{:else if shown.kind === 'waiting'}
+			{#if shown.href}
+				<a class="view" href={shown.href} data-testid="proposal-review"
+					><Badge tone="accent" icon="clock">{shown.words}</Badge>
 					<Icon name="chevron-right" size={14} /></a
 				>
 			{:else}
-				<Badge tone="accent" icon="clock">{state.words}</Badge>
+				<Badge tone="accent" icon="clock">{shown.words}</Badge>
 			{/if}
-		{:else if state.kind === 'superseded'}
+		{:else if shown.kind === 'superseded'}
 			<Badge tone="warning" icon="alert">Superseded</Badge>
 			<p class="quiet" data-testid="proposal-superseded-reason">
 				<!-- The words, the dot and the link are siblings, so the spaces between them stay. -->
-				{#if state.link}
-					{state.words}
+				{#if shown.link}
+					{shown.words}
 					<span class="dot" aria-hidden="true">·</span>
-					<a class="view" href={state.link.href} data-testid="proposal-review"
-						>{#if state.link.words === OPEN_REVIEW}{state.link.words}
-							<span class="visually-hidden">the review</span>{:else}{state.link.words}{/if}</a
+					<a class="view" href={shown.link.href} data-testid="proposal-review"
+						>{#if shown.link.words === OPEN_REVIEW}{shown.link.words}
+							<span class="visually-hidden">the review</span>{:else}{shown.link.words}{/if}</a
 					>
 				{:else}
-					{state.words}
+					{shown.words}
 				{/if}
 			</p>
 			{#if card.proposeAgain && onproposeagain}
@@ -324,7 +324,7 @@
 				</div>
 			{/if}
 		{:else}
-			<Badge tone="neutral">{state.words}</Badge>
+			<Badge tone="neutral">{shown.words}</Badge>
 		{/if}
 	</footer>
 	<p class="visually-hidden" role="status">
@@ -332,8 +332,8 @@
 			? 'Preparing it again…'
 			: note
 				? note
-				: state.kind !== 'proposed' && state.kind !== 'choose'
-					? `${card.title}: ${state.words}`
+				: shown.kind !== 'proposed' && shown.kind !== 'choose'
+					? `${card.title}: ${shown.words}`
 					: accepting
 						? 'Accepting…'
 						: rejecting
