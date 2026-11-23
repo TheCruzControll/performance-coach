@@ -224,7 +224,8 @@ export async function narrateReview(
 		return { outcome: 'unavailable', reason: 'rate_limited', retryAfterS: error.retryAfter };
 	}
 
-	const decision = decisionOf(await proposalHead(ownerId, review, deps));
+	const head = await proposalHead(ownerId, review, deps);
+	const decision = decisionOf(head);
 	const label = period(review);
 	const key = reviewKey(review);
 	const turn = runCoachTurn(
@@ -241,7 +242,8 @@ export async function narrateReview(
 						? null
 						: {
 								id: decision.proposalId,
-								kind: PROPOSAL_KIND[review.kind],
+								// A weekly review's head is M6's changes, or M7's deload (a replan).
+								kind: head?.kind ?? PROPOSAL_KIND[review.kind],
 								decision: decision.state
 							}
 			},

@@ -191,6 +191,10 @@ export type NotProposedReason =
 export const DELOAD_INSTEAD =
 	'Next week is proposed as a deload instead, so this change is not proposed';
 
+/** The owner's sentence for the deload boundary: the week is eased as a whole, not line by line. */
+export const DELOAD_REASON =
+	'Next week is proposed as a deload, so its sessions are eased as a whole rather than changed one by one.';
+
 /** A change with its own `why`, and the `reason` and `words` for not proposing it. */
 export type NotProposed = Pick<Adjustment, 'id' | 'kind' | 'lineage' | 'sessionDate' | 'why'> & {
 	reason: NotProposedReason;
@@ -204,7 +208,7 @@ export interface NextWeekProposal {
 	boundary?: 'cycle' | 'deload';
 	/** Next week has ended: nothing is left to change. */
 	late?: true;
-	/** Why there are no adjustments, for a boundary or a late review. */
+	/** Why there are no adjustments, for a boundary (cycle or deload) or a late review. */
 	reason?: string;
 	/** High fatigue in a week already light: what the cycle review should look at. */
 	cycleFlag?: string;
@@ -690,7 +694,12 @@ export function proposeNextWeek(
 				reason: 'deload' as const,
 				words: DELOAD_INSTEAD
 			}));
-		return { adjustments: [], notProposed: [...notProposed, ...instead], boundary: 'deload' };
+		return {
+			adjustments: [],
+			notProposed: [...notProposed, ...instead],
+			boundary: 'deload',
+			reason: DELOAD_REASON
+		};
 	}
 	return { adjustments, notProposed, ...flag };
 }

@@ -130,7 +130,8 @@ export const REVIEW_DECISION_STATES = [
 	'applied',
 	'rejected',
 	'partly_past',
-	'superseded'
+	'superseded',
+	'late'
 ] as const;
 export type ReviewDecisionState = (typeof REVIEW_DECISION_STATES)[number];
 

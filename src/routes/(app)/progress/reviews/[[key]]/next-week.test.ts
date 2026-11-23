@@ -168,6 +168,91 @@ describe("next week's card", () => {
 	});
 });
 
+describe("a proposed deload's card (a replan head)", () => {
+	const DELOAD_WORDS =
+		'Next week is proposed as a deload, so its sessions are eased as a whole rather than changed one by one.';
+	const DELOAD_FINDING = {
+		id: 'next:deload',
+		section: 'next',
+		label: 'A deload instead',
+		figures: [],
+		verdict: { level: 'neutral', words: DELOAD_WORDS },
+		window: null,
+		metricId: null,
+		sources: []
+	};
+	/** A row the deload leaves out: its own card would say it is not proposed, so it is not shown. */
+	const INSTEAD = {
+		...NOT_PROPOSED,
+		id: 'next:not_proposed:load:a:2',
+		label: 'Bench press, working',
+		verdict: {
+			level: 'neutral',
+			words: 'Next week is proposed as a deload instead, so this change is not proposed'
+		}
+	};
+	const deloadView = (parts: Record<string, unknown>) =>
+		view({
+			proposal: { id: HEAD, kind: 'replan', rows: [], decisionNote: null },
+			snapshot: {
+				deload: { week: '2026-11-30', reasons: ['slept 5 hours'] },
+				brief: { findings: [DELOAD_FINDING] }
+			},
+			notProposed: [INSTEAD],
+			...parts
+		});
+
+	it('undecided: the week it targets and the finding’s words, with Accept and Keep, no changes to tick', () => {
+		// A deload has no changes, so offers are not listed either, and the card is never 'all past'.
+		const card = nextWeekView(deloadView({}), [MOVE], TODAY)!;
+		expect(card).toEqual({
+			state: 'deload',
+			title: 'Deload · Week of 30 Nov',
+			words: DELOAD_WORDS,
+			items: [],
+			notProposed: [],
+			link: null
+		});
+	});
+
+	it('undecided without a stored week: the title says only that a deload is proposed', () => {
+		const card = nextWeekView(deloadView({ snapshot: null }), [], TODAY)!;
+		expect(card).toMatchObject({ state: 'deload', title: 'A deload is proposed', words: null });
+	});
+
+	it('late: too late to deload that week, with a short line and no action', () => {
+		const decision = { state: 'late', proposalId: HEAD };
+		expect(nextWeekView(deloadView({ decision }), [], TODAY)).toEqual({
+			state: 'late_deload',
+			title: 'Too late to deload that week',
+			words: 'That deload’s week has passed.',
+			items: [],
+			notProposed: [],
+			link: null
+		});
+	});
+
+	it('accepted: its version and the link to History, as any applied week', () => {
+		const decision = { state: 'applied', proposalId: HEAD, versionId: 'v', versionNumber: 2 };
+		expect(nextWeekView(deloadView({ decision }), [], TODAY)).toMatchObject({
+			state: 'applied',
+			title: 'Next week updated · version 2',
+			link: { href: '/train/history/2', label: 'See version 2 in History' },
+			notProposed: []
+		});
+	});
+
+	it('kept: kept as planned, with the owner’s note', () => {
+		const decision = { state: 'rejected', proposalId: HEAD };
+		const proposal = { id: HEAD, kind: 'replan', rows: [], decisionNote: 'Feeling fine' };
+		expect(nextWeekView(deloadView({ decision, proposal }), [], TODAY)).toMatchObject({
+			state: 'rejected',
+			title: 'Kept as planned',
+			words: 'Feeling fine'
+		});
+	});
+});
+
 describe('a half step in words', () => {
 	const op = (fields: Record<string, number>) => fields as unknown as ProgramOp;
 	it('names each value it changes, in the units of the row it changes', () => {

@@ -24,6 +24,15 @@
  *   evaluation context read from the review's own facts loader inside its transaction (a
  *   savepoint bounds the reads, periodisation/context.ts); when the context's reads fail they are
  *   recorded and M6's checkWeek judges instead.
+ * - M7's reactive deload (periodisation/deload.ts): when the review finds that next week (or, late,
+ *   the week holding today) needs a deload, the deload is proposed instead of next week's changes,
+ *   as a replan naming the review, in a savepoint of the review's transaction under the owner lock
+ *   it holds. The snapshot records the deload's week and reasons, and next week's other changes
+ *   are listed as not proposed. When the engine proposes nothing, another replan is open, or the
+ *   deload fails (recorded, part reactive-deload), the savepoint is rolled back to and the review
+ *   is stored on M6's path: a deload never costs the review.
+ * - Refresh re-assesses: the old head is superseded as review_refreshed either way, then the new
+ *   revision proposes a deload while one is still needed, or M6's next-week changes once not.
  * Every query is awaited in turn, so the whole create or refresh runs on one transaction.
  */
 import { addDays, mondayOf, parseIsoDate, type IsoDate } from '../../../domain/calendar';
@@ -71,7 +80,16 @@ import {
 	type ContextDeps,
 	type EvaluationContext
 } from '../periodisation/context';
+import {
+	assessDeload,
+	deloadReasons,
+	deloadTargetWeek,
+	proposeDeload,
+	REACTIVE_DELOAD
+} from '../periodisation/deload';
+import { getOpenReplan } from '../periodisation/propose';
 import { createProposal, getProposalView, type ProposalView } from '../coach/proposals';
+import { recordServerError } from '../errors';
 import { getExercisesByIds, resolveKeys, type ExerciseDef } from '../exercises/index';
 import { transition } from '../lifecycle-guard';
 import { getAthleteProfile } from '../profile/index';
@@ -323,6 +341,8 @@ export interface WeeklyReviewDeps extends ReviewDeps {
 		ContextDeps,
 		'reader' | 'statementTimeoutMs' | 'repository' | 'origin' | 'errorsDb'
 	>;
+	/** Whether a review may propose a reactive deload: REACTIVE_DELOAD unless given. */
+	reactiveDeload?: boolean;
 }
 
 /** The context as the review's judge reads it (review/evaluation.ts). */
@@ -356,7 +376,10 @@ async function weekDone(db: Executor, ownerId: string, monday: IsoDate) {
 
 // ---- next week ---------------------------------------------------------------------------
 
-/** Next week's adjustments, from the reviewed week and the current version's next week. */
+/**
+ * Next week's adjustments, from the reviewed week and the current version's next week: a function
+ * of whether the week is deloaded instead (M7), so both are computed from one set of reads.
+ */
 async function nextWeekOf(
 	db: Executor,
 	ownerId: string,
@@ -364,7 +387,7 @@ async function nextWeekOf(
 	snapshot: WeeklyReviewSnapshot,
 	exposures: readonly Exposure[],
 	evaluation: ReviewEvaluation | null
-): Promise<NextWeekProposal> {
+): Promise<(deload: boolean) => NextWeekProposal> {
 	const { input, plan, defs, runs, weekSessions } = week;
 	const monday = addDays(input.weekStartsOn, 7);
 	const next = plan?.weeks.get(monday)?.week;
@@ -411,32 +434,34 @@ async function nextWeekOf(
 	const started = sessions.filter(
 		(s) => s.status !== 'planned' || input.completedLineages.has(s.lineage)
 	);
-	return proposeNextWeek(
-		{
-			startsOn: monday,
-			state: snapshot.next.state,
-			kind: snapshot.next.kind,
-			rpeCap: next?.targets.rpeCap ?? null,
-			sessions
-		},
-		snapshot,
-		byKey,
-		{
-			today: input.today,
-			unit: input.unit,
-			exercises,
-			workouts: started.map((s) => ({ plannedLineage: s.lineage })),
-			sessionMinutes: programming.sessionMinutes,
-			estimateMinutes: (s) => estimateMinutes(s, programming),
-			running,
-			...(evaluation && { evaluation })
-		}
-	);
+	return (deload) =>
+		proposeNextWeek(
+			{
+				startsOn: monday,
+				state: snapshot.next.state,
+				kind: snapshot.next.kind,
+				rpeCap: next?.targets.rpeCap ?? null,
+				sessions
+			},
+			snapshot,
+			byKey,
+			{
+				today: input.today,
+				unit: input.unit,
+				exercises,
+				workouts: started.map((s) => ({ plannedLineage: s.lineage })),
+				sessionMinutes: programming.sessionMinutes,
+				estimateMinutes: (s) => estimateMinutes(s, programming),
+				running,
+				...(evaluation && { evaluation }),
+				...(deload && { deload })
+			}
+		);
 }
 
-/** The 'next' findings: why nothing is proposed, each change left out, and the cycle flag. */
-function nextFindings(proposal: NextWeekProposal, reason: NoProposalReason | null): Finding[] {
-	const finding = (id: string, label: string, words: string): Finding => ({
+/** One 'next' finding: its id is the part after `next:`. */
+function nextFinding(id: string, label: string, words: string): Finding {
+	return {
 		id: clip(`next:${id}`, 120),
 		section: 'next',
 		label: clip(label, 120),
@@ -445,20 +470,37 @@ function nextFindings(proposal: NextWeekProposal, reason: NoProposalReason | nul
 		window: null,
 		metricId: null,
 		sources: []
-	});
+	};
+}
+
+/**
+ * A late review's deload: the domain answers `late` for next week before it reaches the deload,
+ * so its finding is written here, naming the week the deload eases (the week holding today).
+ */
+const LATE_DELOAD_WORDS =
+	'This week is proposed as a deload, so its sessions are eased as a whole rather than changed one by one.';
+
+/**
+ * The 'next' findings: why nothing is proposed, the deload instead (its own sentence, from the
+ * domain), each change left out, and the cycle flag.
+ */
+function nextFindings(proposal: NextWeekProposal, reason: NoProposalReason | null): Finding[] {
 	return [
 		...(reason
 			? [
-					finding(
+					nextFinding(
 						'no_proposal',
 						'No changes proposed',
 						proposal.reason ?? NO_PROPOSAL_WORDS[reason]
 					)
 				]
 			: []),
-		...proposal.notProposed.map((n) => finding(`not_proposed:${n.id}`, n.why, n.words)),
+		...(proposal.boundary === 'deload' && proposal.reason
+			? [nextFinding('deload', 'A deload instead', proposal.reason)]
+			: []),
+		...proposal.notProposed.map((n) => nextFinding(`not_proposed:${n.id}`, n.why, n.words)),
 		...(proposal.cycleFlag
-			? [finding('cycle_flag', 'For your cycle review', proposal.cycleFlag)]
+			? [nextFinding('cycle_flag', 'For your cycle review', proposal.cycleFlag)]
 			: [])
 	];
 }
@@ -495,44 +537,20 @@ function checkWeek({ weekStartsOn, today }: CreateWeeklyReview) {
 	if (weekStartsOn > today) throw new ReviewInputError('weekStartsOn', 'That week has not started');
 }
 
-/**
- * The week's review as stored, and next week's changes to propose (null: none). With a program,
- * the conflicts and next week's moves are judged with M7's evaluation context, read from the
- * review's own facts loader inside `db` (the caller's transaction: a savepoint bounds it). A null
- * context (its reads failed, recorded) keeps M3's checkWeek.
- */
-async function compute(
-	db: Executor,
-	ownerId: string,
-	monday: IsoDate,
-	today: IsoDate,
-	deps: WeeklyReviewDeps['context'] = {}
+/** A deload the review proposes instead: its week, its reasons, and the review stored with it. */
+interface DeloadInstead {
+	week: IsoDate;
+	reasons: string[];
+	values: ReturnType<typeof rowValues>;
+}
+
+/** A computed review as a row's values. */
+function rowValues(
+	week: Week,
+	composed: ReturnType<typeof composeWeeklyReview>,
+	snapshot: WeeklyReviewSnapshot
 ) {
-	const week = await readWeek(db, ownerId, monday, today);
-	const ended = today > addDays(monday, 6);
-	if (!ended && !(EARLY_REVIEW && allDone(week.input.week.sessions, week.input.completedLineages)))
-		throw new WeeklyReviewNotReviewableError(addDays(monday, 7));
-	const at = week.plan && { versionId: week.plan.versionId, weekStartsOn: monday, today };
-	const context = at && (await evaluationContext(ownerId, at, { ...deps, db, facts: week.facts }));
-	const evaluation = context ? reviewEvaluationOf(context) : null;
-	const composed = composeWeeklyReview({ ...week.input, ...(evaluation && { evaluation }) });
-	const proposal = await nextWeekOf(
-		db,
-		ownerId,
-		week,
-		composed.snapshot,
-		composed.exposures,
-		evaluation
-	);
-	const reason: NoProposalReason | null =
-		composed.snapshot.noProposal ?? (proposal.adjustments.length ? null : 'no_changes');
-	const findings = [...composed.snapshot.brief.findings, ...nextFindings(proposal, reason)];
-	const snapshot: WeeklyReviewSnapshot = {
-		...composed.snapshot,
-		noProposal: reason,
-		brief: { ...composed.snapshot.brief, findings }
-	};
-	const values = {
+	return {
 		snapshot: snapshot as unknown as Record<string, unknown>,
 		summary: composed.summary,
 		programId: week.plan?.programId ?? null,
@@ -541,7 +559,149 @@ async function compute(
 		analyticsVersion: snapshot.analyticsVersion,
 		inputsDigest: composed.inputsDigest
 	};
-	return { values, proposal: reason ? null : proposal, snapshot };
+}
+
+/**
+ * The week's review as stored, and next week's changes to propose (null: none). With a program,
+ * the conflicts and next week's moves are judged with M7's evaluation context, read from the
+ * review's own facts loader inside `db` (the caller's transaction: a savepoint bounds it). A null
+ * context (its reads failed, recorded) keeps M3's checkWeek. `deload` is the deload to propose
+ * instead, when the review calls for one (M7), with the review as stored beside it.
+ */
+async function compute(
+	db: Executor,
+	ownerId: string,
+	monday: IsoDate,
+	today: IsoDate,
+	deps: Pick<WeeklyReviewDeps, 'context' | 'reactiveDeload'> = {}
+) {
+	const week = await readWeek(db, ownerId, monday, today);
+	const ended = today > addDays(monday, 6);
+	if (!ended && !(EARLY_REVIEW && allDone(week.input.week.sessions, week.input.completedLineages)))
+		throw new WeeklyReviewNotReviewableError(addDays(monday, 7));
+	const at = week.plan && { versionId: week.plan.versionId, weekStartsOn: monday, today };
+	const context =
+		at && (await evaluationContext(ownerId, at, { ...deps.context, db, facts: week.facts }));
+	const evaluation = context ? reviewEvaluationOf(context) : null;
+	const composed = composeWeeklyReview({ ...week.input, ...(evaluation && { evaluation }) });
+	const nextWeek = await nextWeekOf(
+		db,
+		ownerId,
+		week,
+		composed.snapshot,
+		composed.exposures,
+		evaluation
+	);
+	const proposal = nextWeek(false);
+	const reason: NoProposalReason | null =
+		composed.snapshot.noProposal ?? (proposal.adjustments.length ? null : 'no_changes');
+	const stored = (
+		next: NextWeekProposal,
+		noProposal: NoProposalReason | null,
+		deload?: WeeklyReviewSnapshot['deload'],
+		extra: Finding[] = []
+	): WeeklyReviewSnapshot => ({
+		...composed.snapshot,
+		noProposal,
+		...(deload && { deload }),
+		brief: {
+			...composed.snapshot.brief,
+			findings: [...composed.snapshot.brief.findings, ...nextFindings(next, noProposal), ...extra]
+		}
+	});
+	const snapshot = stored(proposal, reason);
+
+	let deload: DeloadInstead | null = null;
+	const targetWeek = deloadTargetWeek(composed.snapshot, today);
+	if ((deps.reactiveDeload ?? REACTIVE_DELOAD) && context && week.plan && targetWeek) {
+		const calendar = [...week.plan.weeks.values()].map(({ week: w }) => ({
+			startsOn: w.startsOn,
+			kind: w.kind
+		}));
+		const need = assessDeload(
+			{ today, snapshot: composed.snapshot, targetWeek },
+			{ context, calendar }
+		);
+		if (need.action === 'deload') {
+			const reasons = deloadReasons(need.reasons);
+			const late = composed.snapshot.noProposal === 'late';
+			const instead = stored(
+				nextWeek(true),
+				null,
+				{ week: targetWeek, reasons },
+				late ? [nextFinding('deload', 'A deload instead', LATE_DELOAD_WORDS)] : []
+			);
+			deload = { week: targetWeek, reasons, values: rowValues(week, composed, instead) };
+		}
+	}
+	const values = rowValues(week, composed, snapshot);
+	return { values, proposal: reason ? null : proposal, snapshot, deload };
+}
+
+/** Thrown inside the deload's savepoint to roll it back: the engine proposed nothing. */
+class NoDeload extends Error {}
+
+/**
+ * Store the review with `deload` (`store`), propose the deload with the review's provenance and
+ * link it, all in a savepoint of `tx`. Null, with the savepoint rolled back to, when another
+ * replan is open, when the engine proposes nothing (refused, or nothing would change), or when the
+ * deload fails: the caller then stores M6's review instead. A failure is recorded (part
+ * reactive-deload), so a deload never costs the owner the review.
+ */
+async function storeWithDeload(
+	ownerId: string,
+	deload: DeloadInstead,
+	store: (deps: { db: Executor; now: () => Date }) => Promise<StoredWeeklyReview>,
+	{
+		tx,
+		now,
+		today,
+		context = {}
+	}: { tx: Executor; now: () => Date; today: IsoDate } & Pick<WeeklyReviewDeps, 'context'>
+): Promise<StoredWeeklyReview | null> {
+	try {
+		return await tx.transaction(async (sp) => {
+			const inSp = { db: sp, now };
+			// Serialises replan creation for this owner, so a coach or goal-change replan cannot
+			// open between the check and the proposal below.
+			await createCoachProposalsRepository(sp).lockCreates(ownerId);
+			if (await getOpenReplan(ownerId, inSp)) throw new NoDeload();
+			const review = await store(inSp);
+			const { reader, statementTimeoutMs, origin, errorsDb } = context;
+			const made = await proposeDeload(
+				ownerId,
+				{
+					today,
+					source: 'weekly_review',
+					week: deload.week,
+					reasons: deload.reasons,
+					review: {
+						reviewId: review.id,
+						revision: review.revision,
+						weekStartsOn: review.weekStartsOn
+					}
+				},
+				{ ...inSp, reader, statementTimeoutMs, origin, errorsDb }
+			);
+			if (made.status !== 'proposed') throw new NoDeload();
+			await linkProposal(ownerId, 'weekly', review.id, made.proposal.id, inSp);
+			return getWeeklyReview(ownerId, review.id, inSp);
+		});
+	} catch (error) {
+		if (error instanceof NoDeload) return null;
+		// Outside the savepoint, which is rolled back: the failure is kept, and M6's path stands.
+		await recordServerError(
+			{
+				error,
+				kind: 'load',
+				status: 500,
+				...context.origin,
+				context: { part: 'reactive-deload' }
+			},
+			{ db: context.errorsDb ?? tx }
+		);
+		return null;
+	}
 }
 
 /** Propose the adjustments for the stored review and link them to it. */
@@ -609,7 +769,18 @@ export async function createWeeklyReview(
 		const live = await getLiveWeeklyReview(ownerId, options.weekStartsOn, inTx);
 		if (live) return { review: live, created: false };
 		const { weekStartsOn, today } = options;
-		const { values, proposal } = await compute(tx, ownerId, weekStartsOn, today, deps.context);
+		const { values, proposal, deload } = await compute(tx, ownerId, weekStartsOn, today, deps);
+		if (deload) {
+			const store = async (d: { db: Executor; now: () => Date }) =>
+				(await storeWeeklyReview(ownerId, { ...deload.values, weekStartsOn }, d)).review;
+			const stored = await storeWithDeload(ownerId, deload, store, {
+				tx,
+				now,
+				today,
+				context: deps.context
+			});
+			if (stored) return { review: stored, created: true };
+		}
 		const { review } = await storeWeeklyReview(
 			ownerId,
 			{ ...values, weekStartsOn: options.weekStartsOn },
@@ -643,15 +814,16 @@ export async function refreshWeeklyReview(
 		const head = await proposalHead(ownerId, review, inTx);
 		if (!REFRESHABLE.includes(decisionOf(head).state))
 			throw new WeeklyReviewRefreshError('decided');
-		const { values, proposal } = await compute(
+		const { values, proposal, deload } = await compute(
 			tx,
 			ownerId,
 			review.weekStartsOn,
 			today,
-			deps.context
+			deps
 		);
 		if (!stale(review, values.inputsDigest)) throw new WeeklyReviewRefreshError('not_stale');
-		const next = await supersedeWeeklyReview(ownerId, id, { ...values, proposalId: null }, inTx);
+		// The old head goes first: an open replan would block the deload, and it is superseded
+		// either way.
 		if (head?.status === 'proposed') {
 			const at = now();
 			const proposals = createCoachProposalsRepository(tx);
@@ -662,6 +834,18 @@ export async function refreshWeeklyReview(
 				updatedAt: at
 			});
 		}
+		if (deload) {
+			const store = (d: { db: Executor; now: () => Date }) =>
+				supersedeWeeklyReview(ownerId, id, { ...deload.values, proposalId: null }, d);
+			const stored = await storeWithDeload(ownerId, deload, store, {
+				tx,
+				now,
+				today,
+				context: deps.context
+			});
+			if (stored) return stored;
+		}
+		const next = await supersedeWeeklyReview(ownerId, id, { ...values, proposalId: null }, inTx);
 		return proposal ? proposeFor(ownerId, next, proposal, inTx) : next;
 	});
 }
