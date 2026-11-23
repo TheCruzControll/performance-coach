@@ -182,8 +182,7 @@
 		align-items: baseline;
 		justify-content: space-between;
 		gap: var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
+		font: var(--type-secondary);
 		color: var(--color-text-secondary);
 	}
 
@@ -195,15 +194,17 @@
 		list-style: none;
 	}
 
-	/* The remove button is 36 px with a 44 px hit area, which fills the pill's height. */
+	/* The remove button is 36 px with a 44 px hit area, which fills the pill's height. v2 has no
+	   pills of its own: a tag is a quiet surface-2 pill. */
 	.tag {
 		display: flex;
 		align-items: center;
 		gap: var(--space-1);
 		min-height: var(--touch-target);
 		padding: 0 var(--space-1) 0 var(--space-4);
+		border: 0;
 		border-radius: var(--radius-full);
-		background: var(--color-surface-3);
+		background: var(--color-surface-2);
 		font-size: var(--text-sm);
 		font-weight: var(--weight-medium);
 		overflow-wrap: anywhere;
@@ -220,17 +221,17 @@
 		gap: var(--space-2);
 	}
 
+	/* Instrument v2: 56 px, 14 px corners, no border; the font is 17 px, so iOS never zooms. */
 	.input {
 		width: 100%;
 		min-width: 0;
 		min-height: 3.5rem;
-		padding: 0 var(--space-4);
-		border-radius: var(--radius-md);
-		border: 1px solid var(--color-border);
+		padding: 0 var(--space-4-5);
+		border: 1px solid transparent;
+		border-radius: var(--radius-sm);
 		background: var(--color-surface-2);
-		box-shadow: inset 0 1px 0 0 var(--color-highlight);
-		/* ≥ 16px: iOS Safari zooms into smaller inputs on focus. */
-		font-size: max(1rem, var(--text-base));
+		color: var(--color-text);
+		font: var(--type-row);
 	}
 
 	.input::placeholder {
@@ -240,20 +241,17 @@
 	.input:focus-visible {
 		/* The ring is the shadow; forced colours drop shadows and draw this outline instead. */
 		outline: 2px solid transparent;
-		border-color: var(--color-accent);
 		box-shadow: 0 0 0 3px var(--color-accent-ring);
 	}
 
-	.invalid .input {
-		border-color: var(--color-danger);
-	}
-
 	.message {
-		font-size: var(--text-xs);
+		font: var(--type-secondary);
 		color: var(--color-text-tertiary);
 	}
 
+	/* One red line under the field, no red border. */
 	.error {
+		padding-top: var(--space-0-5);
 		color: var(--color-danger);
 	}
 </style>

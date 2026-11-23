@@ -39,7 +39,9 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   and the set edit sheet (`src/routes/workout/SetEditSheet.svelte`) pin their controls at 56 px,
   because a phone has no room to grow the logger: it has broken CI three times. The phone test
   "the logger keeps 56 px controls" in `e2e/workout-log.e2e.ts` holds the pin. Closes when v2/10
-  redesigns the set screen and removes both pins and that test's 56 px expectation.
+  redesigns the set screen and removes both pins and that test's 56 px expectation. The steppers'
+  text is pinned there too, at its pre-v2 size: the label at 13 px and the value at 56 px. Below a
+  22 rem row (a 390 px phone), the v2 value would stack 12 px taller and the logger would grow.
 - **Thirteen files still style their own underlined links; screen rows move them to `.text-link`.**
   The links in running text are styled by each file: ProposalCard, RichText, Notice, Toaster,
   ReplanNotice, ProgramHeader, ArchivedSheet, KnowsSheet, ThreadList, the proposal detail, and the

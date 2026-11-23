@@ -124,7 +124,8 @@
 		/* Lifts the letter clear of the tick. */
 		padding-bottom: 0.25rem;
 		border-radius: 50%;
-		border: 1px solid var(--color-border);
+		/* No outline in v2: the day is a surface-2 disc, and a picked one is the inverse fill. */
+		border: 1px solid transparent;
 		background: var(--color-surface-2);
 		font-weight: var(--weight-semibold);
 		color: var(--color-text-secondary);
@@ -135,10 +136,11 @@
 			transform var(--duration-fast) var(--ease-out);
 	}
 
+	/* A picked day is the inverse fill (the effort scale's selected circle), never amber. */
 	.input:checked + .face {
-		background: var(--color-accent);
+		background: var(--color-surface-inverse);
 		border-color: transparent;
-		color: var(--color-on-accent);
+		color: var(--color-text-inverse);
 	}
 
 	/* A drawn tick under the letter: selected is never the fill colour alone. */
@@ -184,13 +186,13 @@
 
 	@media (hover: hover) and (pointer: fine) {
 		.input:not(:checked):hover + .face {
-			border-color: var(--color-border-strong);
 			background: var(--color-surface-3);
 			color: var(--color-text);
 		}
 
+		/* A picked day tints a step toward the canvas, as a switch that is on does. */
 		.input:checked:hover + .face {
-			background: var(--color-accent-hover);
+			background: color-mix(in srgb, var(--color-surface-inverse), var(--color-canvas) 12%);
 		}
 	}
 </style>

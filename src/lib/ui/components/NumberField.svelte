@@ -114,8 +114,7 @@
 		align-items: baseline;
 		justify-content: space-between;
 		gap: var(--space-2);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
+		font: var(--type-secondary);
 		color: var(--color-text-secondary);
 	}
 
@@ -125,49 +124,44 @@
 		align-items: center;
 	}
 
+	/* Instrument v2: 56 px, 14 px corners, no border. The unit keeps room at the end. */
 	.input {
 		width: 100%;
 		min-height: 3.5rem;
-		padding: 0 3.25rem 0 var(--space-4);
-		border-radius: var(--radius-md);
-		border: 1px solid var(--color-border);
+		padding: 0 3.25rem 0 var(--space-4-5);
+		border: 1px solid transparent;
+		border-radius: var(--radius-sm);
 		background: var(--color-surface-2);
-		box-shadow: inset 0 1px 0 0 var(--color-highlight);
-		font-size: var(--text-xl);
-		font-weight: var(--weight-semibold);
+		color: var(--color-text);
+		font: var(--type-row);
 	}
 
 	.input::placeholder {
 		color: var(--color-text-tertiary);
-		font-weight: var(--weight-regular);
 	}
 
 	.input:focus-visible {
 		/* The ring is the shadow; forced colours drop shadows and draw this outline instead. */
 		outline: 2px solid transparent;
-		border-color: var(--color-accent);
 		box-shadow: 0 0 0 3px var(--color-accent-ring);
 	}
 
 	.unit {
 		position: absolute;
-		right: var(--space-4);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
+		right: var(--space-4-5);
+		font: var(--type-secondary);
 		color: var(--color-text-tertiary);
 		pointer-events: none;
 	}
 
-	.invalid .input {
-		border-color: var(--color-danger);
-	}
-
 	.message {
-		font-size: var(--text-xs);
+		font: var(--type-secondary);
 		color: var(--color-text-tertiary);
 	}
 
+	/* One red line under the field, no red border. */
 	.error {
+		padding-top: var(--space-0-5);
 		color: var(--color-danger);
 	}
 </style>

@@ -244,11 +244,12 @@
 		gap: var(--space-2);
 	}
 
+	/* Instrument v2: the label sits left, above the row. The ± are round 60 px surface-3 controls
+	   (IconButton lg); the value is a 64 px Mona numeral, tabular. */
 	.label {
-		font-size: var(--text-2xs);
-		font-weight: var(--weight-semibold);
-		color: var(--color-text-tertiary);
-		text-align: center;
+		font: var(--type-secondary);
+		color: var(--color-text-secondary);
+		text-align: start;
 	}
 
 	.row {
@@ -262,7 +263,7 @@
 		display: flex;
 		align-items: baseline;
 		justify-content: center;
-		gap: var(--space-1-5);
+		gap: var(--space-2);
 		min-width: 0;
 	}
 
@@ -275,12 +276,10 @@
 		border: 0;
 		border-radius: var(--radius-sm);
 		color: var(--color-text);
-		font-family: var(--font-numeric);
+		font: var(--type-numeral-l);
+		letter-spacing: var(--tracking-hero);
+		/* After the shorthand, which resets the numerals' variant. */
 		font-variant-numeric: lining-nums tabular-nums;
-		font-size: var(--text-5xl);
-		font-weight: var(--weight-bold);
-		line-height: 1;
-		letter-spacing: var(--tracking-display);
 		text-align: center;
 		caret-color: var(--color-accent);
 	}
@@ -291,16 +290,18 @@
 		background: var(--color-surface-2);
 	}
 
+	/* 19/24 beside the numeral, on its baseline. */
 	.unit {
 		font-size: var(--text-lg);
-		font-weight: var(--weight-medium);
-		color: var(--color-text-secondary);
+		line-height: 1.2632;
+		font-weight: var(--weight-regular);
+		color: var(--color-text-tertiary);
 	}
 
 	.hint {
-		font-size: var(--text-sm);
+		font: var(--type-secondary);
 		color: var(--color-text-tertiary);
-		text-align: center;
+		text-align: start;
 	}
 
 	.invalid .value,

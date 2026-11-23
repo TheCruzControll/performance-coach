@@ -214,7 +214,7 @@ test.describe('/design → Inputs: text and numbers', () => {
 const WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 /** The drawn part (`.tick`, `.mark`) of the option whose input is `control`. */
-function optionPart(control: Locator, part: '.tick' | '.mark') {
+function optionPart(control: Locator, part: '.tick' | '.mark' | '.label') {
 	return control.locator(`xpath=following-sibling::*[1]`).locator(part);
 }
 
@@ -318,19 +318,25 @@ test.describe('/design → Inputs: choices and days', () => {
 		page
 	}, testInfo) => {
 		await openInputs(page);
-		// The mark fills (a thick ring) when its card is selected; the others stay a hairline.
-		const ring = (card: Locator) =>
-			optionPart(card, '.mark').evaluate((el) => parseFloat(getComputedStyle(el).borderTopWidth));
+		// The picked card shows a check in its slot, and only it: the others keep the empty slot.
+		// The row's label is 600 when picked.
+		const check = (card: Locator) => optionPart(card, '.mark').locator('svg');
+		const weight = (card: Locator) =>
+			optionPart(card, '.label').evaluate((el) => getComputedStyle(el).fontWeight);
 		const gym = page.getByRole('group', { name: 'Where do you train most?' });
 		const commercial = gym.getByRole('radio', { name: /^Commercial gym/ });
 		const home = gym.getByRole('radio', { name: /^Home or garage gym/ });
 		await expect(commercial).toBeChecked();
-		expect(await ring(commercial)).toBeGreaterThan(4);
-		expect(await ring(home)).toBeLessThan(2);
+		await expect(check(commercial)).toBeVisible();
+		await expect(check(home)).toHaveCount(0);
+		expect(await weight(commercial)).toBe('600');
+		expect(await weight(home)).toBe('400');
 		await home.click();
 		await expect(home).toBeChecked();
-		await expect.poll(() => ring(home)).toBeGreaterThan(4);
-		await expect.poll(() => ring(commercial)).toBeLessThan(2);
+		await expect(check(home)).toBeVisible();
+		await expect(check(commercial)).toHaveCount(0);
+		await expect.poll(() => weight(home)).toBe('600');
+		await expect.poll(() => weight(commercial)).toBe('400');
 
 		const equipment = page.getByRole('group', { name: 'Equipment at home' });
 		const cards = equipment.getByRole('checkbox');
@@ -352,7 +358,7 @@ test.describe('/design → Inputs: choices and days', () => {
 		await expect(alert).toHaveCount(0);
 		for (const card of await cards.all()) await expect(card).not.toHaveAttribute('aria-invalid');
 		await expect(equipment).not.toHaveAttribute('aria-describedby');
-		await expect.poll(() => ring(dumbbells)).toBeGreaterThan(4);
+		await expect(optionPart(dumbbells, '.mark').locator('svg')).toBeVisible();
 	});
 
 	test('every choice option is at least 44 px tall', async ({ page }) => {
@@ -770,3 +776,143 @@ test.describe('/design → Inputs: toggle and tags', () => {
 		expect(await missingDescribedBy(field)).toEqual([]);
 	});
 });
+
+type Theme = 'dark' | 'light';
+
+/** The Instrument v2 input colours each theme resolves to, as getComputedStyle reports them. */
+const INPUT_COLOUR: Record<
+	Theme,
+	{ surface2: string; inverse: string; onInverse: string; secondary: string; danger: string }
+> = {
+	dark: {
+		surface2: 'rgb(25, 25, 28)',
+		inverse: 'rgb(242, 242, 238)',
+		onInverse: 'rgb(17, 17, 19)',
+		secondary: 'rgb(163, 163, 168)',
+		danger: 'rgb(255, 90, 82)'
+	},
+	light: {
+		surface2: 'rgb(236, 236, 231)',
+		inverse: 'rgb(17, 17, 19)',
+		onInverse: 'rgb(242, 242, 238)',
+		secondary: 'rgb(85, 85, 92)',
+		danger: 'rgb(187, 44, 40)'
+	}
+};
+
+const AMBER_FILL = 'rgb(255, 176, 46)';
+const NO_COLOUR = 'rgba(0, 0, 0, 0)';
+
+/** One computed style of a control, by its CSS property name. */
+function styleOf(control: Locator, property: string) {
+	return control.evaluate(
+		(el, p) => (getComputedStyle(el) as unknown as Record<string, string>)[p],
+		property
+	);
+}
+
+/** The drawn face of a native input (the next element after it). */
+const faceOf = (control: Locator) => control.locator('xpath=following-sibling::*[1]');
+
+async function openInputsIn(page: Page, theme: Theme) {
+	await page.addInitScript(
+		(t) => localStorage.setItem('pc:prefs:v1', JSON.stringify({ theme: t })),
+		theme
+	);
+	await openInputs(page);
+	if (theme === 'light') await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+}
+
+for (const theme of ['dark', 'light'] as const) {
+	const c = INPUT_COLOUR[theme];
+
+	test.describe(`/design → Inputs, Instrument v2 (${theme})`, () => {
+		test('a text field is a 56 px surface-2 field with 14 px corners and no border, and its error is one red line', async ({
+			page
+		}) => {
+			await openInputsIn(page, theme);
+			const filled = page.getByRole('textbox', { name: 'Name, filled' });
+			expect(Math.round((await filled.boundingBox())!.height)).toBe(56);
+			expect(await styleOf(filled, 'backgroundColor')).toBe(c.surface2);
+			expect(await styleOf(filled, 'borderRadius')).toBe('14px');
+			expect(await styleOf(filled, 'borderTopColor')).toBe(NO_COLOUR);
+			expect(await styleOf(filled, 'fontSize')).toBe('17px');
+			expect(await styleOf(page.getByText('Name, filled', { exact: true }), 'color')).toBe(
+				c.secondary
+			);
+
+			const failing = page.getByRole('textbox', { name: 'Name, with an error' });
+			await expect(failing).toHaveAttribute('aria-invalid', 'true');
+			expect(await styleOf(failing, 'borderTopColor')).toBe(NO_COLOUR);
+			const error = page.getByRole('alert').filter({ hasText: 'Give the exercise a name' });
+			expect(await styleOf(error, 'color')).toBe(c.danger);
+		});
+
+		test('the stepper shows a 64 px tabular value between two round 60 px controls', async ({
+			page
+		}) => {
+			await openInputsIn(page, theme);
+			const weight = page.getByRole('spinbutton', { name: 'Weight' });
+			await expect(weight).toHaveValue('102.5');
+			expect(await styleOf(weight, 'fontSize')).toBe('64px');
+			expect(await styleOf(weight, 'fontVariantNumeric')).toContain('tabular-nums');
+			for (const name of ['Decrease Weight', 'Increase Weight']) {
+				const box = (await page.getByRole('button', { name, exact: true }).boundingBox())!;
+				expect(Math.round(box.width)).toBe(60);
+				expect(Math.round(box.height)).toBe(60);
+			}
+		});
+
+		test('a card choice list has rows of at least 60 px on hairlines, no line under the last, and a check on the picked row', async ({
+			page
+		}) => {
+			await openInputsIn(page, theme);
+			const list = page.getByRole('group', { name: 'How long have you been running?' });
+			const faces = list.locator('.face');
+			await expect(faces).toHaveCount(4);
+			const hairline = await tokenColor(page, '--color-hairline');
+			for (let i = 0; i < 4; i += 1) {
+				const face = faces.nth(i);
+				expect((await face.boundingBox())!.height).toBeGreaterThanOrEqual(60);
+				expect(await styleOf(face, 'borderBottomColor')).toBe(i === 3 ? NO_COLOUR : hairline);
+			}
+
+			const picked = list.getByRole('radio', { name: /^One to three years/ });
+			await expect(picked).toBeChecked();
+			await expect(faceOf(picked).locator('.mark svg')).toBeVisible();
+			expect(await styleOf(faceOf(picked).locator('.label'), 'fontWeight')).toBe('600');
+			await expect(list.locator('.mark svg')).toHaveCount(1);
+		});
+
+		test('a short hint sits at the end of its row', async ({ page }) => {
+			await openInputsIn(page, theme);
+			const short = page.getByRole('group', { name: 'Years running, with short hints' });
+			await expect(short.locator('.sub.end')).toHaveCount(4);
+			expect(await styleOf(short.locator('.sub.end').first(), 'textAlign')).toBe('end');
+		});
+
+		test('a picked pill, a picked day and a switch that is on are the inverse fill, never amber', async ({
+			page
+		}) => {
+			await openInputsIn(page, theme);
+			const level = page.getByRole('group', { name: 'Level', exact: true });
+			const intermediate = level.getByRole('radio', { name: 'Intermediate', exact: true });
+			await expect(intermediate).toBeChecked();
+			expect(await styleOf(faceOf(intermediate), 'backgroundColor')).toBe(c.inverse);
+			expect(await styleOf(faceOf(intermediate), 'color')).toBe(c.onInverse);
+
+			const days = page.getByRole('group', { name: 'Days you can train' });
+			const tuesday = days.getByRole('checkbox', { name: 'Tuesday' });
+			await expect(tuesday).toBeChecked();
+			expect(await styleOf(faceOf(tuesday), 'backgroundColor')).toBe(c.inverse);
+
+			const home = page.getByRole('switch', { name: 'I also train at home' });
+			await home.click();
+			await expect(home).toBeChecked();
+			expect(await styleOf(faceOf(home), 'backgroundColor')).toBe(c.inverse);
+
+			for (const control of [intermediate, tuesday, home])
+				expect(await styleOf(faceOf(control), 'backgroundColor')).not.toBe(AMBER_FILL);
+		});
+	});
+}
