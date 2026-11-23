@@ -119,7 +119,7 @@
 
 	/* Selected: the outline and the icon take the accent. Not on an accent fill, where the icon is
 	   the fill's own colour. */
-	.icon-btn[aria-pressed='true']:not([data-variant='accent']) {
+	.icon-btn[aria-pressed='true']:not([data-variant='accent']):not(:disabled) {
 		border-color: var(--color-accent);
 		color: var(--color-accent-text);
 	}

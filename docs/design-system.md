@@ -414,8 +414,9 @@ type scale is the same at every width, because a 1024–1366 px window can be a 
   `:hover`, `(hover: hover)` alone, `(pointer: coarse)`, `any-hover` and `any-pointer` fail. The
   iPhone has no hover, and a touch laptop or an iPad never gets a hover state that sticks.
 - Hover is never the only cue: what it shows is also there on focus or press.
-- Every interactive primitive has one: buttons and icon buttons tint, rows and cards strengthen
-  their border, an unselected tab gets a `--color-surface-2` tint and brighter text, a choice or a day not yet picked lifts to
+- Every interactive primitive has one: buttons and icon buttons tint, except a ghost button, which
+  has no fill and brightens its text instead. Rows and cards strengthen their border, an unselected
+  tab gets a `--color-surface-2` tint and brighter text, a choice or a day not yet picked lifts to
   `--color-surface-3` with a stronger border, a switch that is off strengthens its track's border,
   and a picked day or a switch that is on takes `--color-accent-hover`. Native controls drawn by a
   face (`ChoiceGroup`, `DayPicker`, `Toggle`) cover it, so the whole face shows the pointer cursor
@@ -567,7 +568,7 @@ later-pass screen).
 | `IconButton`        | Square, 4 px radius, required `label` (accessible name), `ghost · filled · accent` (`filled` is the outlined button), `sm · md · lg` (36/44/48 px, icon 16/18/18); `aria-pressed` draws the accent outline and icon; `tooltip` captions it with the label on hover and keyboard focus (fine pointers only).                                                                             |
 | `Icon`              | Inline SVG set (`src/lib/ui/icons/icons.ts`, 24 px grid, 1.75 px round strokes); decorative unless `label`.                                                                                                                                                                                                                                                                             |
 | `Surface` / `Card`  | Levels 1–3, padding, radius, discipline `tone` tint, `interactive`/`href`; `Card` adds eyebrow/title/action header (`aria-labelledby`).                                                                                                                                                                                                                                                 |
-| `NumberStepper`     | One-handed −/+ (56 px), press-and-hold accelerating repeat, tap-to-type (`inputmode=decimal`), `role=spinbutton` with ArrowUp/Down, PageUp/Down, Home/End; `error` replaces `hint` (`aria-invalid`, `role=alert`).                                                                                                                                                                      |
+| `NumberStepper`     | One-handed −/+ (48 px), press-and-hold accelerating repeat, tap-to-type (`inputmode=decimal`), `role=spinbutton` with ArrowUp/Down, PageUp/Down, Home/End; `error` replaces `hint` (`aria-invalid`, `role=alert`).                                                                                                                                                                      |
 | `BottomSheet`       | Native `<dialog>` + `showModal()` (platform focus trap, inert background), Escape/backdrop close, focus returns to opener, touch swipe-to-dismiss (distance or velocity), content mounted only while open. A centred dialog from 1024 px.                                                                                                                                               |
 | `SegmentedControl`  | `radiogroup` with roving tabindex and arrow keys; spring-animated thumb; `sm` (36 px track) options extend their hit area to 44 px.                                                                                                                                                                                                                                                     |
 | `Tabs`              | WAI-ARIA tabs (automatic activation, arrows/Home/End), mono lowercase labels (selected in full text colour), a 2 px accent indicator, renders active panel.                                                                                                                                                                                                                             |
@@ -659,7 +660,7 @@ workout pages and is audited on `/design` → Workout, one state at a time.
 - **Never colour alone.** Set states are words ('Now', 'Done', '2 missed', 'Not saved on this
   device'), the sync pill is an icon and words, a chosen chip shows a tick beside its ring, and an
   exercise's state ('Swapped for this session', 'Stopped') is written on the card.
-- **Targets.** At least 44 × 44 px at every width (the steppers' ± are 56 px); sheets are dialogs
+- **Targets.** At least 44 × 44 px at every width (the steppers' ± are 48 px); sheets are dialogs
   that take focus, close on Escape and return it; RPE is one radio group.
 
 ### Desktop layout
