@@ -186,7 +186,7 @@ describe('the Train add action', () => {
 	const NOW = new Date('2026-11-09T08:00:00Z');
 	const adds = (db: Executor) => addActions({ db, now: () => NOW });
 
-	it('adds a session to the current version and returns its version and warnings', async () => {
+	it('adds a session to the current version and returns its version, title and warnings', async () => {
 		await withRollback(async (db) => {
 			const owner = await makeOwner(db);
 			await createProgramFromPlan(owner, plan(), { source: 'rules' }, { db });
@@ -194,7 +194,7 @@ describe('the Train add action', () => {
 				locals: session(owner),
 				request: post({ date: '2026-11-18', kind: 'run', intent: 'easy', version: 1 })
 			});
-			expect(result).toEqual({ version: 2, warnings: expect.any(Array) });
+			expect(result).toEqual({ version: 2, title: 'Easy run', warnings: expect.any(Array) });
 			expect(await getCurrentProgram(owner, MONDAY, { db })).toMatchObject({
 				version: { number: 2 }
 			});
