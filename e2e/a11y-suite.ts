@@ -19,6 +19,7 @@ import { gotoHydrated, SCREENS as APP_ROOTS, signedOut } from './support';
 export const SCREENS = [
 	...APP_ROOTS.map((t) => t.path),
 	'/profile/security',
+	'/profile/appearance',
 	'/profile/goals',
 	'/profile/equipment',
 	'/profile/strength',

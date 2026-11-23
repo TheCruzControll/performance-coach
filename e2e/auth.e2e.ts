@@ -370,7 +370,7 @@ test.describe('passkey authentication (real WebAuthn ceremonies)', () => {
 		browser
 	}, testInfo) => {
 		const { context, page, sessionId } = await ownDevice(browser, testInfo);
-		await page.goto('/profile');
+		await page.goto('/profile/appearance');
 		await page.waitForLoadState('networkidle'); // hydrated: a tap before then changes nothing
 		await page.getByTestId('theme-control').getByRole('radio', { name: 'Light' }).click();
 		await expect

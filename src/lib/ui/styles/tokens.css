@@ -298,6 +298,9 @@
 		--content-readable: 38.5rem;
 		/* The most <main> sits right of the rail: Paper's text starts 200 px from it. */
 		--column-offset-max: calc(12.5rem - var(--gutter));
+		/* Profile at a desk (v2/21b): a 400 px list, 56 px, then the open screen 576 px wide behind
+		   a hairline (519 px of content after the hairline and 56 px), inside the 28 px gutters. */
+		--content-profile: 68rem;
 	}
 }
 

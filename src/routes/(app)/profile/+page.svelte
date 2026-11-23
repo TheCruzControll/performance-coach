@@ -1,28 +1,28 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import {
-		preferences,
-		type DistancePreference,
-		type ThemePreference
-	} from '#lib/client/preferences.svelte.ts';
-	import { setTheme } from '#lib/client/theme.ts';
-	import type { WeightUnit } from '#lib/domain/units.ts';
+	import { preferences } from '#lib/client/preferences.svelte.ts';
 	import Card from '#lib/ui/components/Card.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import ListRow from '#lib/ui/components/ListRow.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
-	import SegmentedControl from '#lib/ui/components/SegmentedControl.svelte';
 	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import Stat from '#lib/ui/components/Stat.svelte';
 	import type { ProfileAnswers } from '#lib/ui/profile/answers.ts';
+	import { themeLabel } from '#lib/ui/profile/appearance.ts';
 	import ProfileList from '#lib/ui/profile/ProfileList.svelte';
 	import { stepHref } from '../../onboarding/paths';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
-	onMount(() => preferences.load());
+	// Appearance's answer is this device's theme: known once the page has mounted, never on the
+	// server, which would say "Dark" to a light device.
+	let mounted = $state(false);
+	onMount(() => {
+		preferences.load();
+		mounted = true;
+	});
 
 	// The rows' answers stream from the Profile layout's load: the rows stay mounted, showing their
 	// titles, and their values fill in. A newer load (after a save) replaces an older one's.
@@ -76,9 +76,9 @@
 	<p class="lede" data-testid="owner-name">{data.owner.name}</p>
 </div>
 
-<!-- Wide: from 1024 px the list sits beside this device's preferences and the app's status.
-     Each column keeps the phone's order. -->
-<div class="profile" data-layout="wide">
+<!-- Split from 1024 px, at Profile's measure (layout.css): the list, then About this app behind a
+     hairline, where a section's screen has its own content. Each column keeps the phone's order. -->
+<div class="profile" data-layout="split" data-measure="profile">
 	<div class="list-column">
 		<!-- Streamed: nothing until it settles, and nothing if setup is done or the read failed. -->
 		{#await data.setup then setup}
@@ -93,59 +93,10 @@
 				/>
 			{/if}
 		{/await}
-		<ProfileList {answers} />
+		<ProfileList {answers} theme={mounted ? themeLabel(preferences.theme) : undefined} />
 	</div>
 
 	<div class="about">
-		<section class="group" aria-labelledby="this-device">
-			<h2 class="label" id="this-device">This device</h2>
-			<Card title="Preferences">
-				<div class="prefs">
-					<div class="pref">
-						<span class="pref-label">Units</span>
-						<SegmentedControl
-							label="Units"
-							size="sm"
-							value={preferences.units}
-							options={[
-								{ value: 'kg', label: 'kg' },
-								{ value: 'lb', label: 'lb' }
-							]}
-							onchange={(u: WeightUnit) => preferences.setUnits(u)}
-						/>
-					</div>
-					<div class="pref">
-						<span class="pref-label">Distance</span>
-						<SegmentedControl
-							label="Distance"
-							size="sm"
-							value={preferences.distance}
-							options={[
-								{ value: 'km', label: 'km' },
-								{ value: 'mi', label: 'mi' }
-							]}
-							onchange={(d: DistancePreference) => preferences.setDistance(d)}
-						/>
-					</div>
-					<div class="pref">
-						<span class="pref-label">Appearance</span>
-						<SegmentedControl
-							label="Appearance"
-							size="sm"
-							value={preferences.theme}
-							options={[
-								{ value: 'dark', label: 'Dark', icon: 'moon' },
-								{ value: 'light', label: 'Light', icon: 'sun' },
-								{ value: 'system', label: 'Auto', icon: 'device' }
-							]}
-							onchange={(t: ThemePreference) => setTheme(t)}
-							data-testid="theme-control"
-						/>
-					</div>
-				</div>
-			</Card>
-		</section>
-
 		<section class="group" aria-labelledby="about-app" data-testid="system-card">
 			<h2 class="label" id="about-app">About this app</h2>
 			<!-- Streamed: each row keeps its 60 px while its status loads, so nothing below moves. -->
@@ -241,7 +192,12 @@
 </div>
 
 <style>
-	.profile,
+	/* Rows only: from 1024 px the columns are Profile's measure's (layout.css). */
+	.profile {
+		display: grid;
+		row-gap: var(--space-9);
+	}
+
 	.list-column,
 	.about {
 		display: grid;
@@ -264,35 +220,23 @@
 		color: var(--color-text-tertiary);
 	}
 
-	/* From 1024 px the rail is the way back to Today, so the link goes. */
+	/* From 1024 px the rail is the way back to Today, so the link goes, and the owner's name sits
+	   above the title in 15 px (Paper, 14 · "Profile, goals"). */
 	@media (width >= 64rem) {
 		.back-link {
 			display: none;
 		}
-	}
 
-	/* Two columns: the list, then this device and the app's status. */
-	@media (width >= 64rem) {
-		.profile {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-			column-gap: var(--space-8);
-			align-items: start;
+		.head {
+			display: flex;
+			flex-direction: column;
 		}
-	}
 
-	.prefs {
-		display: grid;
-		gap: var(--space-4);
-	}
-
-	.pref {
-		display: grid;
-		gap: var(--space-2);
-	}
-
-	.pref-label {
-		font-size: var(--text-sm);
-		color: var(--color-text-secondary);
+		.lede {
+			order: -1;
+			margin-top: 0;
+			font: var(--type-secondary);
+		}
 	}
 
 	.vitals {

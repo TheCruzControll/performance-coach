@@ -12,8 +12,8 @@ export function basicsDraft(saved: AthleteProfile): BasicsInput {
 }
 
 /**
- * Once saved, this device shows weights and distances in the coach's units too. Its own switch
- * stays on Profile (Preferences, "This device") for a device the owner wants otherwise.
+ * Once saved, this device shows weights and distances in the coach's units too. Its own choice
+ * stays on Profile → Appearance ("Weights on this device") for a device the owner wants otherwise.
  */
 export function deviceFollows(saved: BasicsInput): void {
 	preferences.setUnits(saved.weightUnit);

@@ -215,23 +215,32 @@ test.describe('app shell on an iPhone viewport', () => {
 		await gotoHydrated(page, '/today');
 		await openProfile(page);
 		const list = page.getByTestId('profile-list');
+		// From 1024 px the headings are kept for assistive tech only.
 		await expect(list.getByRole('heading', { level: 2 })).toHaveText([
 			'You',
 			'Training',
+			'App',
 			'Security'
 		]);
 		const goals = page.getByTestId('section-goals');
 		await expect(goals).toHaveAccessibleName(/^Goals/);
 		await expect(goals).toHaveAttribute('href', '/profile/goals');
+		await expect(page.getByTestId('appearance-link')).toHaveAttribute(
+			'href',
+			'/profile/appearance'
+		);
 
-		// A blank profile's units, at the row's end: 15 px, secondary, in a 60 px row.
+		// A blank profile's units, at the row's end, 15 px: secondary in a 60 px row on a phone;
+		// from 1024 px tertiary in a 44 px row (Paper, 14 · "Profile, goals").
+		const desktop = isDesktopPage(page);
 		const basics = page.getByTestId('section-basics');
 		await expect(basics).toContainText('kg, km');
 		const value = basics.locator('.value');
-		await expect(value).toHaveCSS('color', 'rgb(163, 163, 168)');
+		await expect(value).toHaveCSS('color', desktop ? 'rgb(134, 134, 142)' : 'rgb(163, 163, 168)');
 		await expect(value).toHaveCSS('font-size', '15px');
+		const height = desktop ? 44 : 60;
 		const row = await basics.boundingBox();
-		expect(Math.abs(row!.height - 60), 'the row is 60 px tall').toBeLessThanOrEqual(1);
+		expect(Math.abs(row!.height - height), `the row is ${height} px tall`).toBeLessThanOrEqual(1);
 
 		// Status rows under About this app, Backups first.
 		const about = page.getByTestId('system-card');
@@ -245,8 +254,8 @@ test.describe('app shell on an iPhone viewport', () => {
 		});
 		expect(backupsFirst, 'Backups comes before Database').toBe(true);
 
-		// No account card: only the legacy cards left (Preferences, Real-user performance) are boxed.
-		await expect(page.locator('main .surface')).toHaveCount(2);
+		// No account or preferences card: only the legacy card left (Real-user performance) is boxed.
+		await expect(page.locator('main .surface')).toHaveCount(1);
 	});
 
 	test('bottom navigation moves between all tabs', async ({ page }, testInfo) => {
@@ -428,9 +437,9 @@ test.describe('app shell on an iPhone viewport', () => {
 		await expect(opener).toBeFocused();
 
 		// The calculator's unit switch is local: the app-wide preference is still kg.
-		await page.goto('/profile');
-		const units = page.getByRole('radiogroup', { name: 'Units' });
-		await expect(units.getByRole('radio', { name: 'kg' })).toHaveAttribute('aria-checked', 'true');
+		await page.goto('/profile/appearance');
+		const units = page.getByRole('group', { name: 'Weights on this device' });
+		await expect(units.getByRole('radio', { name: 'Kilograms' })).toBeChecked();
 	});
 
 	test('a late animation frame never pulls focus back into a stepper the user left', async ({
@@ -505,7 +514,7 @@ test.describe('app shell on an iPhone viewport', () => {
 
 	test('the theme preference applies before first paint and persists', async ({ page }) => {
 		const errors = trackConsoleErrors(page);
-		await page.goto('/profile');
+		await page.goto('/profile/appearance');
 		const canvas = () =>
 			page.evaluate(() => getComputedStyle(document.body).backgroundColor.replace(/\s/g, ''));
 		expect(await canvas()).toBe('rgb(10,10,11)'); // dark by default
@@ -528,17 +537,17 @@ test.describe('app shell on an iPhone viewport', () => {
 			page.locator('meta[name="apple-mobile-web-app-status-bar-style"]')
 		).toHaveAttribute('content', 'black-translucent');
 
-		// Auto follows the OS while the app is open, browser chrome included.
+		// Match my phone follows the OS while the app is open, browser chrome included.
 		const themeColor = page.locator('meta[name="theme-color"]');
 		await page.emulateMedia({ colorScheme: 'dark' });
-		await page.getByTestId('theme-control').getByRole('radio', { name: 'Auto' }).click();
+		await page.getByTestId('theme-control').getByRole('radio', { name: 'Match my phone' }).click();
 		await expect(themeColor).toHaveAttribute('content', '#0a0a0b');
 		await page.emulateMedia({ colorScheme: 'light' });
 		await expect(themeColor).toHaveAttribute('content', '#f4f4f0');
 		expect(await canvas()).toBe('rgb(244,244,240)');
 		await page.emulateMedia({ colorScheme: 'dark' });
 		await expect(themeColor).toHaveAttribute('content', '#0a0a0b');
-		// Leaving Auto stops following the OS.
+		// Leaving Match my phone stops following the OS.
 		await page.getByTestId('theme-control').getByRole('radio', { name: 'Dark' }).click();
 		await page.emulateMedia({ colorScheme: 'light' });
 		await expect(themeColor).toHaveAttribute('content', '#0a0a0b');
@@ -549,7 +558,7 @@ test.describe('app shell on an iPhone viewport', () => {
 		page
 	}) => {
 		const sheetBackground = async (theme: 'Light' | 'Dark') => {
-			await gotoHydrated(page, '/profile');
+			await gotoHydrated(page, '/profile/appearance');
 			await page.getByTestId('theme-control').getByRole('radio', { name: theme }).click();
 			await gotoHydrated(page, '/train');
 			await openMore(page);
@@ -576,7 +585,7 @@ test.describe('app shell on an iPhone viewport', () => {
 			'the handle is hidden from 1024 px: the desktop dialog has none'
 		);
 		const sheetIn = async (theme: 'Light' | 'Dark') => {
-			await gotoHydrated(page, '/profile');
+			await gotoHydrated(page, '/profile/appearance');
 			await page.getByTestId('theme-control').getByRole('radio', { name: theme }).click();
 			await gotoHydrated(page, '/train');
 			await openMore(page);
@@ -658,14 +667,17 @@ test.describe('app shell on an iPhone viewport', () => {
 		}
 	});
 
-	test('compact segmented controls keep a 44px hit area', async ({ page }) => {
-		await page.goto('/profile');
-		const options = page.getByTestId('theme-control').getByRole('radio');
+	test('segmented controls keep a 44px hit area', async ({ page }) => {
+		// No app screen keeps one (Appearance's theme is a choice list): /design → Inputs shows one.
+		await page.goto('/design');
+		// The tabs only switch once the page has hydrated; network idle stands in for that.
+		await page.waitForLoadState('networkidle');
+		await page.getByRole('tab', { name: 'Inputs' }).click();
+		const range = page.getByRole('radiogroup', { name: 'Range' });
+		const options = range.getByRole('radio');
 		await expect(options).toHaveCount(3);
 		// Measure in the middle of the screen, clear of the fixed tab bar.
-		await page
-			.getByTestId('theme-control')
-			.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+		await range.evaluate((el) => el.scrollIntoView({ block: 'center' }));
 		for (const option of await options.all()) {
 			const box = (await option.boundingBox())!;
 			const x = box.x + box.width / 2;

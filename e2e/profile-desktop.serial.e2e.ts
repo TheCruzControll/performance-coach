@@ -1,9 +1,9 @@
 /**
- * Profile in a desktop window (docs/design-system.md, Responsive layout → Screens): Profile in two
- * columns, and each training-profile section's editor beside Profile's list, its Save bar
- * column chrome at the editor column's foot. Every designed state of the editor is checked in the
- * split layout, with a screenshot and axe in both themes; the phone keeps its list → editor →
- * back flow. Serial (one test at a time, after the functional suites): every test starts from a
+ * Profile in a desktop window (docs/design-system.md, Responsive layout → Screens): Profile's list
+ * 400 px wide beside About this app, and each training-profile section's editor beside the same
+ * list, behind a hairline, its Save bar column chrome at the editor column's foot. Every designed
+ * state of the editor is checked in the split layout, with a screenshot and axe in both themes;
+ * the phone keeps its list → editor → back flow. Serial (one test at a time, after the functional suites): every test starts from a
  * blank training profile, which every browser and worker shares.
  */
 import { readFileSync } from 'node:fs';
@@ -106,24 +106,27 @@ test.beforeEach(async () => {
 test.describe('in a desktop window', () => {
 	test.use(DESKTOP);
 
-	test('Profile shows its list beside this device and the app’s status', async ({
+	test('Profile shows its list beside About this app, behind a hairline', async ({
 		page
 	}, testInfo) => {
 		const errors = trackConsoleErrors(page);
 		await gotoHydrated(page, '/profile');
 		await expect(page.getByTestId('db-status')).toBeVisible();
-		await expectMainCentred(page, await tokenPx(page, '--content-wide'));
+		await expectMainCentred(page, await tokenPx(page, '--content-profile'));
 		await expectNoSideScroll(page);
 
+		// Paper, 14 · "Profile, goals": the list 400 px wide in 44 px rows with no chevrons, and
+		// the open side 456 px (the list and 56 px) right of it, behind a 1 px hairline.
 		const profileList = page.getByTestId('profile-list');
 		const listBox = await boxOf(profileList);
-		const preferences = await boxOf(page.getByRole('region', { name: 'Preferences' }));
-		const system = await boxOf(page.getByTestId('system-card'));
-		// Two columns: the list on the left; the preferences and the app's status right of it, the
-		// status under the preferences.
-		expect(preferences.x).toBeGreaterThanOrEqual(listBox.x + listBox.width);
-		expect(Math.abs(system.x - preferences.x)).toBeLessThanOrEqual(1);
-		expect(system.y).toBeGreaterThan(preferences.y + preferences.height);
+		expect(Math.abs(listBox.width - 400), 'the list is 400 px wide').toBeLessThanOrEqual(1);
+		const first = await boxOf(profileList.getByRole('link').first());
+		expect(Math.abs(first.height - 44), 'a row is 44 px tall').toBeLessThanOrEqual(1);
+		await expect(profileList.locator('.chevron').filter({ visible: true })).toHaveCount(0);
+		const about = page.getByTestId('system-card').locator('..');
+		const aboutBox = await boxOf(about);
+		expect(Math.abs(aboutBox.x - listBox.x - 456)).toBeLessThanOrEqual(1);
+		await expect(about).toHaveCSS('border-left-width', '1px');
 		// Nothing is open on Profile itself: no row is current.
 		await expect(profileList.getByRole('link', { name: /Equipment/ })).toBeVisible();
 		await expect(profileList.locator('[aria-current]')).toHaveCount(0);
@@ -137,20 +140,19 @@ test.describe('in a desktop window', () => {
 		const errors = trackConsoleErrors(page);
 		await gotoHydrated(page, '/profile/equipment');
 		await editorReady(page);
-		await expectMainCentred(page, await tokenPx(page, '--content-wide'));
+		await expectMainCentred(page, await tokenPx(page, '--content-profile'));
 		await expectNoSideScroll(page);
 
 		// The list on the left, the open section marked, the editor on the right.
 		const current = list(page).getByRole('link', { name: /Equipment/ });
 		await expect(current).toHaveAttribute('aria-current', 'page');
 		await expect(list(page).locator('[aria-current]')).toHaveCount(1);
-		// Every section, and Passkeys and recovery.
-		await expect(list(page).getByRole('link')).toHaveCount(SECTIONS.length + 1);
+		// Every section, Appearance, and Passkeys and recovery.
+		await expect(list(page).getByRole('link')).toHaveCount(SECTIONS.length + 2);
 		const [nav, editorColumn] = [await boxOf(list(page)), await boxOf(column(page))];
 		expect(editorColumn.x).toBeGreaterThanOrEqual(nav.x + nav.width);
-		expect(Math.abs(editorColumn.width - (await tokenPx(page, '--content-readable')))).toBeLessThan(
-			1
-		);
+		// 576 px, its hairline and 56 px inside it (Profile's measure, layout.css).
+		expect(Math.abs(editorColumn.width - 576)).toBeLessThanOrEqual(1);
 		// Back is the phone's: the list says where you are.
 		await expect(page.getByTestId('back-to-profile')).toBeHidden();
 		await expectInColumn(page, saveBar(page), column(page), [list(page)]);

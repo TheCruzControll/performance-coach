@@ -211,6 +211,13 @@ milestones.md.
   card goes and the system card becomes status rows under About this app, Backups first. The
   titles say "and" ("Name and units"). Appearance and the desk layout are `v2/21b`, Goals
   `v2/21c`. Phone layouts and the e2e run are CI's to prove.
+- **Instrument v2 Profile at a desk and Appearance (`v2/21b`).** The theme is a choice list (Dark,
+  Light, Match my phone) on Profile → Appearance, with this device's weights and distances under
+  it, so the Preferences card goes; the list's App group says the theme once the page has mounted.
+  From 1024 px Profile's list is 400 px of 44 px rows with no chevrons, beside the open screen
+  behind a hairline, `--content-profile` (68 rem) in all, centred right of the rail, so at 1440 px
+  the list starts at 248 px (Paper draws 288). On `/profile` the open side is About this app;
+  Goals open first waits for `v2/22`. Goals is `v2/21c`. The e2e run is CI's to prove.
 - **Instrument v2 at a desk (`v2/03c`), which completes the Instrument v2 shell (`v2/03`).** The
   rail is the canvas with a hairline, the four tabs 28 px apart and the avatar at its foot, with
   no brand mark. A readable screen is 616 px (560 of text) centred right of the rail but at most
