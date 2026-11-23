@@ -77,6 +77,13 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
   CI's two-year dataset that adds about 60 ms to the median (`db:explain` prints it). On Neon,
   where each read is a round trip, expect more. It is not gated, since performance is not tested.
 
+- **A deload's review still points at the stale proposal after Propose again.** The review keeps
+  naming the proposal it was made from, so going back shows "This deload is out of date" until the
+  review is read again. Propose again then answers with the open or applied proposal, so nothing is
+  applied twice, but the card lags. Found while building m7/51's deload card
+  (`src/routes/(app)/progress/reviews/[[key]]/next-week-actions.svelte.ts`). Closes when the review
+  names the proposal that replaced its stale one, or the card reads that one.
+
 ## Working on this repo
 
 - **The repo needs Node 22 and refuses anything else.** `.npmrc` sets `engine-strict`, so a pnpm
