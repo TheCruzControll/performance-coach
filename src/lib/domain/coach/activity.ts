@@ -147,6 +147,13 @@ const WORDING: Readonly<Record<ToolName, (f: Facts) => Triple>> = {
 		'Couldn’t build a new program'
 	],
 	create_next_training_cycle: () => draft('your next cycle'),
+	plan_block: () => ['Planning the block…', 'Planned the block', 'Couldn’t plan the block'],
+	schedule_deload: () => [
+		'Preparing a deload week…',
+		'Prepared a deload week',
+		'Couldn’t prepare a deload week'
+	],
+	plan_taper: () => ['Planning your taper…', 'Planned your taper', 'Couldn’t plan your taper'],
 	// Workout
 	get_current_workout: () => look('today’s workout'),
 	get_exercise_alternatives: (f) => {

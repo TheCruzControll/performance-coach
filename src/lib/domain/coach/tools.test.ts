@@ -29,7 +29,10 @@ const BY_GROUP: Record<ToolGroup, readonly ToolName[]> = {
 		'explain_schedule_tradeoffs',
 		'propose_program_adjustment',
 		'create_training_program',
-		'create_next_training_cycle'
+		'create_next_training_cycle',
+		'plan_block',
+		'schedule_deload',
+		'plan_taper'
 	],
 	workout: [
 		'get_current_workout',
@@ -46,7 +49,10 @@ const BY_GROUP: Record<ToolGroup, readonly ToolName[]> = {
 const PROPOSE: readonly ToolName[] = [
 	'create_next_training_cycle',
 	'create_training_program',
+	'plan_block',
+	'plan_taper',
 	'propose_program_adjustment',
+	'schedule_deload',
 	'substitute_exercise',
 	'update_training_goals',
 	'update_workout'
@@ -61,9 +67,9 @@ const DRAFTS: readonly ToolName[] = [
 const namesWhere = (keep: (name: ToolName) => boolean) => TOOL_NAMES.filter(keep);
 
 describe('the coach tool catalogue', () => {
-	it('names 26 tools once each, in snake_case, sorted by code unit', () => {
-		expect(TOOL_NAMES).toHaveLength(26);
-		expect(new Set(TOOL_NAMES).size).toBe(26);
+	it('names 29 tools once each, in snake_case, sorted by code unit', () => {
+		expect(TOOL_NAMES).toHaveLength(29);
+		expect(new Set(TOOL_NAMES).size).toBe(29);
 		for (const name of TOOL_NAMES) expect(name).toMatch(/^[a-z]+(_[a-z]+)+$/);
 		const sorted = [...TOOL_NAMES].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 		expect(TOOL_NAMES).toEqual(sorted);
@@ -79,7 +85,7 @@ describe('the coach tool catalogue', () => {
 		}
 	});
 
-	it('reads with every tool except six that propose and the two direct writes', () => {
+	it('reads with every tool except nine that propose and the two direct writes', () => {
 		const effectOf = (effect: ToolEffect) =>
 			namesWhere((name) => TOOL_CATALOGUE[name].effect === effect);
 		expect(TOOL_EFFECTS).toEqual(['read', 'propose', 'write']);

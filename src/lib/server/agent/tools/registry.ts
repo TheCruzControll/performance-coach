@@ -39,7 +39,7 @@ export const TOOL_GROUP_FILES: readonly ToolGroupFile[] = Object.freeze([
 	file('history.ts', 'history', HISTORY_TOOLS),
 	file('programming-reads.ts', 'programming', PROGRAMMING_READ_TOOLS, ['read']),
 	file('programming-proposals.ts', 'programming', PROGRAMMING_PROPOSAL_TOOLS, ['propose']),
-	file('periodisation.ts', 'programming', PERIODISATION_TOOLS, ['read']),
+	file('periodisation.ts', 'programming', PERIODISATION_TOOLS, ['read', 'propose']),
 	file('workout.ts', 'workout', WORKOUT_TOOLS),
 	file('preferences.ts', 'preferences', PREFERENCE_TOOLS),
 	file('analytics.ts', 'analytics', ANALYTICS_TOOLS)

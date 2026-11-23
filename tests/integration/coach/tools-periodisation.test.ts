@@ -20,8 +20,14 @@
  * - the scripted answers' [metric] and [fact] blocks are grounded, and the chips read as listed
  * - a random ownerId given the seeded owner's lineages is NOT_FOUND and reads nothing of theirs
  * - on an M7-built multiGoal program both outputs stay under the 8 KB cap, untruncated
+ * - plan_block, schedule_deload and plan_taper each store exactly one replan proposal naming the
+ *   coach's thread, run and tool call, and answer with its card (at most 12 rows, under the cap);
+ *   a refusal is a REFUSED tool error with the engine's sentence and stores nothing; another
+ *   owner's program and goals are never read; no evaluation-context error is recorded
+ * - the scripted turns for those tools propose through them, with their chips, and the refused one
+ *   is recorded as a failed call
  */
-import { count, eq } from 'drizzle-orm';
+import { and, count, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import * as z from 'zod/mini';
 import { addDays, type IsoDate } from '../../../src/lib/domain/calendar';
@@ -43,6 +49,7 @@ import type { CoachTool } from '../../../src/lib/server/agent/tools/define';
 import { executeToolCalls } from '../../../src/lib/server/agent/tools/execute';
 import {
 	LOAD_METHOD,
+	PLAN_BLOCK_WEEKS,
 	PRIORITY_METHOD,
 	SCORE_METHOD
 } from '../../../src/lib/server/agent/tools/periodisation';
@@ -70,7 +77,7 @@ import {
 import { seedAnalyticsFixture } from '../../../src/lib/server/test-support/analytics-fixtures/index';
 import type { PeriodisationWeekResult } from '../../../src/lib/server/test-support/analytics-fixtures/periodisation-week';
 import { withRollback } from '../helpers';
-import { makeOwner } from '../profile/fixtures';
+import { makeOwner, makeSecondOwner } from '../profile/fixtures';
 import { runScripted, TURN_NOW } from './harness';
 
 const TODAY = '2026-11-11';
@@ -747,6 +754,359 @@ describe('output size', () => {
 			expect(busy.loads).toHaveLength(5);
 			const why = await output<Explained>(db, owner, 'explain_schedule_tradeoffs', {});
 			expect(why.priorities.map((p) => p.mode)).toContain('primary');
+		});
+	});
+});
+
+// ---- plan_block, schedule_deload and plan_taper -----------------------------------------------
+
+/** A goal id no owner in these tests has: the engine refuses a focus or a taper on it. */
+const UNKNOWN_GOAL = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+/** The tool_use the direct calls answer, and the one a turn's call names. */
+const TOOL_USE = 'toolu_01Replan';
+const MONDAY_THIS_WEEK = '2026-11-09';
+const MONDAY_NEXT_WEEK = '2026-11-16';
+/** The engine's refusals, as the tool answers them: its standard sentence, then the specifics. */
+const NOT_APPLICABLE = 'This change does not apply to your plan as it stands.';
+const NO_PROGRAM = 'There is no plan to change yet: build one first.';
+
+interface Replanned {
+	proposalId: string;
+	title: { untrusted_text: string };
+	summaryLines: { untrusted_text: string }[];
+	rows: unknown[];
+	from: string;
+	truncated?: true;
+}
+
+/**
+ * One call of a re-plan tool, as a turn runs it, for `ownerId`: the outcome and the conversation
+ * it ran in. Nothing is stored by a refusal, so its ids need no rows; a call that stores a proposal
+ * runs in a real turn (replanTurn). A failing evaluation context is a test failure, as in call.
+ */
+async function proposing(db: Executor, ownerId: string, name: string, input: object = {}) {
+	const before = await contextErrorIds(db);
+	const ctx = toolContext({
+		session: { ownerId },
+		message: { threadId: crypto.randomUUID(), runId: crypto.randomUUID(), text: '', entry: null },
+		day: { today: TODAY, timeZone: 'UTC' },
+		runtime: toolRuntime({ db, now: () => NOW }),
+		signal: new AbortController().signal,
+		deadlineAt: Date.now() + 60_000,
+		matchExercise: () => null
+	});
+	const { outcomes } = await executeToolCalls([{ id: TOOL_USE, name, input }], ctx, {
+		tools: TOOLS
+	});
+	const failed = (await contextErrorIds(db)).filter((id) => !before.includes(id));
+	expect(failed, `${name}: evaluation-context errors`).toEqual([]);
+	return outcomes[0]!;
+}
+
+/**
+ * A turn in which the coach calls `name` once with `input`, as the mock plays it, so the proposal
+ * it stores names a real thread and run. Returns the turn and the call's stored row. Fails on any
+ * evaluation-context error the call recorded.
+ */
+async function replanTurn(
+	db: Executor,
+	owner: string,
+	name: string,
+	input: Record<string, unknown>
+) {
+	const before = await contextErrorIds(db);
+	const once: MockScript = {
+		name: `once-${name}`,
+		matches: () => true,
+		steps: [{ tools: [{ name, input }] }, { text: '[note] Done.' }]
+	};
+	const turn = await runScripted(once, {
+		db,
+		owner,
+		text: 'Propose it',
+		provider: counting([once]).ready,
+		tools: TOOLS
+	});
+	const [call] = await db
+		.select()
+		.from(agentToolCalls)
+		.where(eq(agentToolCalls.runId, turn.runId!));
+	const failed = (await contextErrorIds(db)).filter((id) => !before.includes(id));
+	expect(failed, `${name}: evaluation-context errors`).toEqual([]);
+	return { turn, call: call! };
+}
+
+/** The owner's replan proposals, oldest first. */
+async function replansOf(db: Executor, ownerId: string) {
+	return db
+		.select()
+		.from(coachProposals)
+		.where(and(eq(coachProposals.ownerId, ownerId), eq(coachProposals.kind, 'replan')));
+}
+
+/**
+ * An event goal for the owner, on `eventDate`, still ahead. A block refuses to run through an
+ * event's run-up, so a test makes it only after the block it checks.
+ */
+async function eventGoal(db: Executor, ownerId: string, eventDate: IsoDate) {
+	const goal = await createGoal(
+		ownerId,
+		{
+			...{ kind: 'event', title: '10K race', disciplines: ['running'] },
+			...{ eventType: '10K race', eventDate }
+		},
+		{ db }
+	);
+	return goal.id;
+}
+
+/** A stored replan's card, checked against the tool's output schema and the budget. */
+function expectCard(call: { output: unknown; truncated: boolean; name: string }) {
+	expect(z.safeParse(toolNamed(call.name).outputSchema, call.output).success).toBe(true);
+	expect(call.truncated, call.name).toBe(false);
+	expect(Buffer.byteLength(canonicalJson(call.output)), call.name).toBeLessThanOrEqual(
+		TURN_LIMITS.toolOutputBytes
+	);
+	expect((call.output as Replanned).rows.length, call.name).toBeLessThanOrEqual(12);
+}
+
+describe('plan_block, schedule_deload and plan_taper', () => {
+	it('plan_block stores one replan proposal naming the coach’s thread, run and tool call, and answers with its card', async () => {
+		await withRollback(async (db) => {
+			const { owner } = await seed(db);
+			const before = await rows(db);
+			const { turn, call } = await replanTurn(db, owner, 'plan_block', {
+				phase: 'accumulation',
+				weeks: 4
+			});
+			expect(call).toMatchObject({ name: 'plan_block', status: 'succeeded' });
+			expectCard(call);
+			expect(await rows(db)).toEqual({ ...before, proposals: before.proposals + 1 });
+
+			const [stored] = await replansOf(db, owner);
+			expect(stored).toMatchObject({
+				kind: 'replan',
+				status: 'proposed',
+				threadId: turn.threadId,
+				runId: turn.runId,
+				toolUseId: call.toolUseId
+			});
+			expect(stored!.payload).toMatchObject({
+				directive: { kind: 'block', phase: 'accumulation', weeks: 4 }
+			});
+			expect(call.proposalId).toBe(stored!.id);
+			const card = call.output as Replanned;
+			expect(card.proposalId).toBe(stored!.id);
+			expect(card.from).toBe((stored!.payload as { from: string }).from);
+			expect(card.summaryLines.length).toBeGreaterThan(0);
+		});
+	});
+
+	it('plan_block with only a phase stores PLAN_BLOCK_WEEKS weeks', async () => {
+		await withRollback(async (db) => {
+			const { owner } = await seed(db);
+			const { call } = await replanTurn(db, owner, 'plan_block', { phase: 'accumulation' });
+			expect(call).toMatchObject({ name: 'plan_block', status: 'succeeded' });
+			const [stored] = await replansOf(db, owner);
+			const directive = (stored!.payload as { directive: { weeks: number } }).directive;
+			expect(directive.weeks).toBe(PLAN_BLOCK_WEEKS);
+			expect(directive).toMatchObject({ kind: 'block', phase: 'accumulation' });
+		});
+	});
+
+	it('schedule_deload stores one deload by the coach, of this week or of next, with its reason', async () => {
+		for (const [when, week] of [
+			['this_week', MONDAY_THIS_WEEK],
+			['next_week', MONDAY_NEXT_WEEK]
+		] as const) {
+			await withRollback(async (db) => {
+				const { owner } = await seed(db);
+				const { turn, call } = await replanTurn(db, owner, 'schedule_deload', {
+					when,
+					reason: 'Legs are heavy after the weekend.'
+				});
+				expect(call, when).toMatchObject({ status: 'succeeded' });
+				const [stored] = await replansOf(db, owner);
+				expect(stored, when).toMatchObject({
+					threadId: turn.threadId,
+					runId: turn.runId,
+					toolUseId: call.toolUseId
+				});
+				expect(stored!.payload).toMatchObject({
+					directive: {
+						kind: 'deload',
+						week,
+						trigger: 'coach',
+						reasons: ['Legs are heavy after the weekend.']
+					}
+				});
+				expect((call.output as Replanned).from, when).toBe(week);
+			});
+		}
+	});
+
+	it('schedule_deload defaults to next week, with no reason invented', async () => {
+		await withRollback(async (db) => {
+			const { owner } = await seed(db);
+			const { call } = await replanTurn(db, owner, 'schedule_deload', {});
+			expect(call).toMatchObject({ status: 'succeeded' });
+			const [stored] = await replansOf(db, owner);
+			expect(stored!.payload).toMatchObject({
+				directive: { kind: 'deload', week: MONDAY_NEXT_WEEK, trigger: 'coach', reasons: [] }
+			});
+		});
+	});
+
+	it('plan_taper stores one taper for an event goal, as a full or a mini taper', async () => {
+		for (const kind of ['full', 'mini'] as const) {
+			await withRollback(async (db) => {
+				const { owner, seeded } = await seed(db);
+				const goal = await eventGoal(db, owner, addDays(seeded.mondays.clean, 2));
+				const { turn, call } = await replanTurn(db, owner, 'plan_taper', { goal, kind });
+				expect(call, kind).toMatchObject({ status: 'succeeded' });
+				const [stored] = await replansOf(db, owner);
+				expect(stored, kind).toMatchObject({ threadId: turn.threadId, toolUseId: call.toolUseId });
+				expect(stored!.payload).toMatchObject({
+					directive: { kind: 'taper', goalRef: goal, form: kind }
+				});
+			});
+		}
+	});
+
+	it('plan_taper with no kind follows the goal’s priority: full for the leader, mini for a secondary event, none for one held at maintenance', async () => {
+		await withRollback(async (db) => {
+			const { owner, seeded } = await seed(db);
+			// Three events in their lead window, ranked as they were added: the first leads, the
+			// second is secondary (rank weight 0.6) and the third is held at maintenance (0.4).
+			const leader = await eventGoal(db, owner, addDays(seeded.mondays.clean, 2));
+			const second = await eventGoal(db, owner, addDays(seeded.mondays.clean, 4));
+			const held = await eventGoal(db, owner, addDays(seeded.mondays.clean, 6));
+
+			const refused = await proposing(db, owner, 'plan_taper', { goal: held });
+			expect(refused.error).toMatchObject({ code: 'REFUSED' });
+			expect(refused.error!.message).toMatch(
+				new RegExp(`^${NOT_APPLICABLE} A goal held at maintenance is trained through`)
+			);
+			expect(await replansOf(db, owner)).toEqual([]);
+
+			for (const [goal, form] of [
+				[leader, 'full'],
+				[second, 'mini']
+			] as const) {
+				const { call } = await replanTurn(db, owner, 'plan_taper', { goal });
+				expect(call, form).toMatchObject({ status: 'succeeded' });
+				const stored = (await replansOf(db, owner)).find((p) => p.id === call.proposalId);
+				expect(stored!.payload, form).toMatchObject({
+					directive: { kind: 'taper', goalRef: goal, form }
+				});
+			}
+		});
+	});
+
+	it('refuses with the engine’s sentence and stores nothing: a focus on an unknown goal, a taper for a goal with no event', async () => {
+		await withRollback(async (db) => {
+			const { owner } = await seed(db);
+			const before = await rows(db);
+			const focus = await proposing(db, owner, 'plan_block', {
+				phase: 'maintenance',
+				focusGoal: UNKNOWN_GOAL
+			});
+			const why = `${NOT_APPLICABLE} That goal is not one you are training for.`;
+			expect(focus.error).toMatchObject({ code: 'REFUSED', message: why });
+			expect(JSON.parse(focus.content)).toMatchObject({ reason: why });
+			const general = await createGoal(
+				owner,
+				{
+					...{ kind: 'general', title: 'Run more', disciplines: ['running'] },
+					...{ focus: 'Running', measure: 'Run three times a week' }
+				},
+				{ db }
+			);
+			const taper = await proposing(db, owner, 'plan_taper', { goal: general.id });
+			expect(taper.error).toMatchObject({ code: 'REFUSED' });
+			expect(taper.error!.message).toMatch(
+				new RegExp(`^${NOT_APPLICABLE} Only an event still ahead can be tapered for\\.$`)
+			);
+			expect(await rows(db)).toEqual(before);
+			expect(await replansOf(db, owner)).toEqual([]);
+		});
+	});
+
+	it('refuses a block for an owner with no program, with the engine’s sentence', async () => {
+		await withRollback(async (db) => {
+			const owner = await makeOwner(db);
+			const outcome = await proposing(db, owner, 'plan_block', { phase: 'accumulation' });
+			expect(outcome.error).toMatchObject({ code: 'REFUSED', message: NO_PROGRAM });
+			expect(await replansOf(db, owner)).toEqual([]);
+		});
+	});
+
+	it('is owner-scoped: another owner’s event goal is never read, and nothing is stored for either', async () => {
+		await withRollback(async (db) => {
+			const { owner, seeded } = await seed(db);
+			const other = await makeSecondOwner(db);
+			const theirs = await eventGoal(db, other, addDays(seeded.mondays.clean, 2));
+			const outcome = await proposing(db, owner, 'plan_taper', { goal: theirs });
+			expect(outcome.error).toMatchObject({ code: 'REFUSED' });
+			expect(outcome.error!.message).toBe(
+				`${NOT_APPLICABLE} Only an event still ahead can be tapered for.`
+			);
+			expect(await replansOf(db, owner)).toEqual([]);
+			expect(await replansOf(db, other)).toEqual([]);
+		});
+	});
+
+	it('answers each within the output budget, untruncated, with at most 12 rows', async () => {
+		await withRollback(async (db) => {
+			const { owner, seeded } = await seed(db);
+			const calls = [
+				await replanTurn(db, owner, 'plan_block', { phase: 'maintenance', weeks: 8 }),
+				await replanTurn(db, owner, 'schedule_deload', { when: 'this_week' })
+			];
+			const goal = await eventGoal(db, owner, addDays(seeded.mondays.clean, 2));
+			calls.push(await replanTurn(db, owner, 'plan_taper', { goal }));
+			for (const { call } of calls) expectCard(call);
+		});
+	});
+
+	it('the scripted turns propose through these tools, with their chips, and a refused one is a failed call', async () => {
+		await withRollback(async (db) => {
+			const { owner, seeded } = await seed(db);
+			const cases = [
+				['block-plan', 'Plan the block as maintenance', 'Planning the block…', 'Planned the block'],
+				['deload-week', 'Deload this week', 'Preparing a deload week…', 'Prepared a deload week'],
+				['taper-plan', 'Taper for my 10K race', 'Planning your taper…', 'Planned your taper']
+			] as const;
+			for (const [name, text, running, done] of cases) {
+				if (name === 'taper-plan') await eventGoal(db, owner, addDays(seeded.mondays.clean, 2));
+				const turn = await runScripted(script(name), {
+					db,
+					owner,
+					text,
+					provider: counting([script(name)]).ready,
+					tools: TOOLS
+				});
+				expect(turn.done.status, name).toBe('completed');
+				expect(chips(turn.events, 'running'), name).toContain(running);
+				expect(chips(turn.events, 'done'), name).toContain(done);
+				const stored = (await replansOf(db, owner)).filter((p) => p.threadId === turn.threadId);
+				expect(stored, name).toHaveLength(1);
+				expect(stored[0]).toMatchObject({ runId: turn.runId });
+			}
+			const before = await rows(db);
+			const refused = await runScripted(script('block-refused'), {
+				db,
+				owner,
+				text: 'Plan the block with a focus on another goal',
+				provider: counting([script('block-refused')]).ready,
+				tools: TOOLS
+			});
+			const [call] = await db
+				.select()
+				.from(agentToolCalls)
+				.where(eq(agentToolCalls.runId, refused.runId!));
+			expect(call).toMatchObject({ name: 'plan_block', status: 'failed', errorCode: 'REFUSED' });
+			expect(await rows(db)).toEqual(before);
 		});
 	});
 });

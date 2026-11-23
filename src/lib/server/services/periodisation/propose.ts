@@ -61,7 +61,7 @@ export type ReplanRequest = {
 );
 
 export type ProposedReplan =
-	| { status: 'proposed'; proposal: ProposalView; duplicate: boolean }
+	| { status: 'proposed'; proposal: ProposalView; duplicate: boolean; from: IsoDate }
 	| { status: 'unchanged' }
 	| { status: 'refused'; refusal: PreviewRefusalReason; why: string };
 
@@ -153,6 +153,7 @@ export async function proposeReplan(
 			},
 			{ db, now }
 		);
-		return { status: 'proposed', ...created };
+		// `from` is the first day the new version may differ on: the payload's, which a view lacks.
+		return { status: 'proposed', ...created, from: shown.from };
 	});
 }
