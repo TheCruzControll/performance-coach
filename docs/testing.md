@@ -28,7 +28,8 @@ build whatever its runtime environment, the API-key requirement), the build-time
 RUM attribution of each metric to the screen where it happened, client error reports (bounded
 fields, non-Error values), and `serializeError` (Drizzle
 parameters redacted; Postgres messages withheld for SQLSTATE classes that can quote values, kept
-for identifier-only classes such as 23 and 42; DETAIL/HINT never logged).
+for identifier-only classes such as 23 and 42; DETAIL/HINT never logged). The backup status's
+states and words (`src/lib/domain/backup/status.ts`) are unit-tested at a fixed clock.
 
 Layout rules (`scripts/layout-rules.test.ts`, docs/design-system.md, Responsive layout): every
 `<style>` block and .css file under `src`, parsed with svelte/compiler's `parseCss`, uses only the
@@ -68,7 +69,11 @@ the CSRF Origin check, User-Agent and passkey labels, the rate-limit client netw
   down, with SQL parameter values redacted from a real failed query (check violation), and with
   a real `22P02 invalid input syntax` whose driver message quotes the value: neither the
   `app_errors` row nor the JSON log line contains it; browser error reports stored as kind
-  `client`, validated (source, absolute path, size caps) and rate-limited.
+  `client`, validated (source, absolute path, size caps) and rate-limited. The backup run log as the
+  run writes it (succeeded with what it stored, failed with its code, skipped, abandoned runs
+  expired, nothing for `--out` or with backups off, a finish never before its start when the
+  run's clock is ahead) and Profile's status read (each state, and 57014 after 1,500 ms behind a
+  held lock).
 - **Auth (`tests/integration/auth/`):** a software authenticator
   (`soft-authenticator.ts`, test code only: ES256 keys from `node:crypto`, CBOR from
   SimpleWebAuthn's helper) produces real registration and assertion responses, so every service

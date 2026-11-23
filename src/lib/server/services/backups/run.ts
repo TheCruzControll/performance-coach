@@ -13,6 +13,16 @@
  *    never counts as a backup.
  * 4. Prune: retention (30 daily, 12 monthly), keeping the new file whatever the listing says.
  *
+ * Each run is logged in backup_runs (db/backup/runs.ts, M9 'backup-status'): before step 1 it
+ * expires abandoned runs and opens its own row as `running`, on a connection of its own, and it
+ * finishes that row once: `succeeded` with the file's name, size, digest, format, schema tag and
+ * row counts, `skipped` with already_running, or `failed` with the run's code. The finish is
+ * stamped as the start plus the time the run took on the monotonic clock, so it is never earlier
+ * than the start (the table's finish-order CHECK), whatever the wall clock does meanwhile. The log
+ * never decides the run: if it cannot be opened or finished, that is logged as a warning and the
+ * backup goes on. A run refused as backup_not_configured is not logged (Profile reads that state
+ * from the configuration itself).
+ *
  * Nothing old is pruned unless steps 1 to 3 succeeded. Each phase logs one line of durations and
  * sizes. A failure goes to the caller's `record` with kind 'cron' and its code (the app passes
  * recordServerError, so app_errors), except already_running: another run is doing the same work
@@ -31,7 +41,7 @@
 import { createHash } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { backupPathname } from '../../../domain/backup/pathnames.ts';
-import type { BackupTrailer } from '../../../domain/backup/format.ts';
+import type { BackupHeader, BackupTrailer } from '../../../domain/backup/format.ts';
 import { ArchiveWriter, readArchive } from '../../backup/archive.ts';
 import { vercelBlobStore } from '../../backup/blob-store.ts';
 import { backupConfig, type BackupEnv, type BackupStoreConfig } from '../../backup/config.ts';
@@ -42,6 +52,7 @@ import type { BackupKey } from '../../backup/key.ts';
 import { pruneBackups, type PruneResult } from '../../backup/prune.ts';
 import { MAX_OBJECT_BYTES, type BackupStore } from '../../backup/store.ts';
 import { backupClient } from '../../db/backup/connect.ts';
+import { expireAbandoned, finishRun, startRun, type RunOutcome } from '../../db/backup/runs.ts';
 import { exportDatabase } from '../../db/backup/export.ts';
 import { BackupExportError } from '../../db/backup/tables.ts';
 import { logger } from '../../observability/logger.ts';
@@ -137,6 +148,8 @@ export interface BackupRunDeps {
 	 * the CLI, which cannot load the app's database module, its own.
 	 */
 	record: (failure: ServerErrorInput) => Promise<unknown>;
+	/** Whether the run is logged in backup_runs (default true); the CLI's --out leaves it out. */
+	log?: boolean;
 }
 
 export interface BackupRunResult {
@@ -150,24 +163,87 @@ export interface BackupRunResult {
 	phases: { export: number; upload: number; readBack: number; prune: number };
 	/** null when the prune failed (recorded as prune_failed). */
 	pruned: PruneResult | null;
+	/** The archive's format ('performance-coach-backup@1'), its last migration's hash, rows per table. */
+	format: string;
+	schemaTag: string;
+	rowCounts: Record<string, number>;
 }
 
 export async function runBackup(
 	input: BackupRunInput,
 	deps: BackupRunDeps
 ): Promise<BackupRunResult> {
+	// A run with backups off makes no backup and opens no connection: it is not logged.
+	const logged = deps.log !== false && backupConfig(input.env).state === 'on';
+	const log = logged ? await openRunLog(input) : null;
 	try {
-		return await run(input, deps);
+		const result = await run(input, deps);
+		const { pathname, bytes, sha256, format, schemaTag, rowCounts } = result;
+		await log?.finish({
+			status: 'succeeded',
+			pathname,
+			bytes,
+			sha256,
+			format,
+			schemaTag,
+			rowCounts
+		});
+		return result;
 	} catch (error) {
 		const failure = isBackupRunError(error)
 			? error
 			: new BackupRunError('backup_failed', 'The backup run failed', { cause: error });
 		if (failure.code === 'already_running') {
 			logger.warn('backup skipped', { trigger: input.trigger, code: failure.code });
+			await log?.finish({ status: 'skipped', errorCode: failure.code });
 		} else {
+			// Finished before the record, so a record that throws cannot leave the row running.
+			await log?.finish({ status: 'failed', errorCode: failure.code });
 			await record(failure, input, deps);
 		}
 		throw failure;
+	} finally {
+		await log?.close();
+	}
+}
+
+/** This run's row in backup_runs, finished once; it never throws. */
+interface RunLog {
+	finish(outcome: RunOutcome): Promise<void>;
+	close(): Promise<void>;
+}
+
+/**
+ * Opens the run's row on a connection of its own, after expiring abandoned runs, or returns null
+ * (logged) when the log cannot be reached, so the backup runs regardless.
+ */
+async function openRunLog(input: BackupRunInput): Promise<RunLog | null> {
+	const since = performance.now();
+	let client: Awaited<ReturnType<typeof backupClient>> | undefined;
+	try {
+		client = await backupClient(input.env.DATABASE_URL);
+		await expireAbandoned(client, input.now);
+		const { trigger, appVersion, now } = input;
+		const id = await startRun(client, { trigger, appVersion, now });
+		const open = client;
+		return {
+			async finish(outcome) {
+				// The start plus the run's monotonic duration: never before the start.
+				const at = new Date(now.getTime() + Math.max(0, Math.round(performance.now() - since)));
+				try {
+					if (!(await finishRun(open, id, outcome, at))) {
+						logger.warn('backup run log not finished', { id, reason: 'already_finished' });
+					}
+				} catch (error) {
+					logger.warn('backup run log failed', { step: 'finish', id, err: error });
+				}
+			},
+			close: () => open.end().catch(() => undefined)
+		};
+	} catch (error) {
+		logger.warn('backup run log failed', { step: 'start', err: error });
+		await client?.end().catch(() => undefined);
+		return null;
 	}
 }
 
@@ -190,7 +266,7 @@ async function run(input: BackupRunInput, deps: BackupRunDeps): Promise<BackupRu
 	};
 
 	let since = performance.now();
-	const { sealed, trailer } = await exportSealed(input, config.key, deps.maxBytes);
+	const { sealed, header, trailer } = await exportSealed(input, config.key, deps.maxBytes);
 	const sha256 = createHash('sha256').update(sealed).digest('hex');
 	const tables = Object.keys(trailer.rowCounts).length;
 	const rows = Object.values(trailer.rowCounts).reduce((sum, n) => sum + n, 0);
@@ -238,7 +314,10 @@ async function run(input: BackupRunInput, deps: BackupRunDeps): Promise<BackupRu
 		rows,
 		durationMs: Math.round(performance.now() - started),
 		phases: { export: exportMs, upload: uploadMs, readBack: readBackMs, prune: pruneMs },
-		pruned
+		pruned,
+		format: `${header.format}@${header.formatVersion}`,
+		schemaTag: header.schema.lastHash,
+		rowCounts: trailer.rowCounts
 	};
 }
 
@@ -257,7 +336,7 @@ async function exportSealed(
 	input: BackupRunInput,
 	key: BackupKey,
 	maxBytes = BACKUP_BUFFER_CAP
-): Promise<{ sealed: Buffer; trailer: BackupTrailer }> {
+): Promise<{ sealed: Buffer; header: BackupHeader; trailer: BackupTrailer }> {
 	let client;
 	try {
 		client = await backupClient(input.env.DATABASE_URL);
@@ -272,9 +351,10 @@ async function exportSealed(
 			() => null,
 			(error: unknown) => error
 		);
+		let header: BackupHeader;
 		let trailer: BackupTrailer;
 		try {
-			({ trailer } = await exportDatabase(client, writer, {
+			({ header, trailer } = await exportDatabase(client, writer, {
 				appVersion: input.appVersion,
 				now: () => input.now
 			}));
@@ -297,7 +377,7 @@ async function exportSealed(
 		if (failure !== null) {
 			throw new BackupRunError('export_failed', 'Sealing the export failed', { cause: failure });
 		}
-		return { sealed: sink.contents(), trailer };
+		return { sealed: sink.contents(), header, trailer };
 	} finally {
 		await client.end().catch(() => undefined);
 	}

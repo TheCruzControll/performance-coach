@@ -158,6 +158,23 @@
 	</Section>
 
 	<div class="stack system">
+		<!-- Streamed: the row keeps its 60 px while the status loads, so nothing below moves. -->
+		{#await data.backups}
+			<ListRow title="Backups" static aria-busy data-testid="backup-status">
+				{#snippet trailing()}<Skeleton width="7rem" height="0.875rem" /><span
+						class="visually-hidden">Checking…</span
+					>{/snippet}
+			</ListRow>
+		{:then backups}
+			<ListRow
+				title="Backups"
+				static
+				value={backups.value}
+				valueTone={backups.tone === 'warning' ? 'warning' : undefined}
+				data-testid="backup-status"
+			/>
+		{/await}
+
 		<Card title="System" eyebrow="Status" data-testid="system-card">
 			<dl class="rows">
 				<div class="row">

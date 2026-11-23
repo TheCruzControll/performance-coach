@@ -19,7 +19,9 @@ import { fileStore } from '../../../src/lib/server/backup/fs-store';
 import { parseBackupKey } from '../../../src/lib/server/backup/key';
 import { BackupStoreError, type BackupStore } from '../../../src/lib/server/backup/store';
 import type { Executor } from '../../../src/lib/server/db';
+import { BACKUP_LOCK_KEY } from '../../../src/lib/server/db/backup/export';
 import { backupClient } from '../../../src/lib/server/db/backup/connect';
+import { startRun } from '../../../src/lib/server/db/backup/runs';
 import { setLogLevel } from '../../../src/lib/server/observability/logger';
 import {
 	BackupRunError,
@@ -334,6 +336,145 @@ describe('runBackup', () => {
 			]);
 		});
 		expect(await names()).toEqual([]);
+	});
+
+	describe('the run log', () => {
+		beforeEach(async () => {
+			await holder.query('TRUNCATE backup_runs');
+		});
+
+		/** Every run logged, oldest first, as the table holds it. */
+		async function runs() {
+			const { rows } = await watcher.query<{
+				trigger: string;
+				status: string;
+				started_at: Date;
+				finished_at: Date | null;
+				pathname: string | null;
+				bytes: string | null;
+				sha256: string | null;
+				format: string | null;
+				schema_tag: string | null;
+				app_version: string | null;
+				row_counts: Record<string, number> | null;
+				error_code: string | null;
+			}>('SELECT * FROM backup_runs ORDER BY id');
+			return rows;
+		}
+
+		it('logs a verified run as succeeded, with what it stored and the schema it read', async () => {
+			const result = await run();
+			const { rows: last } = await watcher.query<{ hash: string }>(
+				'SELECT hash FROM drizzle.__drizzle_migrations ORDER BY id DESC LIMIT 1'
+			);
+			const [row, ...others] = await runs();
+			expect(others).toEqual([]);
+			expect(row).toMatchObject({
+				trigger: 'cron',
+				status: 'succeeded',
+				started_at: NOW,
+				pathname: result.pathname,
+				bytes: String(result.bytes),
+				sha256: result.sha256,
+				format: 'performance-coach-backup@1',
+				schema_tag: last[0]!.hash,
+				app_version: 'test',
+				error_code: null
+			});
+			expect(row!.row_counts).toEqual(result.rowCounts);
+			expect(Object.values(result.rowCounts).reduce((a, b) => a + b, 0)).toBe(result.rows);
+			// The start plus the run's own duration on the monotonic clock.
+			const took = row!.finished_at!.getTime() - NOW.getTime();
+			expect(took).toBeGreaterThanOrEqual(0);
+			expect(took).toBeLessThan(60_000);
+		});
+
+		it('stamps the finish from the run’s own clock, so a wall clock behind the start still finishes', async () => {
+			// The run's clock is an hour ahead of this machine's: a finish stamped by the wall clock
+			// would break the finish-order CHECK.
+			const ahead = new Date(Date.now() + 60 * 60 * 1000);
+			await run({}, ahead);
+			const [row] = await runs();
+			expect(row).toMatchObject({ status: 'succeeded', started_at: ahead });
+			expect(row!.finished_at!.getTime()).toBeGreaterThanOrEqual(ahead.getTime());
+		});
+
+		it('logs a refused run as failed with its code, never a message', async () => {
+			await withRollback(async (tx) => {
+				await refusal(run({ maxBytes: 1024, db: tx }));
+			});
+			expect(await runs()).toMatchObject([
+				{
+					trigger: 'cron',
+					status: 'failed',
+					error_code: 'backup_too_large',
+					pathname: null,
+					bytes: null
+				}
+			]);
+		});
+
+		it('finishes the row failed even when recording the failure throws', async () => {
+			await expect(
+				runBackup(
+					{ now: NOW, trigger: 'cron', env, appVersion: 'test' },
+					{
+						maxBytes: 1024,
+						record: async () => {
+							throw new Error('The app_errors table is down');
+						}
+					}
+				)
+			).rejects.toThrow('The app_errors table is down');
+			expect(await runs()).toMatchObject([
+				{
+					trigger: 'cron',
+					status: 'failed',
+					error_code: 'backup_too_large',
+					finished_at: expect.any(Date)
+				}
+			]);
+		});
+
+		it('logs nothing while backups are off: no backup was attempted', async () => {
+			const { BACKUP_ENCRYPTION_KEY: _key, ...withoutKey } = env;
+			const error = await refusal(
+				runBackup(
+					{ now: NOW, trigger: 'manual', env: withoutKey, appVersion: 'test' },
+					{ record: async () => undefined }
+				)
+			);
+			expect(error.code).toBe('backup_not_configured');
+			expect(await runs()).toEqual([]);
+		});
+
+		it('logs a run that found the lock held as skipped with already_running', async () => {
+			await holder.query('BEGIN');
+			await holder.query('SELECT pg_advisory_xact_lock($1)', [BACKUP_LOCK_KEY]);
+			try {
+				expect((await refusal(run())).code).toBe('already_running');
+			} finally {
+				await holder.query('COMMIT');
+			}
+			expect(await runs()).toMatchObject([
+				{ status: 'skipped', error_code: 'already_running', finished_at: expect.any(Date) }
+			]);
+		});
+
+		it('expires a run abandoned over 15 minutes ago before it starts its own', async () => {
+			const before = new Date(NOW.getTime() - 16 * 60 * 1000);
+			await startRun(holder, { trigger: 'cron', appVersion: 'old', now: before });
+			await run();
+			expect(await runs()).toMatchObject([
+				{ status: 'failed', error_code: 'abandoned', started_at: before, finished_at: NOW },
+				{ status: 'succeeded', started_at: NOW }
+			]);
+		});
+
+		it('logs nothing with log: false (the CLI’s --out)', async () => {
+			await run({ log: false });
+			expect(await runs()).toEqual([]);
+		});
 	});
 
 	describe('logs', () => {

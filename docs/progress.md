@@ -96,11 +96,13 @@ updates milestones.md.
 
 ## In flight
 
-- **Backup run log (m9/51).** The `backup_runs` table (`drizzle/0037_backup_runs.sql`, with its
-  guards in `drizzle/0038_backup_runs_guards.sql`) and its repository
-  (`src/lib/server/db/backup/runs.ts`) are built: a run opens, finishes once, is expired after 15
-  minutes, and is read newest first. Nothing writes to it yet; the cron, the CLI and the Profile
-  status do, in m9/52. Neither `BACKUP_CLASSIFICATION` nor `e2e/text-columns.ts` exists yet:
+- **Backup status (m9/51, m9/52).** Every backup run is logged in `backup_runs`: the daily cron and
+  `pnpm backup:run --blob` open a row, expire runs abandoned for 15 minutes, and finish once as
+  succeeded, failed or skipped (`src/lib/server/services/backups/run.ts`). Profile streams a Backups
+  row from it (`src/lib/server/services/backups/status.ts`): how long ago and how big the last
+  backup was, a calm warning when none has succeeded in 36 hours, the last run failed or none has
+  run, and a neutral row when backups are not set up or the log cannot be read in 1.5 s. Neither
+  `BACKUP_CLASSIFICATION` nor `e2e/text-columns.ts` exists yet:
   `BACKUP_CLASSIFICATION` is not on main, though m9/26's queue row says merged, and the
   `e2e/text-columns.ts` entry (m9/36) is not queued. Each must classify `backup_runs` as
   exclude/operational and not owner-writable when it lands.

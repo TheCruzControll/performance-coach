@@ -1,4 +1,4 @@
-export { closeDb, createDatabase, createPool, getDb } from './client';
+export { closeDb, createDatabase, createPool, getDb, getPool } from './client';
 export { createAppErrorsRepository } from './repositories/app-errors';
 export type { AppErrorRow, NewAppError } from './repositories/app-errors';
 export { createAuthRepository } from './repositories/auth';

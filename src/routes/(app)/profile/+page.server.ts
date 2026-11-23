@@ -1,8 +1,10 @@
 import { version } from '$app/env';
+import { backupStatusView } from '#lib/domain/backup/status.ts';
 import { STEP_INFO } from '#lib/domain/profile/onboarding.ts';
 import { getEnv } from '#lib/server/env.ts';
 import { ownerId } from '#lib/server/forms/profile.ts';
 import { logWhenSettled } from '#lib/server/observability/timing.ts';
+import { backupsConfigured, readBackupLog } from '#lib/server/services/backups/status.ts';
 import { recordServerError } from '#lib/server/services/errors.ts';
 import { checkHealth } from '#lib/server/services/health.ts';
 import { getAthleteProfile, getOnboarding } from '#lib/server/services/profile/index.ts';
@@ -37,7 +39,14 @@ export const load: PageServerLoad = async ({ locals, request, url, route }) => {
 			complete ? null : { resume, stoppedAt: resume === 'welcome' ? null : STEP_INFO[resume].title }
 		)
 		.catch(failSoft('getOnboarding'));
-	logWhenSettled(route.id, [health, vitals, setup]);
+	// Streamed too, and only when backups are set up: a failed or slow read is recorded and the
+	// row says "Can’t check now" (null), never an error page.
+	const now = new Date();
+	const configured = backupsConfigured(getEnv());
+	const backupLog = configured
+		? readBackupLog().catch(failSoft('readBackupLog'))
+		: Promise.resolve(null);
+	logWhenSettled(route.id, [health, vitals, setup, backupLog]);
 	// The name the coach uses (Profile → Name & units) heads the screen; the passkey's owner name
 	// is what it starts from.
 	const athlete = await getAthleteProfile(ownerId(locals));
@@ -48,6 +57,8 @@ export const load: PageServerLoad = async ({ locals, request, url, route }) => {
 		owner: { name: athlete.name || (locals.session?.ownerName ?? 'Owner') },
 		health,
 		vitals,
-		setup
+		setup,
+		// The words are made here, in the owner's time zone; the page only draws them.
+		backups: backupLog.then((log) => backupStatusView(log, configured, now, athlete.timeZone))
 	};
 };
