@@ -70,9 +70,6 @@ Last reviewed: 2026-11-21, against `main` at the merge of #501.
 - **ADR 0011 (email sign-in link) is still Accepted**, while milestones.md records that the owner
   dropped the emailed link on 2026-11-07. Not checked against the code. Closes when the ADR is
   marked Superseded or the note in milestones.md is corrected.
-- **environment.md has seven accepted gaps**, listed in `scripts/docs-known-gaps.json`: five
-  variables without a row and two rows that are not schema keys. The docs tests stay lenient
-  until these are closed.
 - **The app icons and favicon still use the old lime.** `static/favicon.svg`,
   `static/icons/*.svg` and the PNGs in `static/icons/` carry the volt lime `#c8f031`. Their canvas
   `#0a0a0b` matches Instrument v2's canvas again, as the theme colour and manifest do. The in-app
