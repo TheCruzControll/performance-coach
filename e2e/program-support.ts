@@ -61,6 +61,8 @@ export const M1_M2_TABLES = [
 	'webauthn_challenges',
 	'athlete_profiles',
 	'body_weight_entries',
+	'weight_goal_milestones',
+	'weight_goals',
 	'discipline_experience',
 	'equipment_profiles',
 	'exercise_preferences',

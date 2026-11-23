@@ -158,7 +158,7 @@ services, not CHECKed, so a new key needs no migration.
   weight target, "I don't know my 1RMs" (`baselines_unknown`) and onboarding progress (the steps
   completed and skipped, and when it finished).
 - `body_weight_entries`: a dated series with one weigh-in per owner per day
-  (`body_weight_entries_owner_day_uq`, from `drizzle/0035_body_weight_one_per_day.sql`); the
+  (`body_weight_entries_owner_day_uq`, created by `drizzle/0036_weight_tracking.sql` after `drizzle/0035_body_weight_one_per_day.sql` removes the duplicates); the
   latest entry is the current weight, and a save on the same calendar day replaces that day's
   entry whatever its source. A coach write also carries its run and the entry it replaced, so
   Undo can restore it (`drizzle/0036_weight_tracking.sql`).
