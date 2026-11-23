@@ -24,6 +24,12 @@ const picked = (page: Page, group: string, unit: string) =>
 		page.getByRole('radiogroup', { name: group, exact: true }).getByRole('radio', { name: unit })
 	).toHaveAttribute('aria-checked', 'true');
 
+/** Whether `label` is the one picked in Profile → Appearance's choice list named `group`. */
+const devicePicked = (page: Page, group: string, label: string) =>
+	expect(
+		page.getByRole('group', { name: group, exact: true }).getByRole('radio', { name: label })
+	).toBeChecked();
+
 const nameField = (page: Page) =>
 	page.getByRole('textbox', { name: 'What should your coach call you?' });
 
@@ -40,11 +46,13 @@ test('a new name and lb, mi save and stay; Profile is headed by the name and the
 		`insert into athlete_profiles (owner_id, name, time_zone)
 		 select id, display_name, 'America/Los_Angeles' from owners`
 	);
+	// Until the owner says otherwise, this device shows kg and km, and the coach uses the passkey
+	// owner's name.
+	await gotoHydrated(page, '/profile/appearance');
+	await devicePicked(page, 'Weights on this device', 'Kilograms');
+	await devicePicked(page, 'Distances on this device', 'Kilometres');
 	await gotoHydrated(page, '/profile');
-	// Until the owner says otherwise, the coach uses the passkey owner's name, in kg and km.
 	await expect(page.getByTestId('owner-name')).toHaveText('Niko Cruz');
-	await picked(page, 'Units', 'kg');
-	await picked(page, 'Distance', 'km');
 
 	const row = page.getByTestId('section-basics');
 	await expect(row).toHaveAttribute('href', '/profile/basics');
@@ -84,12 +92,14 @@ test('a new name and lb, mi save and stay; Profile is headed by the name and the
 	await page.getByTestId('back-to-profile').click();
 	await expect(page).toHaveURL('/profile');
 	await expect(page.getByTestId('owner-name')).toHaveText('Niko');
-	await picked(page, 'Units', 'lb');
-	await picked(page, 'Distance', 'mi');
+	await page.getByTestId('appearance-link').click();
+	await expect(page).toHaveURL('/profile/appearance');
+	await devicePicked(page, 'Weights on this device', 'Pounds');
+	await devicePicked(page, 'Distances on this device', 'Miles');
 	// Stored on the device, not only on this page.
-	await gotoHydrated(page, '/profile');
-	await picked(page, 'Units', 'lb');
-	await picked(page, 'Distance', 'mi');
+	await gotoHydrated(page, '/profile/appearance');
+	await devicePicked(page, 'Weights on this device', 'Pounds');
+	await devicePicked(page, 'Distances on this device', 'Miles');
 	expect(errors).toEqual([]);
 });
 

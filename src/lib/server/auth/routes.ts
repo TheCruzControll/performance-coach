@@ -70,6 +70,7 @@ export const ROUTE_ACCESS = {
 	'/(app)/coach/proposals/[[id]]': 'owner',
 	'/(app)/profile': 'owner',
 	'/(app)/profile/security': 'owner',
+	'/(app)/profile/appearance': 'owner',
 	'/(app)/profile/[section]': 'owner',
 	'/onboarding/[[step]]': 'owner',
 	'/design': 'owner',

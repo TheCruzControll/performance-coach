@@ -26,7 +26,7 @@ test('WebKit: sign-out clears the cookie, account caches and IndexedDB, keeps pr
 
 	const storedTheme = () =>
 		page.evaluate(() => JSON.parse(localStorage.getItem('pc:prefs:v1') ?? '{}').theme);
-	await page.goto('/profile');
+	await page.goto('/profile/appearance');
 	await page.waitForLoadState('networkidle'); // hydrated: a tap before then changes nothing
 	await page.getByTestId('theme-control').getByRole('radio', { name: 'Light' }).click();
 	await expect.poll(storedTheme).toBe('light'); // a device preference, kept by sign-out

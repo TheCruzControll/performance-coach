@@ -31,7 +31,7 @@ Dark-first, iPhone-first, built by hand on CSS custom properties (ADR 0005). Liv
 The choice (Profile → Appearance) is stored per device and applied before first paint by an inline
 script in `src/app.html`, which also updates `<meta name="theme-color">`: `#0a0a0b` in dark and
 `#f4f4f0` in light, the canvas of each theme. The manifest's `background_color` and `theme_color` are
-`#0a0a0b`. With **Auto**, the app
+`#0a0a0b`. With **Match my phone**, the app
 keeps listening to `prefers-color-scheme` while open, so when iOS switches appearance (e.g.
 automatic dark mode at sunset) the theme-color and status-bar metas follow the CSS (e2e-tested).
 **Browser baseline:** `light-dark()` needs Safari 17.5+ / Chrome 123+.
@@ -420,6 +420,9 @@ that specs verify the rest with.
     of text inside the 28 px gutters). The workout keeps 40 rem until `v2/10` (`workout/Shell.svelte`).
   - `--content-wide` 72 rem: a wide screen's content.
   - `--content-list` 20 rem: the list beside its editor on a split screen.
+  - `--content-profile` 68 rem, from 1024 px: Profile's split (`data-measure="profile"`), its list
+    400 px wide (narrower windows narrow it, to 320 px at least), 56 px, then the open screen
+    576 px wide behind a hairline, inside the gutters.
   - `--rail-width` 5.5 rem: the navigation rail from 1024 px.
   - `--column-offset-max`: from 1024 px, the most `<main>` sits right of the rail, 200 px less the
     gutter, so a screen's text starts at most 200 px from the rail.
@@ -447,7 +450,9 @@ A screen declares its width with `data-layout` on its root element:
 - **readable**, the default: forms, text, settings (Security), conversations (Coach). The column
   is `--content-readable` from 640 px; the phone column stays `--content-max`.
 - **wide**: dashboards and grids, up to `--content-wide`.
-- **split**: a list and its editor, `--content-list` beside a readable detail.
+- **split**: a list and its editor, `--content-list` beside a readable detail. Profile's screens
+  add `data-measure="profile"`: `--content-profile` in all, a 400 px list (320 px at least in a
+  narrower window), then a 576 px detail behind a hairline with 56 px inside it.
 - Never a single text column wider than `--content-readable`.
 - From 1024 px `<main>` is centred right of the rail, at most 200 px from it to the text: a
   readable screen at 1440 px is 560 px of text starting 200 px from the rail, and a wide one is
@@ -652,12 +657,17 @@ later-pass screen).
   the quiet line, and the sessions saved on this device or 'Today isn’t saved on this device'
   with 'Log something else'. Outside the shell the same block is centred in the window at
   `--content-readable`.
-- **Profile** (`/profile`): one list in groups (You, Training, Security), each row with its
-  answer, then This device (the preferences) and About this app (Backups first, then database,
-  version, environment) and the real-user performance card. From 1024 px the list beside the
-  rest.
+- **Profile** (`/profile`): one list in groups (You, Training, App, Security), each row with its
+  answer, then About this app (Backups first, then database, version, environment) and the
+  real-user performance card. From 1024 px the list up to 400 px wide (44 px rows, no chevrons,
+  answers in tertiary) and the open screen beside it behind a hairline, `--content-profile` (68 rem) in
+  all, centred right of the rail; on Profile itself the open side is About this app, and the
+  owner's name sits above the title.
+- **Appearance** (`/profile/appearance`): the theme as a choice list (Dark, Light, Match my
+  phone), then this device's weights and distances. A choice applies at once, so no Save. From
+  1024 px Profile's columns, with Appearance open.
 - **Profile sections** (`/profile/[section]`): split. From 1024 px `ProfileList` (Profile's whole
-  list, the open one `aria-current`) beside the editor in the readable column; Back is hidden. The
+  list, the open one `aria-current`) beside the editor, in Profile's columns; Back is hidden. The
   skeleton reserves the window's height below the title, so Save starts at the window's foot and
   stays put when the editor arrives. Save is column chrome at the editor column's foot. Below
   1024 px: list → editor → Back, the 28 rem skeleton and the fixed Save bar.
@@ -738,7 +748,8 @@ later-pass screen).
 | `Badge`             | Legacy in v2: a status word on its line, with no pill, tint or outline: `neutral` (default; the only tone for "Soon"), `accent` (the next step, sparingly), `positive · warning · danger`; optional icon. Words carry the meaning.                                                                                                                                                                                                                                                                                                                                       |
 | `Chip`              | Legacy in v2: plain secondary label (e.g. a discipline, no outline or pill) with an optional discipline-colour dot; static, not a control.                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `ListRow`           | Instrument v2 list row: title, subtitle, an optional trailing `value` in secondary text, then a chevron or a `trailing` snippet (a "Soon" badge). At least 60 px, no fill, a hairline under each row but a list’s last; `danger` draws the title in the danger colour with no chevron. Renders a link (`href`), a button (`onclick`) or a static row (`disabled`); `static` is a status row (no action, no chevron) and `valueTone="warning"` draws the value in `--color-warning`. `icon` and `tone` are accepted and not drawn: v2 rows have no tiles.                 |
-| `ProfileList`       | `src/lib/ui/profile`. Profile's list: the sections in You and Training, then Security; each a `ListRow` with its answer (`answers.ts`, streamed from the Profile layout's load, `app:profile-answers`); the open one `aria-current`.                                                                                                                                                                                                                                                                                                                                     |
+| `ProfileList`       | `src/lib/ui/profile`. Profile's list: the sections in You and Training, then App (Appearance) and Security; each a `ListRow` with its answer (`answers.ts`, streamed from the Profile layout's load, `app:profile-answers`; the theme once mounted); the open one `aria-current`. From 1024 px 44 px rows with no chevron, answers in tertiary, the group headings for assistive tech only.                                                                                                                                                                              |
+| Appearance screen   | `/profile/appearance`. `ChoiceGroup` cards: the theme (Dark, Light, Match my phone, applied when picked, no Save), then this device's weights and distances (`preferences.svelte.ts`). Words in `src/lib/ui/profile/appearance.ts`.                                                                                                                                                                                                                                                                                                                                      |
 | `Section`           | Legacy in v2: titled group on a screen ("This week", "Tools"): one heading style and spacing everywhere, `aria-labelledby` wired.                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `training/*`        | `PlateDiagram` (sleeve picture), `PlateCalculator` (code-split sheet body; its kg/lb switch is local and never changes the app-wide preference; from a set row it opens at that set's weight and unit), `PlateInventory` (this device's bar and plates).                                                                                                                                                                                                                                                                                                                 |
 | `WeekStrip`         | `src/lib/ui/program`, like the next two. Seven days Monday first in a radiogroup (roving tabindex, arrows, Home/End), each ≥ 44 px at 393 px; a dot per session (a ring if skipped), counted in its name; the server's today ringed.                                                                                                                                                                                                                                                                                                                                     |

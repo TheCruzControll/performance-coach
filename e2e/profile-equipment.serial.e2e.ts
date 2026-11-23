@@ -52,9 +52,9 @@ test('Profile lists the equipment section, and it opens the editor', async ({ pa
 	const errors = trackConsoleErrors(page);
 	await gotoHydrated(page, '/profile');
 	await expect(page.getByText('Soon')).toHaveCount(0);
-	// Security and the device preferences stay on Profile.
+	// Security and Appearance (the theme and this device's units) are rows of Profile's list.
 	await expect(page.getByTestId('security-link')).toBeVisible();
-	await expect(page.getByTestId('theme-control')).toBeVisible();
+	await expect(page.getByTestId('appearance-link')).toBeVisible();
 
 	const row = page.getByTestId('section-equipment');
 	await expect(row).toHaveAttribute('href', '/profile/equipment');
