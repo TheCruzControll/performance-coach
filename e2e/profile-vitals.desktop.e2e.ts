@@ -1,22 +1,19 @@
 /**
- * Profile's start-route vitals in a desktop window (1440 × 900): inside the real-user
- * performance card of the centred two-column layout, the three tiles on one row.
+ * Profile → About this app → Speed in a desktop window (1440 × 900): Profile's columns, centred
+ * right of the rail, with About open beside the list, and no side scroll.
  */
 import { expect, test } from '@playwright/test';
-import { expectMainCentred, expectNoSideScroll } from './desktop';
+import { expectMainCentred, expectNoSideScroll, tokenPx } from './desktop';
 import { gotoHydrated } from './support';
 import { expectStartVitals, expectStartVitalsAxeClean, postStartVitals } from './vitals-support';
 
-test('profile shows the start-route vitals on one row in the centred layout', async ({ page }) => {
+test('Speed opens in Profile’s columns, About open beside it', async ({ page }) => {
 	await postStartVitals(page);
-	await gotoHydrated(page, '/profile');
-	const start = await expectStartVitals(page);
-	await expectMainCentred(page);
+	await gotoHydrated(page, '/profile/about/speed');
+	await expectStartVitals(page);
+	await expectMainCentred(page, await tokenPx(page, '--content-profile'));
 	await expectNoSideScroll(page);
-	const tops = await start
-		.getByRole('listitem')
-		.evaluateAll((items) => items.map((i) => Math.round(i.getBoundingClientRect().top)));
-	expect(tops).toHaveLength(3);
-	expect(new Set(tops).size).toBe(1);
+	const list = page.getByRole('navigation', { name: 'Profile' });
+	await expect(list.getByTestId('about-link')).toHaveAttribute('aria-current', 'page');
 	await expectStartVitalsAxeClean(page);
 });

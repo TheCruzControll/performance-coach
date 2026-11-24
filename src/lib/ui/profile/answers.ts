@@ -93,3 +93,16 @@ export function sectionAnswers(t: TrainingProfile): SectionAnswers {
 
 /** Security's row: "1 passkey", "2 passkeys". */
 export const passkeysAnswer = (n: number) => count(n, 'passkey', 'passkeys');
+
+/**
+ * About this app's row, on Profile and About only (the health and backup checks it reads are
+ * theirs): "All working", or the one thing that needs a look, the database first.
+ */
+export function aboutAnswer(
+	db: 'up' | 'down',
+	backupsTone: 'warning' | undefined
+): { value: string; tone?: 'warning' } {
+	if (db === 'down') return { value: 'Data unavailable', tone: 'warning' };
+	if (backupsTone === 'warning') return { value: 'Check backups', tone: 'warning' };
+	return { value: 'All working' };
+}

@@ -9,6 +9,7 @@
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { ICON_NAMES } from '../src/lib/ui/icons/names';
+import { isDesktopPage } from './desktop';
 import { captureScreen, openProfile, SCREENS, TABS, trackConsoleErrors } from './support';
 
 /** The sprite Vite emits: hashed and immutable (never a data: URL, which <use> cannot draw). */
@@ -154,7 +155,14 @@ test.describe('icons', () => {
 			if (tab.path === '/profile') await openProfile(page);
 			else await page.goto(tab.path);
 			await expect(page.getByRole('heading', { level: 1, name: tab.heading })).toBeVisible();
-			if (tab.path === '/profile') await expect(page.getByTestId('db-status')).toBeVisible();
+			// Profile's streamed checks have answered: its About row's answer, and from 1024 px the
+			// About side beside the list.
+			if (tab.path === '/profile') {
+				await expect(page.getByTestId('about-link')).toContainText(
+					/All working|Data unavailable|Check backups/
+				);
+				if (isDesktopPage(page)) await expect(page.getByTestId('db-status')).toBeVisible();
+			}
 			await expectEveryIconFromSprite(page, symbols);
 			await expectEveryIconDrawn(page);
 			// The bottom nav's icons, each drawn: the tab bar is the icon set's busiest surface.

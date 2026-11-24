@@ -20,6 +20,8 @@ export const SCREENS = [
 	...APP_ROOTS.map((t) => t.path),
 	'/profile/security',
 	'/profile/appearance',
+	'/profile/about',
+	'/profile/about/speed',
 	'/profile/goals',
 	'/profile/goals/past',
 	'/profile/equipment',
@@ -115,7 +117,17 @@ export function a11ySuite(theme: 'dark' | 'light'): void {
 				// An error page in its place would pass the audit: the screen itself must load.
 				expect((await page.goto(path))?.status(), path).toBe(200);
 				await page.waitForLoadState('networkidle');
-				if (path === '/profile') await expect(page.getByTestId('db-status')).toBeVisible();
+				// Profile's About row once its checks have answered, and About open beside the
+				// list from 1024 px; About's and Speed's streamed rows.
+				if (path === '/profile') {
+					await expect(page.getByTestId('about-link')).toContainText(
+						/All working|Data unavailable|Check backups/
+					);
+					if (isDesktopPage(page)) await expect(page.getByTestId('db-status')).toBeVisible();
+				}
+				if (path === '/profile/about') await expect(page.getByTestId('db-status')).toBeVisible();
+				if (path === '/profile/about/speed')
+					await expect(page.getByTestId('speed-note')).toBeVisible();
 				// Today on a blank profile: its setup card.
 				if (path === '/today') await expect(page.getByTestId('today-setup')).toBeVisible();
 				// A Profile section's editor loads after the screen, under its title.

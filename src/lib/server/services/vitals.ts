@@ -3,6 +3,7 @@
  * summarise them at p75 (the percentile Core Web Vitals are assessed at).
  */
 import { z } from 'zod';
+import type { VitalSummary } from '../../domain/vitals';
 import {
 	createWebVitalsRepository,
 	getDb,
@@ -25,13 +26,8 @@ export const START_ROUTE_ID = '/(app)/today';
 /** What the start route is judged by: server response, largest paint, and responsiveness. */
 export const START_METRICS: readonly WebVitalName[] = ['TTFB', 'LCP', 'INP'];
 
-export interface VitalSummary {
-	name: WebVitalName;
-	p75: number;
-	samples: number;
-	/** p75 on the start route alone, for START_METRICS; null otherwise or without samples. */
-	start: { p75: number; samples: number } | null;
-}
+/** Declared in the domain, so the screens that draw it can name it (src/lib/domain/vitals.ts). */
+export type { VitalSummary };
 
 export const vitalSchema = z.object({
 	id: z.string().min(1).max(128),

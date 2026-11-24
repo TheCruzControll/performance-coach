@@ -242,20 +242,52 @@ test.describe('app shell on an iPhone viewport', () => {
 		const row = await basics.boundingBox();
 		expect(Math.abs(row!.height - height), `the row is ${height} px tall`).toBeLessThanOrEqual(1);
 
-		// Status rows under About this app, Backups first.
-		const about = page.getByTestId('system-card');
-		await expect(about.getByTestId('db-status')).toBeVisible();
-		await expect(about.getByTestId('backup-status')).toBeVisible();
-		const backupsFirst = await page.evaluate(() => {
-			const [backups, db] = ['backup-status', 'db-status'].map((id) =>
-				document.querySelector(`[data-testid="${id}"]`)!
-			);
-			return Boolean(backups!.compareDocumentPosition(db!) & Node.DOCUMENT_POSITION_FOLLOWING);
-		});
-		expect(backupsFirst, 'Backups comes before Database').toBe(true);
+		// Setup is unfinished on a blank profile: "Finish setting up" tops the list, its title 600
+		// and no hairline under it, and on a phone 16 px under the owner's name (Paper, 9 ·
+		// "Finish setting up"). The welcome is not a step, so the row says nowhere it stopped.
+		const setup = page.getByTestId('continue-setup');
+		await expect(setup).toHaveAccessibleName(/^Finish setting up/);
+		await expect(setup).toHaveAttribute('href', '/onboarding');
+		await expect(setup.locator('.value')).toHaveCount(0);
+		await expect(setup.locator('.title')).toHaveCSS('font-weight', '600');
+		await expect(setup).toHaveCSS('border-bottom-color', 'rgba(0, 0, 0, 0)');
+		if (!desktop) {
+			const name = await page.getByTestId('owner-name').boundingBox();
+			const top = (await setup.boundingBox())!.y;
+			const gap = top - (name!.y + name!.height);
+			expect(Math.abs(gap - 16), `the row is ${gap} px under the name`).toBeLessThanOrEqual(1);
+		}
 
-		// No account or preferences card: only the legacy card left (Real-user performance) is boxed.
-		await expect(page.locator('main .surface')).toHaveCount(1);
+		// About this app is a row in the App group, after Appearance, saying "All working" or
+		// what needs a look once its checks have answered. From 1024 px it is the open side too.
+		const aboutRow = page.getByTestId('about-link');
+		await expect(aboutRow).toHaveAttribute('href', '/profile/about');
+		await expect(aboutRow).toHaveAccessibleName(
+			/^About this app\s*(All working|Data unavailable|Check backups)$/
+		);
+		await expect(aboutRow).not.toHaveAttribute('aria-current');
+		await expect(page.getByTestId('db-status')).toBeVisible({ visible: desktop });
+
+		// About this app's own screen: its status rows, Backups first, then Your data, Speed on
+		// your devices, the version and the design system.
+		await aboutRow.click();
+		await expect(page).toHaveURL(/\/profile\/about$/);
+		await expect(page.getByRole('heading', { level: 1, name: 'About this app' })).toBeVisible();
+		const about = page.getByTestId('system-card');
+		await expect(about.getByTestId('db-status')).toContainText('Connected');
+		await expect(about.getByTestId('backup-status')).toBeVisible();
+		await expect(about.locator('.row .title')).toHaveText([
+			'Backups',
+			'Your data',
+			'Speed on your devices',
+			'Version',
+			'Design system'
+		]);
+		await expect(about.getByTestId('speed-row')).toHaveAttribute('href', '/profile/about/speed');
+		await expect(about.getByTestId('design-link')).toHaveAttribute('href', '/design');
+		// Environment is cut, and nothing on the screen is boxed.
+		await expect(about).not.toContainText('Environment');
+		await expect(page.locator('main .surface')).toHaveCount(0);
 	});
 
 	test('bottom navigation moves between all tabs', async ({ page }, testInfo) => {

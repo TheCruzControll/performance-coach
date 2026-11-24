@@ -1,8 +1,8 @@
 /**
- * Profile's start-route vitals (profile-vitals.e2e.ts, profile-vitals.desktop.e2e.ts): post a
- * launch of Today the way the app beacons it, then check the card. Other specs' page loads add
- * their own samples, so values are checked for shape, not for an exact number (the integration
- * test tests/integration/vitals.test.ts pins those).
+ * Profile → About this app → Speed (profile-vitals.e2e.ts, profile-vitals.desktop.e2e.ts): post a
+ * launch of Today the way the app beacons it, then check the three questions and the launches
+ * under them. Other specs' page loads add their own samples, so values are checked for shape, not
+ * for an exact number (the integration test tests/integration/vitals.test.ts pins those).
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
@@ -26,19 +26,20 @@ export async function postStartVitals(page: Page) {
 	expect(res.status()).toBe(204);
 }
 
+/** On Speed: each question answered in words, and the launches the numbers come from. */
 export async function expectStartVitals(page: Page) {
-	const start = page.getByTestId('start-vitals');
-	await expect(start.getByRole('heading', { level: 3, name: /Opening the app/ })).toBeVisible();
-	for (const name of ['TTFB', 'LCP', 'INP']) {
-		const stat = start.getByTestId(`start-vital-${name}`);
-		await expect(stat, name).toContainText(new RegExp(`${name}\\s*\\d+\\s*ms`));
-		await expect(stat, name).toContainText(/\d+ samples?/);
-	}
-	// CLS and FCP stay in the all-screens list only.
-	await expect(start.getByTestId('start-vital-CLS')).toHaveCount(0);
-	await expect(start.getByTestId('start-vital-FCP')).toHaveCount(0);
-	await expect(page.getByTestId('vital-CLS')).toBeVisible();
-	return start;
+	await expect(page.getByRole('heading', { level: 1, name: 'Speed' })).toBeVisible();
+	await expect(page.getByTestId('speed-open')).toHaveText(
+		/^Opening the app\s*\d+(\.\d)? (s|ms), (good|needs work|poor)$/
+	);
+	await expect(page.getByTestId('speed-tap')).toHaveText(
+		/^Answering a tap\s*\d+(\.\d)? (s|ms), (good|needs work|poor)$/
+	);
+	await expect(page.getByTestId('speed-stable')).toHaveText(
+		/Things staying put\s*(Good|Needs work|Poor)/
+	);
+	// The launch just posted is on the start route: the count is of launches, not visits.
+	await expect(page.getByTestId('speed-note')).toHaveText(/^From \d+ launch(es)?\.$/);
 }
 
 export async function expectStartVitalsAxeClean(page: Page) {
@@ -49,7 +50,7 @@ export async function expectStartVitalsAxeClean(page: Page) {
 		}, theme);
 		await page.waitForTimeout(250); // colour transitions
 		const { violations } = await new AxeBuilder({ page })
-			.include('[data-testid="start-vitals"]')
+			.include('main')
 			.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
 			.analyze();
 		expect(violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.target.join(' ')}`))).toEqual(

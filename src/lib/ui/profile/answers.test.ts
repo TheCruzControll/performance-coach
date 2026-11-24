@@ -8,7 +8,7 @@ import type {
 	TrainingProfile
 } from '#lib/domain/profile/types.ts';
 import { NBSP } from '#lib/domain/units.ts';
-import { passkeysAnswer, sectionAnswers } from './answers';
+import { aboutAnswer, passkeysAnswer, sectionAnswers } from './answers';
 import { SECTION_GROUPS, SECTIONS, sectionsIn } from './sections';
 
 const at = new Date('2026-11-01T08:00:00Z');
@@ -156,6 +156,15 @@ describe('passkeysAnswer', () => {
 	it('counts the passkeys', () => {
 		expect(passkeysAnswer(1)).toBe('1 passkey');
 		expect(passkeysAnswer(2)).toBe('2 passkeys');
+	});
+});
+
+describe('aboutAnswer', () => {
+	it('says all is working, or the one thing that needs a look, the database first', () => {
+		expect(aboutAnswer('up', undefined)).toEqual({ value: 'All working' });
+		expect(aboutAnswer('down', undefined)).toEqual({ value: 'Data unavailable', tone: 'warning' });
+		expect(aboutAnswer('up', 'warning')).toEqual({ value: 'Check backups', tone: 'warning' });
+		expect(aboutAnswer('down', 'warning')).toEqual({ value: 'Data unavailable', tone: 'warning' });
 	});
 });
 

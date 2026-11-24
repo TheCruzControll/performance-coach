@@ -1,64 +1,31 @@
-import { version } from '$app/env';
-import { backupStatusView } from '#lib/domain/backup/status.ts';
 import { STEP_INFO } from '#lib/domain/profile/onboarding.ts';
-import { getEnv } from '#lib/server/env.ts';
 import { ownerId } from '#lib/server/forms/profile.ts';
-import { logWhenSettled } from '#lib/server/observability/timing.ts';
-import { backupsConfigured, readBackupLog } from '#lib/server/services/backups/status.ts';
-import { recordServerError } from '#lib/server/services/errors.ts';
-import { checkHealth } from '#lib/server/services/health.ts';
-import { getAthleteProfile, getOnboarding } from '#lib/server/services/profile/index.ts';
-import { getVitalsSummary } from '#lib/server/services/vitals.ts';
+import { getOnboarding } from '#lib/server/services/profile/index.ts';
+import { aboutData, failSoftFor } from './about.server';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ locals, request, url, route }) => {
-	// Streamed: the page renders immediately and these fill in when ready.
-	const health = checkHealth({ version, timeoutMs: 1500 });
-	// The response has already started, so handleError never sees a streamed failure: the card
-	// degrades (to "no samples", or no setup row), and the failure is logged and recorded like
-	// any server error.
-	const failSoft = (load: string) => async (error: unknown) => {
-		await recordServerError({
-			error,
-			kind: 'streamed',
-			status: 500,
-			requestId: locals.requestId,
-			method: request.method,
-			path: url.pathname,
-			routeId: route.id,
-			appVersion: version,
-			context: { load }
-		});
-		return null;
-	};
-	const vitals = getVitalsSummary(7).catch(failSoft('getVitalsSummary'));
-	// Until onboarding is complete, Profile offers to continue it at the furthest step
-	// advanced (as Today's setup card does), named here so the page ships no step table.
+/**
+ * Profile: the list (its answers stream from the layout's load), "Finish setting up" while
+ * onboarding is unfinished, and About this app (./about.server.ts): its row's answer, and the open
+ * side at a desk.
+ */
+export const load: PageServerLoad = async (event) => {
+	const { locals } = event;
+	// Until onboarding is complete, Profile offers to finish it at the furthest step advanced (as
+	// Today's setup card does), named here so the page ships no step table. Streamed: nothing
+	// until it settles, and nothing if the read failed.
 	const setup = getOnboarding(ownerId(locals))
 		.then(({ complete, resume }) =>
 			complete ? null : { resume, stoppedAt: resume === 'welcome' ? null : STEP_INFO[resume].title }
 		)
-		.catch(failSoft('getOnboarding'));
-	// Streamed too, and only when backups are set up: a failed or slow read is recorded and the
-	// row says "Can’t check now" (null), never an error page.
-	const now = new Date();
-	const configured = backupsConfigured(getEnv());
-	const backupLog = configured
-		? readBackupLog().catch(failSoft('readBackupLog'))
-		: Promise.resolve(null);
-	logWhenSettled(route.id, [health, vitals, setup, backupLog]);
-	// The name the coach uses (Profile → Name and units) sits under the title; the passkey's owner
-	// name is what it starts from.
-	const athlete = await getAthleteProfile(ownerId(locals));
+		.catch(failSoftFor(event)('getOnboarding'));
+	const { athlete, ...about } = await aboutData(event, [setup]);
 
 	return {
-		version,
-		appEnv: getEnv().appEnv,
+		...about,
+		// The name the coach uses (Profile → Name and units) sits under the title; the passkey's
+		// owner name is what it starts from.
 		owner: { name: athlete.name || (locals.session?.ownerName ?? 'Owner') },
-		health,
-		vitals,
-		setup,
-		// The words are made here, in the owner's time zone; the page only draws them.
-		backups: backupLog.then((log) => backupStatusView(log, configured, now, athlete.timeZone))
+		setup
 	};
 };
