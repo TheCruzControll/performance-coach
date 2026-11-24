@@ -778,11 +778,15 @@ test.describe('workout screen at 4× CPU', () => {
 				const duration = entry.getByTestId('session-duration');
 				await duration.getByRole('button', { name: /^Increase / }).click();
 				await duration.getByRole('button', { name: /^Decrease / }).click();
-				await entry.getByRole('radio', { name: '8', exact: true }).click();
-				await entry.getByRole('switch', { name: 'Sparred' }).click();
+				// Effort: its row opens its sheet, a pick applies at once, and Close shuts it.
+				await page.getByTestId('session-effort').click();
+				const effort = page.getByRole('dialog', { name: 'How hard was it', exact: true });
+				await effort.getByRole('radio', { name: '8', exact: true }).click();
+				await effort.getByRole('button', { name: 'Close' }).click();
+				await expect(effort).toBeHidden();
 				await page.getByTestId('save-session').click();
 				await expect(page.getByTestId('session-status')).toHaveText(/^Saved/);
-				return 5;
+				return 6;
 			}
 		]
 	] as const) {

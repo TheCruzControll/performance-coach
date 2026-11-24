@@ -201,7 +201,7 @@ test('a structured run and a Muay Thai class: logged from Today, synced, and in 
 		await expect(start).toHaveAttribute('href', `/workout?start=${lineageOf(CLASS)}`);
 		await start.click();
 		await expect(page).toHaveURL(/\/workout\/session$/);
-		await expect(page.getByTestId('session-entry').getByRole('heading', { level: 2 })).toHaveText(
+		await expect(page.getByTestId('workout-header').getByRole('heading', { level: 1 })).toHaveText(
 			CLASS
 		);
 		await captureScreen(page, testInfo, 'journey-thai-start');
@@ -210,10 +210,29 @@ test('a structured run and a Muay Thai class: logged from Today, synced, and in 
 	await test.step('the class logged: 90 min, RPE 8, rounds 6, sparred, and saved', async () => {
 		const entry = page.getByTestId('session-entry');
 		const stepper = (testId: string) => entry.getByTestId(testId).getByRole('spinbutton');
+		const dialog = (name: string) => page.getByRole('dialog', { name, exact: true });
+		/** Closes the open sheets, the top one first. */
+		const closeSheets = async () => {
+			const open = page.locator('dialog[open]');
+			for (let n = await open.count(); n > 0; n--) {
+				await page.keyboard.press('Escape');
+				await expect(open).toHaveCount(n - 1);
+			}
+		};
 		await type(stepper('session-duration'), '90');
-		await entry.getByRole('radio', { name: '8', exact: true }).check();
-		await type(stepper('metric-rounds'), '6');
-		await entry.getByRole('switch', { name: 'Sparred' }).check();
+		// Effort, rounds and sparred: each row opens its sheet.
+		await page.getByTestId('session-effort').click();
+		await dialog('How hard was it').getByRole('radio', { name: '8', exact: true }).check();
+		await closeSheets();
+		await expect(page.getByTestId('session-effort')).toContainText('Hard');
+		await page.getByTestId('session-keep').click();
+		await dialog('More to keep').getByTestId('keep-rounds').click();
+		await type(page.getByTestId('metric-rounds').getByRole('spinbutton'), '6');
+		await closeSheets();
+		await page.getByTestId('session-keep').click();
+		await dialog('More to keep').getByTestId('keep-sparred').click();
+		await page.getByTestId('metric-sparred').getByRole('switch', { name: 'Sparred' }).check();
+		await closeSheets();
 		await page.getByTestId('save-session').click();
 		await expect(page.getByTestId('session-status')).toHaveText(/^Saved/);
 		await synced(page);

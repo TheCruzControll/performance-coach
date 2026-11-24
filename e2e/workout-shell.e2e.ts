@@ -128,17 +128,55 @@ test.describe('the workout screen (IndexedDB only)', () => {
 		await expect(page.getByTestId('workout-main')).toHaveCount(0);
 	});
 
-	test('with no workout, the empty state links to Today', async ({ page }, testInfo) => {
+	test('with no workout, the page asks what you did, then what kind', async ({
+		page
+	}, testInfo) => {
 		await gotoWorkout(page);
 		const empty = page.getByTestId('workout-empty');
-		await expect(empty.getByRole('heading', { name: 'No workout in progress' })).toBeVisible();
-		await expect(empty.getByRole('link', { name: 'Go to Today' })).toHaveAttribute(
+		await expect(empty.getByRole('heading', { level: 1 })).toHaveText('What did you do');
+		await expect(empty.getByTestId('adhoc-strength')).toHaveAttribute(
 			'href',
-			'/today'
+			'/workout?new=strength'
 		);
-		await expect(page.getByRole('link', { name: 'Minimise' })).toHaveAttribute('href', '/today');
+		await expect(empty.getByTestId('adhoc-strength')).toContainText('Strength');
+		await expect(empty.getByTestId('adhoc-run')).toHaveAttribute('href', '/workout?new=run');
+		// Opened directly, the × goes to Today; there is no workout header, so no Minimise.
+		await expect(empty.getByRole('link', { name: 'Close' })).toHaveAttribute('href', '/today');
+		await expect(page.getByTestId('workout-header')).toHaveCount(0);
+		await expect(page.getByRole('link', { name: 'Minimise' })).toHaveCount(0);
 		await expect(page.getByRole('timer')).toHaveCount(0);
+		await expectNoSideScroll(page);
+		await expectTargets(page);
 		await captureScreen(page, testInfo, 'workout-empty');
+
+		// Muay Thai or something else asks what kind, a step of the same page: Back returns.
+		await empty.getByRole('button', { name: 'Muay Thai or something else' }).click();
+		await expect(empty.getByRole('heading', { level: 1 })).toHaveText('What kind');
+		await expect(page).toHaveURL(/\/workout$/);
+		await expect(empty.getByTestId('adhoc-kind-pad_work')).toHaveAttribute(
+			'href',
+			'/workout?new=other&kind=pad_work'
+		);
+		await expect(empty.getByRole('link', { name: 'Something else' })).toHaveAttribute(
+			'href',
+			'/workout?new=other&kind=custom'
+		);
+		await expectNoSideScroll(page);
+		await captureScreen(page, testInfo, 'workout-empty-kind');
+		await page.goBack();
+		await expect(empty.getByRole('heading', { level: 1 })).toHaveText('What did you do');
+		await empty.getByTestId('adhoc-other').click();
+		await empty.getByRole('button', { name: 'Back' }).click();
+		await expect(empty.getByRole('heading', { level: 1 })).toHaveText('What did you do');
+
+		// By keyboard, the focus moves with the step: to its heading, then back to the row.
+		await empty.getByTestId('adhoc-other').focus();
+		await page.keyboard.press('Enter');
+		await expect(empty.getByRole('heading', { level: 1, name: 'What kind' })).toBeFocused();
+		await page.keyboard.press('Shift+Tab');
+		await expect(empty.getByRole('button', { name: 'Back' })).toBeFocused();
+		await page.keyboard.press('Enter');
+		await expect(empty.getByTestId('adhoc-other')).toBeFocused();
 	});
 
 	test('the prerendered HTML is the same signed in and signed out, and holds no workout', async ({
@@ -289,6 +327,9 @@ test.describe('the workout screen (IndexedDB only)', () => {
 			await gotoWorkout(page);
 			await expect(page.getByTestId('workout-empty')).toBeVisible();
 			expect(await audit(page), 'empty').toEqual([]);
+			await page.getByTestId('adhoc-other').click();
+			await expect(page.getByTestId('adhoc-kind-class')).toBeVisible();
+			expect(await audit(page), 'empty, what kind').toEqual([]);
 
 			await seedWorkout(page, kits.strength);
 			await gotoWorkout(page);

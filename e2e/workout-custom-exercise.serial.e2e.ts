@@ -45,7 +45,7 @@ const sheet = (page: Page) => page.getByTestId('exercise-actions-sheet');
 /** Starts a strength session of the owner's own from the empty workout screen. */
 async function startAdHocStrength(page: Page): Promise<string> {
 	await page.goto('/workout');
-	await page.getByTestId('workout-empty').getByRole('link', { name: 'Strength' }).click();
+	await page.getByTestId('workout-empty').getByTestId('adhoc-strength').click();
 	await expect(page).toHaveURL(/\/workout$/);
 	await expect(page.locator('main#main[data-store]')).toBeAttached();
 	await expect(main(page).getByTestId('workout-no-exercises')).toBeVisible();

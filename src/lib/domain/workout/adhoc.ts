@@ -5,9 +5,11 @@
  *
  * Owner decision (ADHOC_DEFAULTS): what an ad-hoc kit starts as. Strength starts with no
  * exercises, and each one is added from the cached library (Add exercise); a run is an easy run
- * with no planned segments, so every segment is a free one; 'Muay Thai and other' starts as a
+ * with no planned segments, so every segment is a free one; 'Muay Thai or something else' starts as a
  * 60-minute Muay Thai class, and the session's own fields change its type, minutes and metrics
- * before Save. Changing a default here changes only what a new ad-hoc workout starts from.
+ * before Save. Started from /workout's "What kind" (?new=other&kind=), it starts as that type,
+ * titled by it ("Pad work"), keeping the Muay Thai session type and discipline. Changing a default
+ * here changes only what a new ad-hoc workout starts from.
  */
 import type { IsoDate } from '../calendar.ts';
 import type { Discipline } from '../profile/catalog.ts';
@@ -41,16 +43,53 @@ export const ADHOC_DEFAULTS = {
 export const adhocKindOf = (value: string | null): AdhocKind | null =>
 	ADHOC_KINDS.find((kind) => kind === value) ?? null;
 
-/** A kit for an ad-hoc workout of `kind`, in the owner's units, dated the device's `today`. */
+/**
+ * What an ad-hoc session of each type is called (the "What kind" words; the vocabulary keeps its
+ * short labels for History).
+ */
+export const ADHOC_SESSION_TITLES: Readonly<Record<OtherSessionKind, string>> = {
+	class: 'Class',
+	pad_work: 'Pad work',
+	sparring: 'Sparring',
+	technical: 'Technical',
+	conditioning: 'Conditioning',
+	mobility: 'Mobility',
+	strength_conditioning: 'Strength and conditioning',
+	custom: 'Your own session'
+};
+
+/** ?kind='s value as a session type, or null for anything else. */
+export const adhocSessionOf = (value: string | null): OtherSessionKind | null =>
+	value !== null && Object.hasOwn(ADHOC_SESSION_TITLES, value) ? (value as OtherSessionKind) : null;
+
+/**
+ * A kit for an ad-hoc workout of `kind`, in the owner's units, dated the device's `today`. An
+ * other session given its `session` type starts as that type, titled by it.
+ */
 export function adhocKit(kind: 'strength', units: KitUnits, today: IsoDate): StrengthKit;
 export function adhocKit(kind: 'run', units: KitUnits, today: IsoDate): RunKit;
-export function adhocKit(kind: 'other', units: KitUnits, today: IsoDate): OtherKit;
-export function adhocKit(kind: AdhocKind, units: KitUnits, today: IsoDate): StartKit;
-export function adhocKit(kind: AdhocKind, units: KitUnits, today: IsoDate): StartKit {
+export function adhocKit(
+	kind: 'other',
+	units: KitUnits,
+	today: IsoDate,
+	session?: OtherSessionKind
+): OtherKit;
+export function adhocKit(
+	kind: AdhocKind,
+	units: KitUnits,
+	today: IsoDate,
+	session?: OtherSessionKind
+): StartKit;
+export function adhocKit(
+	kind: AdhocKind,
+	units: KitUnits,
+	today: IsoDate,
+	session?: OtherSessionKind
+): StartKit {
 	const { title, sessionType, discipline } = ADHOC_DEFAULTS[kind];
 	const base = {
 		v: 1,
-		title,
+		title: kind === 'other' && session ? ADHOC_SESSION_TITLES[session] : title,
 		sessionType,
 		discipline,
 		date: today,
@@ -62,13 +101,13 @@ export function adhocKit(kind: AdhocKind, units: KitUnits, today: IsoDate): Star
 	} as const;
 	if (kind === 'strength') return { ...base, kind, exercises: [] };
 	if (kind === 'run') return { ...base, kind, run: { segments: [] } };
-	const { session } = ADHOC_DEFAULTS.other;
+	const defaults = ADHOC_DEFAULTS.other.session;
 	return {
 		...base,
 		kind,
 		other: {
-			kind: session.kind,
-			durationMinutes: session.durationMinutes,
+			kind: session ?? defaults.kind,
+			durationMinutes: defaults.durationMinutes,
 			targetRpe: null,
 			metrics: []
 		}

@@ -20,6 +20,8 @@ declare global {
 			exerciseHistory?: { exerciseId: string; name: string };
 			/** A coach answer's exercise source: its history sheet, by exercise id alone (pushState). */
 			coachExercise?: { exerciseId: string };
+			/** /workout's empty page on its "What kind" step (pushState), so Back returns to it. */
+			logKind?: true;
 		}
 		// interface Platform {}
 	}

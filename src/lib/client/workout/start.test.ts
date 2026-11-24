@@ -76,6 +76,15 @@ describe('startRequestOf', () => {
 		expect(startRequestOf('?start=')).toBeNull();
 		expect(startRequestOf('')).toBeNull();
 	});
+
+	it('reads ?new=other&kind as the session’s type, only for other and only a known type', () => {
+		expect(startRequestOf('?new=other&kind=pad_work')).toEqual({
+			kind: 'other',
+			session: 'pad_work'
+		});
+		expect(startRequestOf('?new=other&kind=naps')).toEqual({ kind: 'other' });
+		expect(startRequestOf('?new=run&kind=pad_work')).toEqual({ kind: 'run' });
+	});
 });
 
 describe('fetchKit', () => {
@@ -383,6 +392,15 @@ describe('startAdHoc', () => {
 		const kit = (await store.getActive())!.view!.kit!;
 		expect(kit).toMatchObject({ kind: 'run', units: UNITS, date: localDay(T0) });
 		expect(persist).toHaveBeenCalledOnce();
+	});
+
+	it('starts an other session as the type it was given, titled by it', async () => {
+		const outcome = await startAdHoc('other', UNITS, options(server({}).fetch), 'sparring');
+		expect(outcome).toEqual({ status: 'started', path: '/workout/session' });
+		const [entry] = await store.outbox();
+		expect(entry!.envelope.payload).toMatchObject({ kind: 'other', title: 'Sparring' });
+		const kit = (await store.getActive())!.view!.kit!;
+		expect(kit).toMatchObject({ kind: 'other', title: 'Sparring', other: { kind: 'sparring' } });
 	});
 
 	it('uses the training profile’s units over this device’s, and keeps them for offline', async () => {

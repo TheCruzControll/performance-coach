@@ -61,7 +61,12 @@
 			outcome =
 				'lineage' in request
 					? await starter.startPlanned(request.lineage, { store })
-					: await starter.startAdHoc(request.kind, deviceUnits(), { store });
+					: await starter.startAdHoc(
+							request.kind,
+							deviceUnits(),
+							{ store },
+							'session' in request ? request.session : undefined
+						);
 		} catch {
 			outcome = { status: 'not-saved' };
 		}

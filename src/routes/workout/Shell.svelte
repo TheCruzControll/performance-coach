@@ -7,7 +7,7 @@
   - It renders <main id='main'>, the root layout's skip-link target (prerendering needs it).
   - It restores the workout from IndexedDB alone (active.svelte.ts), loading the projection, the
     route's reducer table and the header's stopwatch (WorkoutClock.svelte) meanwhile: a skeleton
-    that reserves the header, then the view, 'No workout in progress', 'This browser can't keep a workout' or 'App
+    that reserves the header, then the view, 'What did you do' (no workout), 'This browser can't keep a workout' or 'App
     updated — reload to continue'. A workout of another kind is sent to its own route first.
   - Once the first render (data-ready, which waits for the view and stopwatch chunks too, not
     only the restore) has painted, on every engine (afterPaint: WebKit has no idle callback), the
@@ -40,6 +40,10 @@
   - start: /workout?start= or ?new=, which the page reads once mounted. The start flow's chunk
     (StartFlow.svelte) is shown instead of any workout, through the page's chunk loader; the
     page neither connects its own store nor sends a workout of another kind to its route.
+  - No workout on this device: the empty page (EmptyWorkout.svelte, 'What did you do') with no
+    header (bare), its own × going back where the owner came from in the app, or to Today. The
+    header's sync status moves into its top line once the outbox is not quiet (a discard still
+    waiting to sync, offline or not), and stays, so the sync sheet stays reachable.
   - Layout: one column below 1024 px; from there the header spans the page, and the view's side
     and main columns sit side by side, centred, at --content-list beside --content-readable.
 -->
@@ -52,6 +56,7 @@
 
 <script lang="ts">
 	import { onMount, untrack, type Component, type Snippet } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
 	import {
 		ActiveWorkout,
 		type ActiveSnapshot,
@@ -112,11 +117,29 @@
 	let Finish = $state.raw<typeof FinishSheet | null>(null);
 	const sync = $derived(ui?.outboxStatus.current);
 	const signedOut = $derived(sync?.state === 'signed-out' ? sync.waiting : null);
+	/**
+	 * The empty page shows the sync status from the first change it sees waiting, and keeps it
+	 * (Saved, once synced), so the sync sheet it opens never goes from under the owner. Quiet until
+	 * then: nothing to show.
+	 */
+	let syncWaited = $state(false);
+	$effect(() => {
+		if (sync && sync.state !== 'synced') syncWaited = true;
+	});
 	const hidden = $derived(signedOut !== null || (active.signedOut && !sync));
 	let Start = $state.raw<Component<{ load: ChunkLoad }> | null>(null);
 	const starting = $derived(!!start && restore.phase !== 'app-updated');
 	/** What the page may show of the workout: nothing once signed out, or while starting one. */
 	const shown = $derived(hidden || start ? null : view);
+	/** The empty page (EmptyWorkout.svelte) draws its own ×: no header there. */
+	const bare = $derived(
+		restore.phase === 'empty' && !waiting && !hidden && !starting && signedOut === null
+	);
+	/** Arrived from another page of the app, so the empty page's × goes back there. */
+	let inApp = $state(false);
+	afterNavigate(({ from, type }) => {
+		if (type !== 'popstate') inApp = from !== null;
+	});
 	/** kit-refresh.ts once the fresh kit pins an edited plan's session (replanned). */
 	let replanned = $state.raw<typeof KitRefresh | null>(null);
 	const offerFresh = $derived(!!replanned && !!shown && replanned.untouched(shown));
@@ -218,35 +241,34 @@
 	data-phase={restore.phase}
 	data-ready={waiting ? undefined : ''}
 	data-store={active.store ? '' : undefined}
+	data-bare={bare ? '' : undefined}
 >
-	<WorkoutHeader title={waiting ? null : (shown?.workout.title ?? 'Workout')}>
-		{#snippet time()}
-			{#if shown && Clock && restore.phase === 'active'}<Clock
-					view={shown}
-					write={active.write}
-					{load}
-				/>{/if}
-		{/snippet}
-		{#snippet status()}
-			{#if ui && active.store}
-				<ui.SyncStatus store={active.store} view={shown} {load} />
-			{/if}
-		{/snippet}
-		{#snippet menu()}
-			{#if shown && restore.phase === 'active'}
-				<span class="menu">
-					{#if Menu && active.store}
-						<Menu view={shown} store={active.store} onfinish={() => (active.finishing = true)} />
-					{/if}
-				</span>
-			{/if}
-		{/snippet}
-		{#snippet finish()}
-			{#if shown && restore.phase === 'active' && HeaderFinish && active.store}
-				<HeaderFinish view={shown} onfinish={() => (active.finishing = true)} />
-			{/if}
-		{/snippet}
-	</WorkoutHeader>
+	{#if !bare}
+		<WorkoutHeader title={waiting ? null : (shown?.workout.title ?? 'Workout')}>
+			{#snippet time()}
+				{#if shown && Clock && restore.phase === 'active'}<Clock
+						view={shown}
+						write={active.write}
+						{load}
+					/>{/if}
+			{/snippet}
+			{#snippet status()}{@render syncStatus()}{/snippet}
+			{#snippet menu()}
+				{#if shown && restore.phase === 'active'}
+					<span class="menu">
+						{#if Menu && active.store}
+							<Menu view={shown} store={active.store} onfinish={() => (active.finishing = true)} />
+						{/if}
+					</span>
+				{/if}
+			{/snippet}
+			{#snippet finish()}
+				{#if shown && restore.phase === 'active' && HeaderFinish && active.store}
+					<HeaderFinish view={shown} onfinish={() => (active.finishing = true)} />
+				{/if}
+			{/snippet}
+		</WorkoutHeader>
+	{/if}
 
 	<div class="body">
 		{#if starting && Start}
@@ -277,7 +299,7 @@
 				{/each}
 			</div>
 		{:else if restore.phase === 'empty'}
-			<EmptyWorkout />
+			<EmptyWorkout {inApp} status={syncWaited ? syncStatus : undefined} />
 		{:else if restore.phase === 'no-storage'}
 			<EmptyState
 				icon="database"
@@ -310,6 +332,13 @@
 	{/if}
 </main>
 
+<!-- The sync status: in the header, or in the empty page's top line while a change waits. -->
+{#snippet syncStatus()}
+	{#if ui && active.store}
+		<ui.SyncStatus store={active.store} view={shown} {load} />
+	{/if}
+{/snippet}
+
 <style>
 	.workout {
 		/* v2/03: the workout keeps the 20 px gutter until v2/10 redesigns the set. At 28 px a 393 px
@@ -322,6 +351,11 @@
 		grid-template-rows: auto 1fr auto;
 		min-height: 100dvh;
 		outline: none;
+	}
+
+	/* No header on the empty page: the body takes the room. */
+	.workout[data-bare] {
+		grid-template-rows: 1fr auto;
 	}
 
 	/* v2/03c: the workout keeps the 640 px readable column from 1024 px (the shell's is 616) until

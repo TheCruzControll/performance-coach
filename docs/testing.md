@@ -1323,7 +1323,7 @@ and the active workout. Numbers: docs/performance.md, "M4 (workout)".
 
 Captured into `test-results/screens/<project>/`, the desktop ones under `desktop-chromium/`:
 
-- Workout screen: `workout-empty`, `workout-no-storage`, `workout-app-updated`, `workout-active`,
+- Workout screen: `workout-empty`, `workout-empty-kind`, `workout-no-storage`, `workout-app-updated`, `workout-active`,
   `workout-baseline`, `workout-exercise`, `workout-logging` (with `-hover`, `-focus`),
   `workout-superset`, `workout-not-saved`, `workout-set-edit`, `workout-set-skipped`,
   `workout-between-exercises`, `workout-rest`, `workout-rest-paused`, `workout-rest-over`,

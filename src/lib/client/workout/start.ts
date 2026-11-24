@@ -10,7 +10,8 @@
  *   workout is created here under a new client id: workout.start, pinned to the kit's planned
  *   session, the kit and the stopwatch, in one write. Then persistent storage is asked for, and
  *   the caller goes to the kind's route (kinds.ts).
- * - startAdHoc(kind): the same, from a kit built on the device (domain adhoc.ts), in the owner's
+ * - startAdHoc(kind, …, session?): the same, from a kit built on the device (domain adhoc.ts; an
+ *   other session as the type /workout's "What kind" picked), in the owner's
  *   training-profile units, as GET /api/exercises gives them (owner decision: the profile wins
  *   over this device's display units, so a planned and an ad-hoc run read alike). Unreachable, the
  *   units the server last gave this device; never given, this device's own (deviceUnits). The
@@ -30,7 +31,13 @@
  */
 import type { IsoDate } from '#lib/domain/calendar.ts';
 import type { SessionKind } from '#lib/domain/training/types.ts';
-import { adhocKindOf, adhocKit, type AdhocKind } from '#lib/domain/workout/adhoc.ts';
+import type { OtherSessionKind } from '#lib/domain/training/vocabulary.ts';
+import {
+	adhocKindOf,
+	adhocKit,
+	adhocSessionOf,
+	type AdhocKind
+} from '#lib/domain/workout/adhoc.ts';
 import { createMutation } from '#lib/domain/workout/index.ts';
 import type { ExerciseLibrary, KitUnits, StartKit } from '#lib/domain/workout/index.ts';
 import { strengthTable } from '#lib/domain/workout/reducers/tables.ts';
@@ -48,15 +55,20 @@ export const startKitUrl = (lineage: string) =>
 
 export { LIBRARY_URL };
 
-/** What /workout's query asks for: ?start=<lineage> wins over ?new=run|other. */
-export type StartRequest = { lineage: string } | { kind: AdhocKind };
+/**
+ * What /workout's query asks for: ?start=<lineage> wins over ?new=strength|run|other; ?new=other
+ * may name its type (&kind=pad_work, /workout's "What kind").
+ */
+export type StartRequest = { lineage: string } | { kind: AdhocKind; session?: OtherSessionKind };
 
 export function startRequestOf(search: string): StartRequest | null {
 	const query = new URLSearchParams(search);
 	const lineage = query.get('start');
 	if (lineage) return { lineage };
 	const kind = adhocKindOf(query.get('new'));
-	return kind ? { kind } : null;
+	if (!kind) return null;
+	const session = kind === 'other' ? adhocSessionOf(query.get('kind')) : null;
+	return session ? { kind, session } : { kind };
 }
 
 export interface KitOptions {
@@ -277,11 +289,15 @@ export async function startPlanned(lineage: string, options: StartOptions): Prom
 	return begin(answer.kit, options);
 }
 
-/** deviceUnits: this device's display units, only when the server never gave the owner's. */
+/**
+ * deviceUnits: this device's display units, only when the server never gave the owner's. `session`:
+ * an other session's type, which it starts as and is titled by.
+ */
 export async function startAdHoc(
 	kind: AdhocKind,
 	deviceUnits: KitUnits,
-	options: StartOptions
+	options: StartOptions,
+	session?: OtherSessionKind
 ): Promise<StartOutcome> {
 	const { store, now = Date.now } = options;
 	const vouched = await vouch(store, () => fetchUnits(options));
@@ -293,7 +309,7 @@ export async function startAdHoc(
 	if (answer.ok) await store.saveUnits(answer.units);
 	if (answer.ok && answer.library) await store.saveLibrary(answer.library);
 	const units = answer.ok ? answer.units : ((await store.getUnits()) ?? deviceUnits);
-	return begin(adhocKit(kind, units, localDay(now())), options);
+	return begin(adhocKit(kind, units, localDay(now()), session), options);
 }
 
 /**
