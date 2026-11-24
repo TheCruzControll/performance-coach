@@ -85,11 +85,6 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   stays open after Save, but a new injury's draft key (`new:1`) becomes its stored id once saved, so the remounted editor cannot find the screen it had open and goes back to the list
   (`src/lib/ui/profile/InjuriesEditor.svelte`). Found building `v2/22b`. Closes if a save hands
   back each new row's id against its draft key, so the screen can follow it.
-- **A sub-screen's opener is gone when it closes, so each editor puts the focus back itself.** The
-  editor draws a sub-screen in place of its list, so the row that opened it is unmounted and
-  `SubScreens.close()` finds nothing to focus; `InjuriesEditor` focuses the injury's row (or Add an
-  injury) instead. Found building `v2/22b`. Closes when `src/lib/ui/profile/subscreens.svelte.ts`
-  returns the focus for every editor.
 - **Goals keeps the reorder arrows and the drag handle at each row's end, and the goal sheet is the
   pre-v2 form.** Paper draws neither at rest and reorders by long press; the owner kept the arrows
   (the keyboard's and VoiceOver's way) and the full form. With two or more goals each row is as

@@ -63,6 +63,16 @@ test('with nothing saved, Injuries says there is nothing to work around', async 
 	await expect(empty).toBeVisible();
 	// Its row is gone, so the way back lands on Add an injury.
 	await expect(page.getByTestId('add-injury')).toBeFocused();
+	// What was typed on a removed injury goes with it: the next new one (under the same draft key)
+	// starts empty.
+	await page.getByTestId('add-injury').click();
+	await avoidField(page).fill('Box jumps');
+	await page.getByTestId('injury-remove').click();
+	await page.getByTestId('add-injury').click();
+	await expect(screenTitle(page, 'New injury')).toBeVisible();
+	await expect(avoidField(page)).toHaveValue('');
+	await page.getByTestId('injury-remove').click();
+	await expect(page.getByTestId('add-injury')).toBeFocused();
 	await page.getByTestId('back-to-profile').click();
 	await expect(page).toHaveURL('/profile');
 	expect(errors).toEqual([]);
@@ -88,6 +98,18 @@ test('an injury needs its area, keeps what to leave out as typed, and saves', as
 	await expect(page.getByText('Where is it?')).toBeVisible();
 	await expect(where).toBeFocused();
 	expect(await query('select id from injuries')).toEqual([]);
+	// On the list, its row says it needs an answer, in the warning colour, and has the focus.
+	await page.getByTestId('sub-back').click();
+	const row = page.getByTestId('injury');
+	await expect(row).toHaveAccessibleName(/^New injury\s*Needs an answer$/);
+	await expect(row).toHaveAttribute('aria-invalid', 'true');
+	await expect(row.getByText('Needs an answer', { exact: true })).toHaveAttribute(
+		'data-tone',
+		'warning'
+	);
+	await expect(row).toBeFocused();
+	await row.click();
+	await expect(screenTitle(page, 'New injury')).toBeVisible();
 	// The errors go with their injury: a new one in its place starts without them.
 	await page.getByTestId('injury-remove').click();
 	await page.getByTestId('add-injury').click();
@@ -128,7 +150,6 @@ test('an injury needs its area, keeps what to leave out as typed, and saves', as
 		}
 	]);
 	// Saved, a new injury goes by its stored id: the screen gives way to the list.
-	const row = page.getByTestId('injury');
 	await expect(row).toHaveAccessibleName(/^Left knee\s*Moderate$/);
 	await page.evaluate(() => scrollTo(0, 0));
 	await captureScreen(page, testInfo, 'profile-injuries');

@@ -8,7 +8,6 @@
   keyed by injury, so removing one never hands its state or its errors to the next.
 -->
 <script lang="ts">
-	import { tick } from 'svelte';
 	import {
 		BODY_AREAS,
 		BODY_AREA_LABEL,
@@ -79,7 +78,13 @@
 		return pinned;
 	});
 
-	let root = $state<HTMLElement>();
+	/**
+	 * What to leave out, as typed: the list keeps only whole movements, so the field shows the
+	 * words themselves while they are typed (a space or a comma would otherwise vanish). Only
+	 * while its screen is open: a new injury that reuses a removed one's key starts empty.
+	 */
+	let typed = $state<{ key: string; text: string } | null>(null);
+
 	let announcement = $state('');
 	let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -105,19 +110,24 @@
 	function toggleActive(injury: InjuryDraft) {
 		injury.active = !injury.active;
 		announce(injury.active ? 'Moved back to your injuries' : 'Moved to Better now');
+		typed = null;
+		// The focus follows it to its row in the other list (`data-opens`).
 		subs?.close();
 	}
 
 	function remove(injury: InjuryDraft) {
-		const title = named(injury);
+		const title = injury.bodyArea ? injuryTitle(injury) : 'the new injury';
 		value.injuries.splice(
 			value.injuries.findIndex((i) => i.key === injury.key),
 			1
 		);
-		// Its errors go with it: a row added later under the same key starts without them.
+		// Its errors and its words go with it: a row added later under the same key starts without
+		// them.
 		delete pinned[injury.key];
+		typed = null;
 		announce(`Removed ${title}`);
-		subs?.close();
+		// Its row is gone: the way back lands on Add an injury.
+		subs?.close(() => document.querySelector<HTMLElement>('[data-testid="add-injury"]'));
 	}
 
 	// The screen's title follows its injury once it has an area ("Left knee").
@@ -134,31 +144,10 @@
 		if (subs?.top?.id.startsWith(SCREEN) && !open) subs.reset();
 	});
 
-	// The row that opened a screen is gone while the screen shows: on the way back, focus goes to
-	// the injury's row (in whichever list it is now), or to Add an injury once it was removed.
-	let shown: string | undefined;
+	// The host's back link closes the screen too: what was typed on it goes with it.
 	$effect(() => {
-		const key = open?.key;
-		if (key) {
-			shown = key;
-			return;
-		}
-		const back = shown;
-		shown = undefined;
-		if (back) void tick().then(() => focusRow(back));
+		if (!open) typed = null;
 	});
-
-	function focusRow(key: string) {
-		const index = [...active, ...resolved].findIndex((i) => i.key === key);
-		const row = root?.querySelectorAll<HTMLElement>('[data-testid="injury"]')[index];
-		(row ?? root?.querySelector<HTMLElement>('[data-testid="add-injury"]'))?.focus();
-	}
-
-	/**
-	 * What to leave out, as typed: the list keeps only whole movements, so the field shows the
-	 * words themselves while they are typed (a space or a comma would otherwise vanish).
-	 */
-	let typed = $state<{ key: string; text: string } | null>(null);
 </script>
 
 {#if open}
@@ -203,7 +192,7 @@
 					}
 				}
 				error={own.avoid}
-				maxlength={740}
+				maxlength={742}
 				data-testid="injury-avoid"
 			/>
 			<TextArea
@@ -232,15 +221,17 @@
 		</div>
 	{/each}
 {:else}
-	<div class="injuries" bind:this={root}>
+	<div class="injuries">
 		{#if active.length}
 			<div class="rows">
 				{#each active as injury (injury.key)}
 					<ListRow
 						title={named(injury)}
-						value={injuryRowValue(injury)}
+						value={rowErrors[injury.key] ? 'Needs an answer' : injuryRowValue(injury)}
+						valueTone={rowErrors[injury.key] ? 'warning' : undefined}
 						onclick={() => edit(injury)}
 						aria-invalid={rowErrors[injury.key] ? 'true' : undefined}
+						data-opens={SCREEN + injury.key}
 						data-testid="injury"
 					/>
 				{/each}
@@ -258,9 +249,12 @@
 				{#each resolved as injury (injury.key)}
 					<ListRow
 						title={named(injury)}
+						value={rowErrors[injury.key] ? 'Needs an answer' : injuryRowValue(injury)}
+						valueTone={rowErrors[injury.key] ? 'warning' : undefined}
 						muted
 						onclick={() => edit(injury)}
 						aria-invalid={rowErrors[injury.key] ? 'true' : undefined}
+						data-opens={SCREEN + injury.key}
 						data-testid="injury"
 					/>
 				{/each}
