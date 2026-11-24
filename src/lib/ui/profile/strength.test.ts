@@ -6,8 +6,10 @@ import {
 	baselinesDraft,
 	baselinesPayload,
 	baselineSummary,
+	estimateLine,
 	liftDraft,
 	liftName,
+	liftValue,
 	liveEstimate,
 	newLift,
 	suggestedLifts,
@@ -226,6 +228,42 @@ describe('liveEstimate', () => {
 		expect(liveEstimate({ ...liftDraft(bench), setWeight: null })).toBeNull();
 		expect(liveEstimate({ ...liftDraft(bench), setRpe: 5 })).toBeNull();
 		expect(liveEstimate({ ...liftDraft(bench), source: 'tested', value: 130 })).toBeNull();
+	});
+});
+
+describe('liftValue', () => {
+	const blank = newLift('back_squat', 'kg');
+
+	it('says the set, a best guess as “About”, and a max as it was lifted', () => {
+		expect(liftValue({ ...blank, source: 'set', setWeight: 102.5, setReps: 5 })).toBe(
+			'102.5 kg × 5'
+		);
+		expect(liftValue({ ...blank, source: 'estimate', value: 150 })).toBe('About 150 kg');
+		expect(liftValue({ ...blank, source: 'tested', value: 140 })).toBe('140 kg');
+		expect(liftValue({ ...blank, source: 'competition', value: 315, unit: 'lb' })).toBe('315 lb');
+	});
+
+	it('is nothing without a source, or a set without its reps, so the row says “Choose”', () => {
+		expect(liftValue(blank)).toBeUndefined();
+		expect(liftValue({ ...blank, value: 140 })).toBeUndefined();
+		expect(liftValue({ ...blank, source: 'set', setWeight: 100 })).toBeUndefined();
+		expect(liftValue({ ...blank, source: 'tested' })).toBeUndefined();
+	});
+});
+
+describe('estimateLine', () => {
+	it('gives the set’s estimate as a best single, to the nearest 0.5 kg', () => {
+		// The bench above: 100 × 5 at RPE 8 is stored as 123.3, shown as 123.5.
+		expect(estimateLine(liftDraft(bench))).toBe('I estimate your best single at about 123.5 kg.');
+	});
+
+	it('says when the set gives no estimate, and what to enter before there is one', () => {
+		expect(estimateLine({ ...liftDraft(bench), setReps: 20 })).toBe(
+			'I can’t estimate from that set. Use 1 to 12 reps at RPE 6 to 10.'
+		);
+		expect(estimateLine({ ...newLift('bench_press', 'kg'), source: 'set' })).toBe(
+			'Enter a recent hard set. RPE is how hard it felt: 10 is nothing left.'
+		);
 	});
 });
 

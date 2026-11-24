@@ -102,6 +102,12 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   stays open after Save, but a new injury's draft key (`new:1`) becomes its stored id once saved, so the remounted editor cannot find the screen it had open and goes back to the list
   (`src/lib/ui/profile/InjuriesEditor.svelte`). Found building `v2/22b`. Closes if a save hands
   back each new row's id against its draft key, so the screen can follow it.
+- **Adding a lift or a discipline is a pick from a list of radios, which `ChoiceGroup` otherwise
+  keeps for recording an answer.** Paper draws "Add a lift" and "What else do you train?" as
+  pick-one sheets. Arrow keys step through them without adding; a tap, Enter or Space adds the
+  one picked and opens its own sheet (`src/lib/ui/profile/BaselinesEditor.svelte`,
+  `src/lib/ui/profile/ExperienceEditor.svelte`). Found building `v2/22c`. Closes if `v2/25` makes
+  them rows of buttons, or the owner accepts the pattern.
 - **Goals keeps the reorder arrows and the drag handle at each row's end, and the goal sheet is the
   pre-v2 form.** Paper draws neither at rest and reorders by long press; the owner kept the arrows
   (the keyboard's and VoiceOver's way) and the full form. With two or more goals each row is as

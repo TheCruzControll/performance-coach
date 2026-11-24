@@ -24,6 +24,7 @@ import {
 import {
 	captureScreen,
 	gotoHydrated,
+	pick,
 	query,
 	resetTrainingProfile,
 	toastWith,
@@ -50,7 +51,10 @@ const column = (page: Page) => page.getByTestId('section-column');
 const editor = (page: Page) => page.getByTestId('section-editor');
 const saveBar = (page: Page) => page.getByTestId('save-bar');
 const save = (page: Page) => page.getByTestId('save-section');
-const place = (page: Page, name: string) => page.getByRole('radio', { name });
+/** "Where you train most": a row with its answer, which opens a sheet (a dialog here) to pick it. */
+const gym = (page: Page) => page.getByTestId('gym-type');
+const choosePlace = (page: Page, name: string) =>
+	pick(page, page, 'Where you train most', new RegExp(`^${name}`));
 
 /** The editor has loaded under the title. */
 async function editorReady(page: Page) {
@@ -162,9 +166,19 @@ test.describe('in a desktop window', () => {
 		expect(Math.abs((await boxOf(editor(page))).width - 440)).toBeLessThanOrEqual(1);
 		await expectWithin(page, saveBar(page));
 
-		await place(page, 'Commercial gym').check();
+		await choosePlace(page, 'Commercial gym');
+		// What's there opens in the column, in the section's place, with its way back shown.
+		const back = page.getByTestId('sub-back');
+		await page.getByTestId('kit-row').click();
+		await expect(page.getByRole('heading', { level: 1, name: 'What’s there' })).toBeFocused();
+		await expect(back).toBeVisible();
+		await expect(back).toHaveText('Equipment');
+		await expectWithin(page, back);
 		const kit = page.getByRole('group', { name: 'What’s there?' });
+		await expectWithin(page, kit);
 		await kit.getByRole('checkbox', { name: 'Barbell & plates' }).check();
+		await back.click();
+		await expect(page.getByTestId('kit-row')).toContainText('1 thing');
 		await save(page).click();
 		await expect(toastWith(page, 'Saved')).toBeVisible();
 		await expectWithin(page, saveBar(page));
@@ -176,7 +190,8 @@ test.describe('in a desktop window', () => {
 
 		await page.reload();
 		await editorReady(page);
-		await expect(place(page, 'Commercial gym')).toBeChecked();
+		await expect(gym(page)).toContainText('Commercial gym');
+		await page.getByTestId('kit-row').click();
 		await expect(kit.getByRole('checkbox', { name: 'Barbell & plates' })).toBeChecked();
 		expect(errors).toEqual([]);
 	});
@@ -232,7 +247,7 @@ test.describe('in a desktop window', () => {
 			.click();
 		await expect(page).toHaveURL('/profile/equipment');
 		await editorReady(page);
-		await place(page, 'Strength club').check();
+		await choosePlace(page, 'Strength club');
 		const sheet = page.getByTestId('discard-sheet');
 		await list(page).getByRole('link', { name: /Goals/ }).click();
 		await expect(sheet.getByRole('heading', { name: 'Discard your changes?' })).toBeVisible();
@@ -299,14 +314,14 @@ test.describe('in a desktop window', () => {
 	}, testInfo) => {
 		await gotoHydrated(page, '/profile/equipment');
 		await editorReady(page);
-		await place(page, 'Home or garage gym').check();
+		await choosePlace(page, 'Home or garage gym');
 		await context.setOffline(true);
 		await save(page).click();
 		const error = page.getByTestId('save-error');
 		await expect(error).toContainText('Can’t reach the server');
 		await expectWithin(page, error);
 		await expectWithin(page, saveBar(page));
-		await expect(place(page, 'Home or garage gym')).toBeChecked();
+		await expect(gym(page)).toContainText('Home or garage gym');
 		await auditBothThemes(page, testInfo, 'profile-save-offline-desktop');
 
 		await context.setOffline(false);
@@ -384,7 +399,7 @@ test.describe('in a desktop window', () => {
 			await page.unroute(chunk);
 			await retry.click();
 			await editorReady(page);
-			await expect(place(page, 'Commercial gym')).toBeVisible();
+			await expect(gym(page)).toBeVisible();
 			await expect(save(page)).toBeEnabled();
 		});
 	});

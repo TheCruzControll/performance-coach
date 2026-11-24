@@ -1,7 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import { SCHEMAS, validate } from '#lib/domain/profile/schemas.ts';
 import type { EquipmentProfile } from '#lib/domain/profile/types.ts';
-import { equipmentDraft } from './equipment';
+import { equipmentDraft, kitValue } from './equipment';
+
+describe('kitValue', () => {
+	it('says how many things are ticked, and “Nothing” for none (no home kit)', () => {
+		expect(kitValue([])).toBe('Nothing');
+		expect(kitValue(['dumbbells'])).toBe('1 thing');
+		expect(
+			kitValue([
+				'barbell',
+				'squat_rack',
+				'bench',
+				'platform',
+				'dumbbells',
+				'kettlebells',
+				'cables',
+				'machines',
+				'pull_up_bar'
+			])
+		).toBe('9 things');
+	});
+});
 
 const saved: EquipmentProfile = {
 	gymType: 'commercial',

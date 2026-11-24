@@ -5,7 +5,8 @@
   closes; there is no Done. The row shows the answer in words, or "Add" in tertiary. A field
   error shows as one red line under the row too, and marks the row invalid, so a refused save
   focuses the row; opening it shows the field with its error. A danger row last in the sheet
-  ("Remove this race") has no hairline, and `children` is handed a `close` for it.
+  ("Remove this race") has no hairline, and `children` is handed a `close` for it. `open` is
+  bindable, so the caller can open the sheet itself (a lift just added from "Add a lift").
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -20,6 +21,8 @@
 		value?: string;
 		placeholder?: string;
 		error?: string | null;
+		/** Whether the sheet is open: bind it to open the sheet from outside the row. */
+		open?: boolean;
 		/** The fields, and a danger row last when the sheet removes something. */
 		children: Snippet<[close: () => void]>;
 		'data-testid'?: string;
@@ -32,12 +35,12 @@
 		value,
 		placeholder = 'Add',
 		error,
+		open = $bindable(false),
 		children,
 		'data-testid': testId
 	}: Props = $props();
 
 	const id = $props.id();
-	let open = $state(false);
 </script>
 
 <div class="sheet-row">
