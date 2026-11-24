@@ -3,10 +3,17 @@ import { RUNNING_DISCIPLINES, type Discipline } from '#lib/domain/profile/catalo
 import { SCHEMAS, validate } from '#lib/domain/profile/schemas.ts';
 import type { MuayThaiProfile, RunningProfile } from '#lib/domain/profile/types.ts';
 import {
+	bpmValue,
+	distanceValue,
+	fightsValue,
 	muayThaiDraft,
+	muayThaiWeekValue,
 	newRace,
 	normaliseTime,
+	paceValue,
 	raceName,
+	racesValue,
+	runningWeekValue,
 	runningDraft,
 	runningPayload,
 	specificsDraft,
@@ -382,5 +389,67 @@ describe('timeError', () => {
 			'Easy pace between 2:00 and 25:00'
 		);
 		expect(timeError('abc', undefined, format)).toBeUndefined();
+	});
+});
+
+describe('the rows’ answers', () => {
+	it('say a usual running week as distance in runs, either alone, or nothing', () => {
+		expect(runningWeekValue({ weeklyDistance: 24, runsPerWeek: 3, unit: 'km' })).toBe(
+			'24 km in 3 runs'
+		);
+		expect(runningWeekValue({ weeklyDistance: 15.5, runsPerWeek: 1, unit: 'mi' })).toBe(
+			'15.5 mi in 1 run'
+		);
+		expect(runningWeekValue({ weeklyDistance: null, runsPerWeek: 3, unit: 'km' })).toBe('3 runs');
+		expect(runningWeekValue({ weeklyDistance: null, runsPerWeek: 1, unit: 'km' })).toBe('1 run');
+		expect(runningWeekValue({ weeklyDistance: 24, runsPerWeek: null, unit: 'km' })).toBe('24 km');
+		expect(
+			runningWeekValue({ weeklyDistance: null, runsPerWeek: null, unit: 'km' })
+		).toBeUndefined();
+	});
+
+	it('say an easy pace a km or a mile, as typed on the keypad, and nothing it cannot read', () => {
+		expect(paceValue('5.45', 'km')).toBe('5:45 a km');
+		expect(paceValue('8.05', 'mi')).toBe('8:05 a mile');
+		expect(paceValue('5:45', 'km')).toBe('5:45 a km');
+		expect(paceValue('abc', 'km')).toBeUndefined();
+		expect(paceValue('', 'km')).toBeUndefined();
+	});
+
+	it('say recent races as none, the one race and its time, or how many', () => {
+		expect(racesValue([], 'km')).toBe('None');
+		expect(racesValue([{ distance: '10k', time: '48.30' }], 'km')).toBe('10K in 48:30');
+		expect(racesValue([{ distance: 'other', customDistance: 15, time: '1.05.00' }], 'km')).toBe(
+			'15 km in 1:05:00'
+		);
+		expect(racesValue([{ distance: '5k', time: '' }], 'km')).toBe('5K');
+		const three = ['5k', '10k', 'marathon'] as const;
+		expect(
+			racesValue(
+				three.map((distance) => ({ distance, time: '' })),
+				'km'
+			)
+		).toBe('3 races');
+	});
+
+	it('say a usual Muay Thai week as sessions and sparring, either alone, or nothing', () => {
+		expect(muayThaiWeekValue({ sessionsPerWeek: 2, sparringPerWeek: 1 })).toBe(
+			'2 sessions, 1 sparring'
+		);
+		expect(muayThaiWeekValue({ sessionsPerWeek: 1, sparringPerWeek: null })).toBe('1 session');
+		expect(muayThaiWeekValue({ sessionsPerWeek: 2, sparringPerWeek: null })).toBe('2 sessions');
+		expect(muayThaiWeekValue({ sessionsPerWeek: null, sparringPerWeek: 1 })).toBe('1 sparring');
+		expect(muayThaiWeekValue({ sessionsPerWeek: null, sparringPerWeek: null })).toBeUndefined();
+	});
+
+	it('say fights, a distance and a heart rate with their units, and nothing untold', () => {
+		expect(fightsValue(0)).toBe('None');
+		expect(fightsValue(3)).toBe('3');
+		expect(fightsValue(null)).toBeUndefined();
+		expect(distanceValue(18, 'km')).toBe('18 km');
+		expect(distanceValue(11.25, 'mi')).toBe('11.25 mi');
+		expect(distanceValue(null, 'km')).toBeUndefined();
+		expect(bpmValue(188)).toBe('188 bpm');
+		expect(bpmValue(null)).toBeUndefined();
 	});
 });

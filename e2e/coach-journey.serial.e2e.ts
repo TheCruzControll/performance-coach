@@ -347,9 +347,9 @@ function journeys() {
 
 		await gotoHydrated(page, '/profile/exercises');
 		await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
-		await expect(
-			page.getByRole('list', { name: 'Exercises you’d rather swap out', exact: true })
-		).toContainText(/Bulgarian split squat/i);
+		await expect(page.getByTestId('dislikes').getByRole('list')).toContainText(
+			/Bulgarian split squat/i
+		);
 		await shoot(page, testInfo, 'journey-dislike-profile');
 
 		await openThread(page, threadId);

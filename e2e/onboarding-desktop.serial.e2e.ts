@@ -241,11 +241,19 @@ test('welcome to review with the keyboard alone, each step a card with its actio
 	await pressOn(page, 'Enter', 'specifics');
 
 	await checkStep(page, testInfo, 'specifics');
+	// Easy pace is a row: Enter opens its sheet, Escape closes it on what was typed.
 	const pace = page
 		.getByRole('region', { name: 'Running', exact: true })
-		.getByRole('textbox', { name: 'Easy pace', exact: true });
+		.getByRole('button', { name: /^Easy pace/ });
 	await tabTo(page, pace);
+	await page.keyboard.press('Enter');
+	const paceSheet = page.getByRole('dialog', { name: 'Easy pace' });
+	await tabTo(page, paceSheet.getByRole('textbox', { name: 'Easy pace', exact: true }));
 	await page.keyboard.type('5.45');
+	await page.keyboard.press('Escape');
+	await expect(paceSheet).toBeHidden();
+	await expect(pace).toBeFocused();
+	await expect(pace).toHaveAccessibleName(/^Easy pace\s*5:45 a km$/);
 	await tabTo(page, next(page));
 	await pressOn(page, 'Enter', 'equipment');
 

@@ -3,13 +3,16 @@
   Labelled single-line text input. Large (56 px) for thumbs, a visible label above (never a
   placeholder-as-label), hint or error text wired to the input with aria-describedby, and a
   16 px font so iOS Safari does not zoom on focus. `type="date"` takes and gives `YYYY-MM-DD`;
-  `min` and `max` bound a date in that form.
+  `min` and `max` bound a date in that form. `hideLabel` keeps the label for assistive tech only,
+  where the screen's own question already says it (the exercise search).
 -->
 <script lang="ts">
 	import type { HTMLInputAttributes } from 'svelte/elements';
 
 	interface Props {
 		label: string;
+		/** Keep the label for assistive tech only: the screen's title already asks the question. */
+		hideLabel?: boolean;
 		value?: string;
 		name?: string;
 		type?: 'text' | 'search' | 'date';
@@ -40,6 +43,7 @@
 
 	let {
 		label,
+		hideLabel = false,
 		value = $bindable(''),
 		type = 'text',
 		hint,
@@ -57,7 +61,7 @@
 </script>
 
 <div class="field" class:invalid={Boolean(error)}>
-	<label class="label" for={id}>
+	<label class="label" class:visually-hidden={hideLabel} for={id}>
 		{label}{#if optional}<span class="eyebrow">&nbsp;Optional</span>{/if}
 	</label>
 	<input

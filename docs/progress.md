@@ -245,6 +245,7 @@ milestones.md.
   where, which side and how much it limits you as sheets, what to leave out as one line of words,
   and any notes, then It's better now and Remove this injury, in Profile and in onboarding. Saved
   with the section, as before. The e2e run is CI's to prove.
+- **Instrument v2 Running and Muay Thai, and Exercises (`v2/22d`):** rows opening short sheets, Recent races a sub-screen; two lists added through a library search; e2e is CI's.
 - **Instrument v2 Today, the day (`v2/06b1`):** one day at the foot, one Start, the week as dots.
 - **Instrument v2 About this app (`v2/22f`).** About this app is its own screen (Backups, Your
   data, Speed on your devices, Version, Design system; Environment is cut), Speed answers three

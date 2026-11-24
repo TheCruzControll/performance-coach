@@ -54,9 +54,9 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   Closes when the last screen row drops them and `src/lib/ui/components/ListRow.svelte` removes them.
 - **`EmptyState` and `Notice` still take `icon` (and `tone`), and draw neither.** Closes when the
   last screen row drops them.
-- **Some screens still offer two actions in one `EmptyState`.** `SpecificsEditor.svelte:265`,
-  `ReviewPrompt.svelte:58`, `KnowsSheet.svelte:68`, `StartFlow.svelte:128`,
-  `EmptyWorkout.svelte:18`. Each closes with its screen row (v2/22, v2/14, v2/20, v2/10).
+- **Some screens still offer two actions in one `EmptyState`.** `ReviewPrompt.svelte:58`,
+  `KnowsSheet.svelte:68`, `StartFlow.svelte:128`, `EmptyWorkout.svelte:18`. Each closes with its
+  screen row (v2/14, v2/20, v2/10).
 - **The workout's rest is still the v1 pill (`src/lib/ui/workout/RestTimer.svelte`).** Train's
   rest follows Instrument v2 (`v2/09a`); the workout's resting screen is v2/10's. Closes with v2/10.
 - **Paper's desktop plate words differ from the phone's** ('What goes on the bar', 'Plates at this
@@ -98,6 +98,20 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   Back leaves the section, asking first if there are changes, and the sub-screen's back link is
   the way back within it (v2/22a, `src/lib/ui/profile/subscreens.svelte.ts`). Revisit with
   shallow routing in `v2/25`.
+- **Save shows on a sub-screen too, and a save's error on the main screen is not marked there.**
+  When the error is on the section's main screen, nothing on the sub-screen is marked, though the
+  notice says 'Check the highlighted fields' (`src/routes/(app)/profile/[section]/SectionScreen.svelte`).
+  This comes from the v2/22a frame. Found in review of `v2/22d`. Closes when a save's error marks the
+  field on the screen the owner is on, or the notice names the screen that holds it.
+- **Exercises' search falls back to the 16 suggestions when the library can't load, and says
+  nothing.** Offline, or with no answer from `/api/exercises` in 5 s, Add one… searches the
+  device's suggestions (`src/lib/ui/profile/ExerciseSearch.svelte`); the owner's own words still
+  save. Found building `v2/22d`.
+- **The exercise search's field may not raise the keyboard on iOS Safari.** The field is focused in
+  a `requestAnimationFrame` on mount, after the tap that opens Add one…, not inside the tap itself.
+  Safari may not raise the keyboard for that focus, so the owner may need to tap the field
+  (`src/lib/ui/profile/ExerciseSearch.svelte`). Found in review of `v2/22d`. Closes when a real
+  iPhone raises the keyboard as the sub-screen opens, or the focus moves into the tap's own handler.
 - **A new injury's screen closes when it is first saved; the list shows it again.** A sub-screen
   stays open after Save, but a new injury's draft key (`new:1`) becomes its stored id once saved, so the remounted editor cannot find the screen it had open and goes back to the list
   (`src/lib/ui/profile/InjuriesEditor.svelte`). Found building `v2/22b`. Closes if a save hands
