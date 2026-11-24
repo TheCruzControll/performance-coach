@@ -3,7 +3,8 @@
  * end to end through real screens only, on an iPhone and in a desktop window:
  * 1. From journey-week (today's evening easy run is the week's last session to log), Today →
  *    Start workout → the run logged on /workout/run and finished (M4's screens).
- * 2. Today now offers this week's review; Create opens it. Planned against completed and
+ * 2. Today now offers this week's review, as the one line under the day ('This week · Review
+ *    ready'), to Progress → Reviews, whose Create opens it. Planned against completed and
  *    adherence equal the SQL oracle, and the coach's write-up (the MockProvider) says the same.
  * 3. One bench change at its half step, the other bench change left out, the rest kept;
  *    Generate next week.
@@ -21,7 +22,7 @@
  * held or faked, so the service worker stays on.
  */
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test';
-import { addDays } from '../src/lib/domain/calendar';
+import { addDays, mondayOf } from '../src/lib/domain/calendar';
 import { seedAnalytics } from './analytics-support';
 import { DESKTOP, expectNoSideScroll, isDesktopPage } from './desktop';
 import { adherence } from './oracles/general';
@@ -62,7 +63,8 @@ test.afterAll(async ({ request }) => {
 
 /** Today's day: the first session to do, with its one Start. */
 const todayDay = (page: Page) => page.getByTestId('today-day');
-const prompt = (page: Page) => page.getByTestId('review-prompt');
+/** Today's one line for a week to review, to Progress → Reviews. */
+const reviewLine = (page: Page) => page.locator('[data-testid="today-line"][data-kind="review"]');
 const card = (page: Page) => page.getByTestId('review-next-week');
 const items = (page: Page) => page.getByTestId('review-next-item');
 const passedItems = (page: Page) => items(page).filter({ has: page.locator('input:disabled') });
@@ -156,13 +158,21 @@ async function weeklyJourney(page: Page, request: APIRequestContext, testInfo: T
 		expect(run?.status).toBe('completed');
 	});
 
-	await test.step('2. Today offers this week’s review; Create opens it, the figures equal the oracle and the coach’s notes say the same', async () => {
+	await test.step('2. Today offers this week’s review as its line; the list’s Create opens it, the figures equal the oracle and the coach’s notes say the same', async () => {
 		await gotoHydrated(page, '/today');
-		await expect(prompt(page)).toHaveAttribute('data-kind', 'weekly');
-		await expect(prompt(page)).toHaveAttribute('data-state', 'due');
-		await expect(prompt(page).locator('input[name="weekStartsOn"]')).toHaveValue(week);
+		// Every session of the week done: a review written early says this week.
+		const line = reviewLine(page);
+		const label = week === mondayOf(s.today) ? 'This week' : 'Last week';
+		await expect(line).toHaveAccessibleName(`${label}, Review ready`);
+		await expect(line).toHaveAttribute('href', LIST);
+		await expect(page.getByTestId('review-prompt')).toHaveCount(0);
 		await shoot(page, testInfo, 'today-review-due');
-		await prompt(page).getByRole('button', { name: 'Create review' }).click();
+		await line.click();
+		await expect(page).toHaveURL(new RegExp(`${LIST}$`));
+		const create = page.locator(
+			`[data-testid="review-create"]:has(input[name="weekStartsOn"][value="${week}"])`
+		);
+		await create.getByRole('button', { name: /^Create review/ }).click();
 		await expect(page).toHaveURL(new RegExp(`${LIST}/w-${week}$`));
 		expect(await weeklyReviews(week)).toHaveLength(1);
 

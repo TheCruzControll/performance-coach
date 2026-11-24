@@ -3,10 +3,12 @@
  * one sentence from the coach and one Start), the one line under it, and the week as seven dots,
  * with every other day of the week composed too, so a tap on a dot shows that day with no request.
  * The states a day can be in, in order: every planned week trained ('Nothing yet'), a bridge week
- * between blocks ('Free week'), before week 1 (the start's day), then today's sessions: one to
- * start, rest, all done, or all skipped. Words are composed here (day-words.ts), with the data
- * they describe, so the panel ships none of the vocabulary. Kept out of +page.server.ts so
- * integration tests can run it with an unreachable database.
+ * between blocks ('Free week'), before week 1 (the start's day), a block to review ('Done', with
+ * the review's create form as its button; it also takes the place of 'Nothing yet'), then today's
+ * sessions: one to start, rest, all done, or all skipped. A week to review is the one line under
+ * today's day ('Last week · Review ready', to Progress → Reviews). Words are composed here
+ * (day-words.ts), with the data they describe, so the panel ships none of the vocabulary. Kept
+ * out of +page.server.ts so integration tests can run it with an unreachable database.
  *
  * It is streamed, and it fails soft: a read that fails is recorded as a server error (kind
  * 'streamed', as Profile's are) and resolves to {failed: true}, which the panel shows as one
@@ -15,15 +17,16 @@
  * It reads from the program loadTodayProgram found, so the week it shows (today's, or week 1's
  * before the start) is known at once: the plan and that week are read together, each service on
  * its own pool connection (docs/architecture.md). So its `db` is the pool, never a transaction.
- * Once the plan is in, the review prompt (progress/review-prompt.server.ts, shown above the day
- * until v2/06b2), the goals (the one line's goal), the week's kind (the coach's sentence on a
- * light or special week, services/periodisation/week-line.ts) and the week's completed workouts
- * (their History page and length) are read together: a read that fails is recorded and the day
- * composes without it.
+ * Once the plan is in, the review prompt (progress/review-prompt.server.ts: a block's review as
+ * the day, a week's as its line), the goals (the one line's goal), the week's kind (the coach's
+ * sentence on a light or special week, services/periodisation/week-line.ts) and the week's
+ * completed workouts (their History page and length) are read together: a read that fails is
+ * recorded and the day composes without it.
  */
 import { resolve } from '$app/paths';
-import { daysBetween, type IsoDate } from '#lib/domain/calendar.ts';
+import { daysBetween, mondayOf, type IsoDate } from '#lib/domain/calendar.ts';
 import type { Goal } from '#lib/domain/profile/types.ts';
+import { BRIDGE_PHASE } from '#lib/domain/programming/next-block/dates.ts';
 import type { SessionView } from '#lib/domain/training/types.ts';
 import { WEEKDAY_INFO } from '#lib/domain/weekdays.ts';
 import { recordServerError } from '#lib/server/services/errors.ts';
@@ -42,6 +45,7 @@ import { leadLineage, startLink, type StartLink } from '#lib/ui/program/start-li
 import { dayName } from '#lib/ui/program/words.ts';
 import { loadReviewPrompt } from '../progress/review-prompt.server';
 import {
+	blockEndWords,
 	bridgeLead,
 	coachLine,
 	completeLead,
@@ -62,10 +66,10 @@ import type { SetupDeps, SetupOrigin } from './setup.server';
 
 /** One line under the day. */
 export interface DayLine {
-	kind: 'later' | 'goal' | 'done';
-	/** 'Tomorrow', 'Goal', 'Morning'. */
+	kind: 'later' | 'goal' | 'review' | 'done';
+	/** 'Tomorrow', 'Goal', 'Last week', 'Morning'. */
 	label: string;
-	/** 'Long run', 'None set yet', 'Full body'. */
+	/** 'Long run', 'None set yet', 'Review ready', 'Full body'. */
 	title: string;
 	/** '45 min', 'Add one', '21 weeks to go'; null with a tick or nothing. */
 	end: string | null;
@@ -73,9 +77,9 @@ export interface DayLine {
 	tick: boolean;
 	/** Label and title tertiary (that same done line). */
 	quiet: boolean;
-	/** The session's page, /profile/goals, or the workout done. */
+	/** The session's page, /profile/goals, /progress/reviews, or the workout done. */
 	href: string | null;
-	/** The goal's line, and the done day's lines, which open something. */
+	/** The goal's and the review's line, and the done day's lines, which open something. */
 	chevron: boolean;
 }
 
@@ -90,7 +94,16 @@ export interface DayRow {
 
 /** The day, as one statement. */
 export interface DayView {
-	state: 'session' | 'rest' | 'done' | 'skipped' | 'starts' | 'bridge' | 'complete' | 'other-day';
+	state:
+		| 'session'
+		| 'rest'
+		| 'done'
+		| 'skipped'
+		| 'starts'
+		| 'bridge'
+		| 'complete'
+		| 'block-end'
+		| 'other-day';
 	date: IsoDate;
 	title: string;
 	/** 17/26 secondary under the title; a rest, skipped, starts, bridge or complete day's sentence. */
@@ -100,6 +113,8 @@ export interface DayView {
 	/** The one button: a session's way in (start-link.ts); the device's Resume is swapped in on
 	 * the client (resumeLink). */
 	lead: { lineage: string; link: StartLink } | null;
+	/** A block's end only: its review to create, whose form is the day's button. */
+	review: ReviewPromptView | null;
 	lines: DayLine[];
 	rows: DayRow[];
 	/** The quiet link to /workout: 'Log something anyway', 'Log something', or none. */
@@ -127,11 +142,6 @@ export interface ReadyPlan {
 	others: DayView[];
 	/** The sessions still to come, for the coming-kits pass (coming-kits.ts DatedSession). */
 	coming: { lineage: string; date: IsoDate; status: SessionView['status'] }[];
-	/**
-	 * A week or block to review, or its review once written (review-prompt.server.ts), above the
-	 * day until v2/06b2; null with none, or when its read failed (recorded: the day shows without).
-	 */
-	review: ReviewPromptView | null;
 }
 
 export type TodayPlanView = { failed: true } | ReadyPlan;
@@ -149,6 +159,7 @@ type PlanRead =
 
 /** What the day reads beside the plan; any of them null (`done` empty) when its read failed. */
 interface Extras {
+	/** A week or block to review, or its review once written (review-prompt.server.ts). */
 	review: ReviewPromptView | null;
 	goals: Goal[] | null;
 	weekKind: { label: string; why: string } | null;
@@ -245,10 +256,60 @@ function oneLine(next: DaySession | undefined, goals: Goal[] | null, today: IsoD
 	return next ? [later(next, today)] : [];
 }
 
+/**
+ * A week to review, as the one line under today's day (D11, first; D12): to Progress → Reviews,
+ * which creates it. 'This week' when the week is written early, once every session is resolved.
+ */
+function reviewLine(review: ReviewPromptView, today: IsoDate): DayLine {
+	const week = review.create?.fields.weekStartsOn;
+	return {
+		kind: 'review',
+		label: week === mondayOf(today) ? 'This week' : 'Last week',
+		title: 'Review ready',
+		end: null,
+		tick: false,
+		quiet: false,
+		href: resolve('/(app)/progress/reviews/[[key]]', {}),
+		chevron: true
+	};
+}
+
+/**
+ * A block to review, as the day (rule 4, D10): 'Done', the block's weeks and name, and the
+ * coach's sentence naming the block after it; its button is the review's create form. The block
+ * is the one the review would cover (its lineage in the form), so a block that ends this Sunday,
+ * its last week done, reads the same as one that has ended.
+ */
+function blockEnd(
+	review: ReviewPromptView,
+	{ program, today, lines }: { program: CurrentProgram; today: IsoDate; lines: DayLine[] }
+): DayView {
+	const at = program.blocks.findIndex((b) => b.lineage === review.create?.fields.blockLineage);
+	const ended = at < 0 ? undefined : program.blocks[at]!;
+	const next = ended && program.blocks.slice(at + 1).find((b) => b.phase !== BRIDGE_PHASE);
+	const weeks = ended ? Math.ceil((daysBetween(ended.startsOn, ended.endsOn) + 1) / 7) : 0;
+	const words = blockEndWords({
+		weeks,
+		name: ended?.name ?? '',
+		next: next?.name ?? null
+	});
+	return {
+		...blank(),
+		state: 'block-end',
+		date: today,
+		title: words.title,
+		when: ended ? words.when : null,
+		coach: words.coach,
+		review,
+		lines
+	};
+}
+
 /** What a day has until its rule gives it more: no sentence, no button, no lines or rows. */
-const blank = (): Pick<DayView, 'coach' | 'lead' | 'lines' | 'rows' | 'log'> => ({
+const blank = (): Pick<DayView, 'coach' | 'lead' | 'review' | 'lines' | 'rows' | 'log'> => ({
 	coach: null,
 	lead: null,
+	review: null,
 	lines: [],
 	rows: [],
 	log: null
@@ -338,18 +399,32 @@ function composeDay(
 		...(read.blockComplete ? [] : read.week.days.flatMap((d) => d.sessions)),
 		...plan.upNext
 	].map(({ lineage, date, status }) => ({ lineage, date, status }));
+	const cycle = review?.kind === 'cycle' && review.state === 'due' && review.create ? review : null;
+	const weekly = review?.kind === 'weekly' && review.state === 'due' ? review : null;
+	/**
+	 * A week to review is today's one line, first of all (D11): it takes the place of the next
+	 * session's or the goal's line, after any done lines, so it shows on every day it is due.
+	 */
+	const withReview = (day: DayView): DayView =>
+		weekly
+			? {
+					...day,
+					lines: [...day.lines.filter((l) => l.kind === 'done'), reviewLine(weekly, today)]
+				}
+			: day;
 	const ready = (day: DayView, dots: Dot[] | null = null, others: DayView[] = []): ReadyPlan => ({
 		failed: false,
 		today,
 		dots,
-		day,
+		day: withReview(day),
 		others,
-		coming,
-		review
+		coming
 	});
 	const nextAfter = plan.upNext.find(isOpen);
 
-	// 1. Every planned week trained: nothing is planned until the next block is.
+	// 1. Every planned week trained: nothing is planned until the next block is, unless the block
+	// is still to review, which leads (rule 4), with no session to name under it.
+	if (read.blockComplete && cycle) return ready(blockEnd(cycle, { program, today, lines: [] }));
 	if (read.blockComplete) {
 		const { firstPlannedDay: first, lastPlannedDay: last } = program;
 		const weeks = Math.ceil((daysBetween(first, last) + 1) / 7);
@@ -405,8 +480,7 @@ function composeDay(
 		});
 	}
 
-	// 4. A block to review as the day is v2/06b2's; until then its prompt sits above the day.
-	// 5. Today's sessions, in the week that holds today.
+	// 4 and 5 read the week that holds today.
 	const baseline = week.kind === 'baseline';
 	const dots = week.days.map((d) => ({
 		date: d.date,
@@ -431,6 +505,16 @@ function composeDay(
 		(s && todays.slice(todays.indexOf(s) + 1).find(isOpen)) ?? weekLater.find(isOpen) ?? nextAfter;
 	const doneOf = (s: SessionView) => startLink(s, done[s.lineage]?.id)!.href;
 	const day = { ...blank(), date: today };
+
+	// 4. A block to review: the review leads, and today's session waits as its line.
+	if (cycle) {
+		const open = todays.find(isOpen);
+		const next = open ?? after();
+		const lines = next ? [{ ...later(next, today), ...(open && { label: 'Today' }) }] : [];
+		return ready(blockEnd(cycle, { program, today, lines }), dots, others);
+	}
+
+	// 5. Today's sessions.
 
 	if (!todays.length) {
 		const doneThisWeek = week.days

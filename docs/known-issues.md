@@ -71,23 +71,21 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
 - **A toast clears a profile section's Save bar through a selector in `Toaster.svelte`.**
   `[data-testid='save-bar']` stands in until the section screen sets `--toast-lift` itself.
   Closes in `v2/22` (`src/routes/(app)/profile/[section]/SectionScreen.svelte`).
-- **The resume line still shows a workout in progress on every screen and 'Continue here' on
-  Today; `v2/06b2` moves both into Today's day.** Paper draws the line for waiting changes only
-  (3 · Today), so its active and remote states are derived from it until then. Closes when Today
-  claims them (`src/routes/(app)/resume-state.svelte.ts`).
-- **Today's reviews are not yet its day or its line (`v2/06b2`).** `v2/06b1` built the day and its
-  states but left a review to do as it was: `ReviewPrompt` above the day, a block's with Create
-  review where Paper draws 'Done · Six weeks of Build' with Review the block as the day, and a
-  week's where Paper draws one line, 'Last week · Review ready', to Progress → Reviews. On a
-  393 × 659 phone a weekly review's prompt pushes the day down, so Start opens under the tab bar.
-  Closes when `v2/06b2` builds them (`src/routes/(app)/today/plan.server.ts` and
-  `src/routes/(app)/today/panels/Program.svelte`).
+- **Today's day for a block to review leaves out Paper's session count and lift change ('33 of 36
+  sessions · squat up 12.5 kg').** Counting a finished block's sessions costs a read per week;
+  `v2/17` (block review) can add it (`blockEndWords` in `src/routes/(app)/today/day-words.ts`).
+- **After Today's Continue here finds the workout gone, the resume line still holds it.** Today
+  resets `resumeState.found` only, so the line's own `found` stays remote; if a later refresh of
+  Today fails, Today stops claiming and the line can offer Continue here for that gone workout
+  until it looks again (`src/routes/(app)/today/panels/Program.svelte`).
 - **Today's coach sentence is chosen from the plan's own words, not written per session.** It is
   the session's move, its baseline week, the week's kind or the session's exercises
   (`coachLine` in `src/routes/(app)/today/day-words.ts`); Paper's per-session sentences ('Six
   hard 400s with a slow jog between each one') need a coach-written note on the plan.
-- **Today shows no clock time for a class ('7:00 pm').** Sessions store a time of day, not a clock
-  time, so the day and its line say 'This evening' and the length only.
+- **Today shows no clock time for a class ('7:00 pm'), and no exercise or set for a workout in
+  progress.** Sessions store a time of day, not a clock time, so the day and its line say 'This
+  evening' and the length only; a workout in progress reads 'In progress on this device' or 'on
+  another device', as neither its exercise nor its set is on the summary Today reads.
 - **Profile has no 'What the coach knows' row yet (Paper draws one).** The coach's knowledge
   opens from Coach (`v2/20`). Found building `v2/21a`.
 - **Progress's This week is Today's old section, moved as it was (`v2/06a`).** Its heading,

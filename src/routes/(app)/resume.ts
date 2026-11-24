@@ -8,7 +8,10 @@
  *   progress on another device (GET /api/workouts/active), '{title} is in progress on another
  *   device' and 'Continue here'
  * - none: nothing to offer
- * The probe never creates 'pc-offline', so a device that never started a workout keeps none.
+ * Today, while it shows a plan, claims active and remote and draws them as its day, Resume or
+ * Continue here (today/panels/Program.svelte, v2/06b2); setup and Build my program leave them to
+ * the line. The probe never creates 'pc-offline', so a device that never started a workout keeps
+ * none.
  * Everything else here (the store, reconcile, the sync engine) loads only when it is needed: the
  * engine while changes are pending, the store and reconcile on 'Continue here'.
  */

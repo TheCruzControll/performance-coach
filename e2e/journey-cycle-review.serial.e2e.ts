@@ -5,7 +5,8 @@
  * review-proposal-origin); this one walks them in order, as the owner does, on one history.
  *
  * - On time (block-end: the block's last week is fully logged and it ends this Sunday): Train is
- *   on the block's last week with nothing left to do and Today offers the cycle review; the review
+ *   on the block's last week with nothing left to do and Today's day is the block, 'Done', with
+ *   Review the block; the review
  *   shows goal progress and what changes and why; the next block starts from its preview (Next
  *   Monday, the only start on offer); Train opens its week 1, whose loads read as a share of the
  *   estimated 1RM; History lists version 2 and the previous version 1, read-only; M5's inbox lists
@@ -52,8 +53,8 @@ const weekNumber = (cycle: Cycle, monday: string) =>
 	daysBetween(cycle.blockStartsOn, monday) / 7 + 1;
 
 /**
- * Seed `scenario` (seedReview), with onboarding complete: Today shows the plan, and so the review
- * prompt, only once it is.
+ * Seed `scenario` (seedReview), with onboarding complete: Today shows the plan, and so the block
+ * to review, only once it is.
  */
 async function seedOnboarded(request: APIRequestContext, scenario: ReviewScenario) {
 	const seeded = await seedReview(request, scenario);
@@ -111,17 +112,18 @@ async function onTime(page: Page, seeded: SeededReview, testInfo: TestInfo) {
 	const blockWeeks = (daysBetween(cycle.blockStartsOn, cycle.blockEndsOn) + 1) / 7;
 	const next = addDays(cycle.blockEndsOn, 1);
 
-	// 1. Train: the block's last week, every session in it logged; Today offers the review.
+	// 1. Train: the block's last week, every session in it logged; Today's day is the block.
 	await gotoHydrated(page, '/train');
 	await expect(position(page)).toContainText(`Week ${blockWeeks} of`);
 	await expect(page.locator('[data-testid="session-card"][data-status="planned"]')).toHaveCount(0);
 	await capture(page, testInfo, '1-train-last-week');
 	await gotoHydrated(page, '/today');
-	const prompt = page.getByTestId('review-prompt');
-	await expect(prompt).toHaveAttribute('data-kind', 'cycle');
-	await expect(prompt).toContainText('Block complete — review it and plan the next');
+	const day = page.getByTestId('today-day');
+	await expect(day).toHaveAttribute('data-state', 'block-end');
+	await expect(day.getByTestId('today-title')).toHaveText('Done');
+	await expect(day.locator('input[name="blockLineage"]')).toHaveValue(cycle.blockLineageId);
 	await capture(page, testInfo, '1-today-prompt');
-	await prompt.getByRole('button').click();
+	await day.getByTestId('review-block').click();
 	await expect(page).toHaveURL(new RegExp(`${LIST}/c-[0-9a-f-]{36}$`));
 	const [review] = await cycleReviews(cycle.blockLineageId);
 	expect(review, 'one cycle review stored').toBeDefined();

@@ -1311,8 +1311,10 @@ and the active workout. Numbers: docs/performance.md, "M4 (workout)".
 
 - `journey-strength.serial.e2e.ts`: from Today, a whole strength workout (top set, back-offs,
   rest, plates, a machine-unavailable swap, the superset, a refresh that restores every set and
-  the rest, minimise and resume, finish, History), the pain and dislike journey, and a generated
-  week 1 from a blank-1RM profile, with SQL at each step and no coach request.
+  the rest, minimise to Today's in-progress day and Resume, finish, History), the pain and dislike
+  journey, a generated week 1 from a blank-1RM profile, and a workout in progress on another
+  device as Today's day (Continue here, and its failure), with SQL at each step and no coach
+  request.
 - `journey-offline.serial.e2e.ts`: offline logging, edits and deletes surviving a reload; one
   sync on reconnect with exact Postgres counts; replays creating no duplicates; two tabs; a 500
   then a pass, an answer lost after the commit, and a refused change discarded.

@@ -2,9 +2,9 @@
   @component
   A review prompt (review-prompt.ts, composed on the server): 'Your week in review is ready' or
   'Block complete — review it and plan the next', with a Create review button that creates and
-  opens it, or 'See your review' once it exists. Today's Program panel and Progress's Overview put
-  it at the top. Create posts the reviews screen's own action, a form that works without
-  JavaScript too, with the review list's states:
+  opens it, or 'See your review' once it exists. Progress's Overview puts it at the top (Today
+  draws a block's as its day and a week's as one line, v2/06b2). Create posts the reviews screen's
+  own action, a form that works without JavaScript too, with the review list's states:
 
   - pending: aria-busy and disabled, so a second tap posts nothing (the service is idempotent
     under the owner lock as well)

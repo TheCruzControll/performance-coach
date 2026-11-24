@@ -3,10 +3,11 @@
  * statement with its one Start and its one line (a goal to set, or the next session), the week as
  * seven dots with each other day composed (a past day missed or skipped said as skipped, with no
  * sentence from the coach), a done session as a quiet line with its workout, a done day with how
- * long it took, a rest day naming the next session, the start's day before week 1, and 'Nothing
- * yet' once the first block is over, offering its review (none mid-week while sessions remain; a
- * failed prompt read leaves the day). When the database cannot be reached it never rejects:
- * {failed: true}, and the failure recorded as a server error.
+ * long it took, a rest day naming the next session, the start's day before week 1, 'Nothing yet'
+ * once the first block is over and reviewed, and the block as the day while its review is due,
+ * its create form the button (none mid-week while sessions remain; a failed prompt read leaves the
+ * day). A week to review is the one line under the day. When the database cannot be reached it
+ * never rejects: {failed: true}, and the failure recorded as a server error.
  * - It reads the plan and its week together, each on its own connection, so the cases run on the
  *   shared pool (withCommitted), never in one transaction.
  */
@@ -27,7 +28,13 @@ import {
 	programFixture,
 	type ProgramFixture
 } from '../../../src/lib/server/test-support/program-fixtures';
-import { completeLead, skippedLine, STARTS_LEAD } from '../../../src/routes/(app)/today/day-words';
+import type { ReviewPromptView } from '../../../src/lib/ui/analytics/review-prompt';
+import {
+	blockEndWords,
+	completeLead,
+	skippedLine,
+	STARTS_LEAD
+} from '../../../src/routes/(app)/today/day-words';
 import { loadTodayPlan, type TodayPlanView } from '../../../src/routes/(app)/today/plan.server';
 import type { Executor } from '../../../src/lib/server/db/types';
 import { unreachableDb, watchPool, withCommitted, withRollback } from '../helpers';
@@ -55,14 +62,39 @@ async function seeded(db: Executor, fixture: ProgramFixture, monday: string) {
 	return owner;
 }
 
-/** The plan as Today reads it: from the program loadTodayProgram found. */
-async function viewOf(db: Executor, owner: string) {
+/**
+ * The plan as Today reads it: from the program loadTodayProgram found; with `prompt`, the review
+ * prompt it reads in place of review-prompt.server.ts's.
+ */
+async function viewOf(
+	db: Executor,
+	owner: string,
+	prompt?: (program: CurrentProgram) => ReviewPromptView | null
+) {
 	const program = await getCurrentProgram(owner, TODAY, { db });
 	if (!program) throw new Error('no active program');
-	const view = await loadTodayPlan(owner, { today: TODAY, program, origin: origin() }, { db });
+	const view = await loadTodayPlan(
+		owner,
+		{ today: TODAY, program, origin: origin() },
+		{ db, ...(prompt && { prompt: async () => prompt(program) }) }
+	);
 	if (view.failed) throw new Error('the plan failed to load');
 	return view;
 }
+
+/** A week or block to review, due: what review-prompt.server.ts reads when one is. */
+const due = (kind: ReviewPromptView['kind'], fields: Record<string, string>): ReviewPromptView => ({
+	kind,
+	state: 'due',
+	title: kind === 'cycle' ? 'Block complete — review it and plan the next' : 'Your week in review',
+	summary: '…',
+	href: null,
+	create: {
+		action: kind === 'cycle' ? '/progress/reviews?/createCycle' : '/progress/reviews?/create',
+		fields
+	},
+	notReady: '…'
+});
 
 type View = Extract<TodayPlanView, { failed: false }>;
 /** A program in its first block, as the plan needs it when no read can reach the database. */
@@ -344,10 +376,11 @@ describe('Today’s plan', () => {
 		});
 	});
 
-	it('once the first block is over, nothing is planned yet, with the way back and its review', async () => {
+	it('once the first block is over and reviewed, nothing is planned yet, with the way back', async () => {
 		await withCommitted(async (db) => {
 			const owner = await seeded(db, 'one-week', '2026-10-26');
-			const view = await viewOf(db, owner);
+			// Its review written: the prompt reads it as reviewed, which Today does not show.
+			const view = await viewOf(db, owner, () => null);
 			expect(view).toEqual({
 				failed: false,
 				today: TODAY,
@@ -361,6 +394,7 @@ describe('Today’s plan', () => {
 					when: completeLead(1, '2026-10-26', '2026-11-01'),
 					coach: null,
 					lead: null,
+					review: null,
 					lines: [],
 					rows: [
 						{
@@ -377,14 +411,7 @@ describe('Today’s plan', () => {
 						}
 					],
 					log: null
-				},
-				// The block is over and has no review: Today offers it (review-prompt.server.ts).
-				review: expect.objectContaining({
-					kind: 'cycle',
-					state: 'due',
-					title: 'Block complete — review it and plan the next',
-					create: expect.objectContaining({ action: '/progress/reviews?/createCycle' })
-				})
+				}
 			});
 			expect(view.day.when).toBe(
 				'One week trained · You trained 26 October to 1 November. I plan the next block from how this one went.'
@@ -392,10 +419,84 @@ describe('Today’s plan', () => {
 		});
 	});
 
+	it('while the block’s review is due, the block is the day, with its create form as the button', async () => {
+		await withCommitted(async (db) => {
+			const owner = await seeded(db, 'one-week', '2026-10-26');
+			const program = (await getCurrentProgram(owner, TODAY, { db }))!;
+			// The one planned week, then the outline's next block.
+			const [block, next] = program.blocks;
+			expect(next).toBeDefined();
+			const view = await viewOf(db, owner);
+			// The block is over and has no review: review-prompt.server.ts reads it as due.
+			expect(view.dots).toBeNull();
+			expect(view.others).toEqual([]);
+			expect(view.day).toMatchObject({
+				state: 'block-end',
+				// 'Done', 'One week of …', and the coach's sentence naming the outline's next block.
+				...blockEndWords({ weeks: 1, name: block!.name, next: next!.name }),
+				lead: null,
+				lines: [],
+				rows: [],
+				log: null,
+				review: {
+					kind: 'cycle',
+					state: 'due',
+					create: {
+						action: '/progress/reviews?/createCycle',
+						fields: { programId: program.id, blockLineage: block!.lineage }
+					}
+				}
+			});
+		});
+	});
+
+	it('a block to review mid-week leads, with today’s session as its line', async () => {
+		await withCommitted(async (db) => {
+			const owner = await seeded(db, 'today', '2026-11-02');
+			const view = await viewOf(db, owner, (program) =>
+				due('cycle', { programId: program.id, blockLineage: program.blocks[0]!.lineage })
+			);
+			expect(view.dots).toHaveLength(7);
+			expect(view.others).toHaveLength(6);
+			expect(view.day).toMatchObject({ state: 'block-end', title: 'Done', lead: null });
+			expect(view.day.when).toMatch(/ weeks? of /);
+			expect(view.day.review?.create?.action).toBe('/progress/reviews?/createCycle');
+			expect(view.day.lines).toMatchObject([
+				{ kind: 'later', label: 'Today', title: 'Full body', chevron: false }
+			]);
+		});
+	});
+
+	it('a week to review is the one line under the day, ahead of a goal or the next session', async () => {
+		await withCommitted(async (db) => {
+			const owner = await seeded(db, 'today', '2026-11-02');
+			const review = {
+				kind: 'review',
+				label: 'Last week',
+				title: 'Review ready',
+				end: null,
+				tick: false,
+				quiet: false,
+				href: '/progress/reviews',
+				chevron: true
+			};
+			const lastWeek = await viewOf(db, owner, () => due('weekly', { weekStartsOn: '2026-10-26' }));
+			expect(lastWeek.day).toMatchObject({ state: 'session', title: 'Full body', review: null });
+			expect(lastWeek.day.lines).toEqual([review]);
+			// Written early, once every session of this week is resolved: 'This week'.
+			const thisWeek = await viewOf(db, owner, () => due('weekly', { weekStartsOn: '2026-11-02' }));
+			expect(thisWeek.day.lines).toEqual([{ ...review, label: 'This week' }]);
+			// Each other day keeps its own rows: the line is today's.
+			expect(thisWeek.others.every((d) => d.lines.length === 0)).toBe(true);
+		});
+	});
+
 	it('offers no review mid-week while sessions remain, in a program that started this week', async () => {
 		await withCommitted(async (db) => {
 			const owner = await seeded(db, 'today', '2026-11-02');
-			expect((await viewOf(db, owner)).review).toBeNull();
+			const view = await viewOf(db, owner);
+			expect(view.day).toMatchObject({ state: 'session', review: null });
+			expect(view.day.lines.map((l) => l.kind)).not.toContain('review');
 		});
 	});
 
@@ -417,8 +518,7 @@ describe('Today’s plan', () => {
 						}
 					}
 				);
-				expect(view).toMatchObject({ failed: false, review: null });
-				expect(view.failed || view.day).toBeTruthy();
+				expect(view).toMatchObject({ failed: false, day: { state: 'session', review: null } });
 				const recorded = await findErrorsByRequestId(request.requestId, { db: tx });
 				expect(recorded).toHaveLength(1);
 				expect(recorded[0]).toMatchObject({

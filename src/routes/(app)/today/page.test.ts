@@ -105,8 +105,7 @@ describe("Today's universal load", () => {
 			dots: null,
 			day: { state: 'rest', title: 'Rest day', lines: [], rows: [] },
 			others: [],
-			coming: [],
-			review: null
+			coming: []
 		};
 		const loaded = await run(module, setup, 'active', Promise.resolve(plan));
 		expect(loaded).toMatchObject({ plan, served: { program: '<section>the panel</section>' } });

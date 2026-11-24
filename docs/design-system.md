@@ -521,8 +521,9 @@ itself read it.
 - **The resume line** (`(app)/ResumeBar.svelte`) is one plain row on the canvas, 44 px plus 12
   below, above the tab bar (at the foot of the column beside the rail from 1024 px): changes
   waiting to sync on every screen, a workout in progress until a screen claims it
-  (`resume-state.svelte.ts`; Today draws it as its day from `v2/06b2`). It is screen chrome,
-  fixed on the tab bar's hairline and as wide as the column. Its height is `--resume-inset`, so
+  (`resume-state.svelte.ts`: Today draws it as its day while a plan shows, v2/06b2; setup and
+  Build my program keep the line's). It is screen chrome, fixed on the tab bar's hairline and as
+  wide as the column. Its height is `--resume-inset`, so
   the shell's bottom padding and every other bottom chrome rise with it and it covers nothing.
 - **The held screen** (`(app)/HeldScreen.svelte`) covers the column, not the window: fixed
   under the nav from `--safe-top` and `--nav-inset-left`, the content column's width inside, so the
@@ -702,11 +703,13 @@ later-pass screen).
 - **Today** (`/today`): readable (Instrument v2, v2/06b). The date and the avatar on one line
   (the avatar at the rail's foot from 1024 px), the week as seven dots, and at the column's foot
   the day: its title (56/60; 72/76 from 1024 px), when, one sentence from the coach and one Start
-  (260 px wide from 1024 px), then one line (the next session, or a goal) or the quiet link to
-  log something. A tapped day shows its session with Open the session and Back to today. Rest,
-  done, skipped, before week 1, between blocks and nothing yet are each a day of their own.
-  Couldn't load is one statement with Try again; loading is 'Getting today'. A review to do sits
-  above the day until v2/06b2; the setup and Build cards sit under the date until v2/06c, and
+  (260 px wide from 1024 px), then one line (a week's review ready, the next session, or a goal)
+  or the quiet link to log something. A tapped day shows its session with Open the session and
+  Back to today. Rest, done, skipped, before week 1, between blocks and nothing yet are each a day
+  of their own; so is a block to review ('Done', its create form as the button, Review the block)
+  and, while a plan shows, a workout in progress (Resume here, Continue here from another device,
+  its failure the one red line). Couldn't load is one statement with Try again; loading is
+  'Getting today'. The setup and Build cards sit under the date until v2/06c, and
   Build my program still spans the wide content (week 1 in the main column with Start week 1 as
   its column chrome, the block timeline beside it). This week is on Progress and the goals and
   schedule in Profile (v2/06a).
@@ -993,7 +996,7 @@ both themes, hover, tap, scrub, forced colours, loading and failed). The screen 
 | `VerdictBadge`                 | 'Real improvement', 'Real decline', 'Normal variation' or 'Not enough data yet · 2 of 6 weeks', plus 'over the last 12 weeks' when it reads other weeks; words first, tone only reinforces, free to wrap at 320 px.                                                                                                                                                                                                                                                                                                                                                                  |
 | `MetricContext`                | One line of context (period, comparison, trend window, what counts as good), then a disclosure with how the figure is worked out and its caveat, in the catalogue's words.                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `PeriodPicker`                 | Five real links to `?period=` (4w, 12w, 26w, 52w, All), each ≥ 44 px at 320 px and a history entry; while another period loads the figures hold their frame dimmed, inert and `aria-busy`, never a skeleton.                                                                                                                                                                                                                                                                                                                                                                         |
-| `ReviewPrompt`                 | 'Your week in review is ready' or 'Block complete — review it and plan the next' above Today's day (until v2/06b2 draws a block's as the day and a week's as one line) and at the top of Overview: Create review (a form that works without JavaScript; pending, not reviewable yet, failed with Retry, offline), or 'See your review'.                                                                                                                                                                                                                                              |
+| `ReviewPrompt`                 | 'Your week in review is ready' or 'Block complete — review it and plan the next' at the top of Overview (Today draws a block's review as its day and a week's as one line, v2/06b2): Create review (a form that works without JavaScript; pending, not reviewable yet, failed with Retry, offline), or 'See your review'.                                                                                                                                                                                                                                                            |
 | Progress views                 | `src/routes/(app)/progress`: Overview (a verdict card per discipline, then the tiles and headline charts), Strength, Running and General (an intro, then their trends), each served whole by the server; their trends load after hydration in place (`TrendsLoader`, `SectionLoader`), and a failed chunk says 'Couldn’t load your trends' with Retry while the verdicts stay.                                                                                                                                                                                                       |
 | Exercise detail                | `progress/exercises/[id]`: the e1RM verdict in the header, then the best estimated 1RM with the profile's maxes as their own marks, the e1RM chart beside the 1–10 rep-max table, PRs, top sets, RPE against target and recent sessions linking to their workouts.                                                                                                                                                                                                                                                                                                                   |
 | `ReviewList`                   | `src/routes/(app)/progress/reviews/[[key]]`, like the rest. Reviews newest first, each a ≥ 44 px link with its summary; a week or block with no review has Create, with the same four states as `ReviewPrompt`.                                                                                                                                                                                                                                                                                                                                                                      |
