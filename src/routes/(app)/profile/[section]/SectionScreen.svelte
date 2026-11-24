@@ -1,11 +1,14 @@
 <!--
   @component
-  One training-profile section, edited from Profile. The server renders the screen with a
-  skeleton where the editor goes; the editor, its form state and the discard sheet load on demand
-  (no editor is in the route's initial JavaScript) and replace the skeleton in place. Save sits in
-  the thumb zone above the tab bar, and leaving with unsaved changes asks first. A section whose
-  every change saves itself (Goals) has neither. From 1024 px this is the editor column beside
-  the section list: no back link, and Save is column chrome, sticky at the column's foot.
+  One training-profile section, edited from Profile (Paper, 9 · "Section"): its title (40/44), an
+  optional lede, then the editor's fields and rows. The editor, its form state and the discard
+  sheet load on demand (no editor is in the route's initial JavaScript): the screen is its title
+  while the editor loads, then the editor; one that fails to load says so, with Try again. An
+  editor may open sub-screens (subscreens.svelte.ts), which take the header's place. Save sits in
+  the thumb zone above the tab bar once the editor is there, and leaving with unsaved changes asks
+  first. A section whose every change saves itself (Goals) has neither. From 1024 px this is the
+  column beside the section list, with no back link: the title is 32/38, and Save sits 40 px under
+  a 440 px form, not pinned.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -15,10 +18,9 @@
 	import Button from '#lib/ui/components/Button.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import Notice from '#lib/ui/components/Notice.svelte';
-	import PageHeader from '#lib/ui/components/PageHeader.svelte';
-	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import { EDITORS, type SectionContext, type SectionEditor } from '#lib/ui/profile/editors.ts';
-	import type { SectionKey } from '#lib/ui/profile/sections.ts';
+	import { SECTIONS, type SectionInfo, type SectionKey } from '#lib/ui/profile/sections.ts';
+	import { provideSubScreens } from '#lib/ui/profile/subscreens.svelte.ts';
 	import { toast } from '#lib/ui/toast.svelte.ts';
 	import type DiscardSheet from './DiscardSheet.svelte';
 
@@ -34,6 +36,10 @@
 
 	let { key, title, saved, context, saveBar }: Props = $props();
 
+	/** The sub-screens the editor opens: the innermost one's header takes this screen's. */
+	const subs = provideSubScreens();
+	const lede = $derived((SECTIONS as readonly SectionInfo[]).find((s) => s.key === key)?.lede);
+
 	let Editor = $state<SectionEditor['Editor'] | null>(null);
 	let form = $state<SectionForm<unknown> | null>(null);
 	let Sheet = $state<typeof DiscardSheet | null>(null);
@@ -46,7 +52,7 @@
 	onMount(async () => {
 		try {
 			const [editor, { SectionForm }, { warmValidation }, sheet] = await Promise.all([
-				// Left out of the server build, which only renders the skeleton: while the server
+				// Left out of the server build, which only renders the title: while the server
 				// can reach an editor, SvelteKit links its CSS into every section's page.
 				import.meta.env.SSR ? Promise.reject(new Error('client only')) : EDITORS[key](),
 				import('#lib/client/section-form.svelte.ts'),
@@ -102,6 +108,8 @@
 	function discard() {
 		const to = pending?.to;
 		if (!pending || !to || !form) return;
+		// Leaving the section: none of its sub-screens is open when it comes back.
+		subs.reset();
 		// The edits go now, not when the next screen shows: Back before it has rendered (a
 		// navigation can wait on the view transition) comes back to this screen as saved.
 		form = form.reverted();
@@ -114,10 +122,28 @@
 </script>
 
 <div class="column" data-testid="section-column">
-	<a class="back-link" href={resolve('/(app)/profile')} data-testid="back-to-profile">
-		<Icon name="chevron-left" size={16} /> Profile
-	</a>
-	<PageHeader {title} eyebrow="Training profile" />
+	{#if subs.top}
+		<!-- A sub-screen: back to the screen under it, inside the section (Back leaves it). -->
+		<button type="button" class="back-link sub" onclick={() => subs.close()} data-testid="sub-back">
+			<Icon name="chevron-left" size={16} />
+			{subs.top.back}
+		</button>
+		<h1 class="title" class:statement={subs.top.statement} tabindex="-1" data-subscreen-title>
+			{subs.top.title}
+		</h1>
+		{#if subs.top.lede}<p class="lede">{subs.top.lede}</p>{/if}
+	{:else}
+		<a class="back-link" href={resolve('/(app)/profile')} data-testid="back-to-profile">
+			<Icon name="chevron-left" size={16} /> Profile
+		</a>
+		{#if failed}
+			<!-- The failure is the screen's statement; the title stays for the document's outline. -->
+			<h1 class="visually-hidden">{title}</h1>
+		{:else}
+			<h1 class="title">{title}</h1>
+			{#if lede}<p class="lede">{lede}</p>{/if}
+		{/if}
+	{/if}
 
 	<div
 		class="editor"
@@ -127,62 +153,36 @@
 		data-testid="section-editor"
 	>
 		{#if Editor && form}
-			<!-- A new editor for a new form (after Discard or Save): its own state starts from the draft. -->
+			<!-- A new editor for a new form (after Discard or Save): its own state starts from the
+			     draft. An open sub-screen stays open: the new editor finds it by its id. -->
 			{#each [form] as current (current)}
 				<Editor bind:value={current.value} errors={current.errors} {context} manage />
 			{/each}
 		{:else if failed}
-			<div class="failed">
-				<Notice tone="danger" title="This section didn’t load" data-testid="editor-error">
-					Check your connection, then try again.
-				</Notice>
+			<div class="failed" data-testid="editor-error">
+				<h2 class="statement">{title} didn’t load</h2>
+				<p class="lede">Check your connection, then try again. Nothing you saved before is lost.</p>
 				<!-- A reload: the browser keeps a failed module fetch for the life of the page, so
 			     importing it again fails at once (and a deploy may have replaced the chunk). The
 			     editor's code is never a modulepreload, whose failure WebKit would carry over the
 			     reload (vite.config.ts, build.modulePreload). -->
-				<Button variant="secondary" icon="refresh" onclick={() => location.reload()}
-					>Try again</Button
-				>
+				<Button variant="secondary" size="lg" block onclick={() => location.reload()}>
+					Try again
+				</Button>
 			</div>
 		{:else}
-			<!-- Shaped like a form: labels over fields, a row of choices, a notes box. -->
-			<div class="placeholder">
-				<span class="visually-hidden">Loading {title}…</span>
-				<div class="group">
-					<Skeleton width="55%" height="0.875rem" />
-					<Skeleton height="3.5rem" radius="var(--radius-md)" />
-					<Skeleton height="3.5rem" radius="var(--radius-md)" />
-					<Skeleton height="3.5rem" radius="var(--radius-md)" />
-				</div>
-				<div class="group">
-					<Skeleton width="35%" height="0.875rem" />
-					<div class="pills">
-						{#each ['6.5rem', '5rem', '7.5rem', '4.5rem', '6rem', '8rem', '5.5rem'] as width, i (i)}
-							<Skeleton {width} height="2.75rem" radius="var(--radius-full)" />
-						{/each}
-					</div>
-				</div>
-				<div class="group">
-					<Skeleton width="40%" height="0.875rem" />
-					<Skeleton height="5.5rem" radius="var(--radius-md)" />
-				</div>
-			</div>
+			<!-- While the editor loads the screen is its title (Paper: no skeletons); the room it
+			     keeps means nothing below moves when the editor arrives. -->
+			<span class="visually-hidden">Loading {title}…</span>
 		{/if}
 	</div>
 
-	{#if saveBar}
+	{#if saveBar && form}
 		<div class="actions" data-testid="save-bar">
-			{#if form?.failed}
+			{#if form.failed}
 				<Notice tone="danger" data-testid="save-error">{form.failed}</Notice>
 			{/if}
-			<Button
-				size="lg"
-				block
-				loading={form?.busy}
-				disabled={!form}
-				onclick={save}
-				data-testid="save-section"
-			>
+			<Button size="lg" block loading={form.busy} onclick={save} data-testid="save-section">
 				Save
 			</Button>
 		</div>
@@ -194,9 +194,40 @@
 </div>
 
 <style>
-	/* The room the skeleton reserves, so the editor that replaces it moves nothing below. */
+	/* Paper, 14 · "Profile, schedule": 440 px of form at a desk. Declared here, not in tokens.css:
+	   the root layout's inlined CSS has no room to spare. */
+	.column {
+		--section-form: 27.5rem;
+	}
+
+	/* Hubot 40/44, 40 px under the back link (Paper, 9 · "Section"). */
+	.title {
+		padding-top: var(--space-10);
+		font: var(--type-title);
+		letter-spacing: var(--tracking-display);
+	}
+
+	/* A question as a sub-screen's title ("What do you like doing?"): 32/38. */
+	.title.statement {
+		font: var(--type-statement);
+		letter-spacing: var(--tracking-statement);
+	}
+
+	.lede {
+		margin-top: var(--space-2);
+		font: var(--type-body);
+		color: var(--color-text-secondary);
+	}
+
+	/* Fields 32 px under the title, 28 under a lede. The room is kept while the editor loads, so
+	   the editor that arrives moves nothing below it. */
 	.editor {
 		min-height: 28rem;
+		padding-top: var(--space-8);
+	}
+
+	.lede + .editor {
+		padding-top: var(--space-7);
 	}
 
 	/* Room for the Save bar below, so nothing ends up under it at the end of the page. */
@@ -209,26 +240,29 @@
 		padding-bottom: calc(var(--space-20) * 2 + var(--space-2));
 	}
 
-	.placeholder,
+	/* "Equipment didn't load": at the top, where the tab bar never covers it (Paper draws it at the
+	   foot). */
 	.failed {
 		display: grid;
-		gap: var(--space-6);
+		gap: var(--space-4);
+		padding-top: var(--space-10);
 	}
 
-	.failed {
-		justify-items: start;
-		gap: var(--space-3);
+	.failed .statement {
+		font: var(--type-statement);
+		letter-spacing: var(--tracking-statement);
 	}
 
-	.group {
-		display: grid;
-		gap: var(--space-2);
+	.failed .lede {
+		margin-top: 0;
 	}
 
-	.pills {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-2);
+	/* The sub-screen's back link is a button: the shared look (layout.css) without a button's. */
+	.back-link.sub {
+		border: 0;
+		background: none;
+		padding-inline: 0;
+		cursor: pointer;
 	}
 
 	/* The thumb zone: fixed above the tab bar, over a fade so scrolling content reads as behind.
@@ -255,27 +289,24 @@
 	}
 
 	/*
-	 * Desktop: the editor column of a split screen. The list beside it says where you are.
-	 * - The skeleton reserves the window's height below the title, so Save starts at the window's
-	 *   foot and stays there when the editor arrives, however long the section is.
-	 * - Save is column chrome: sticky at the foot of this column, its width, never over the list,
-	 *   and under the last field once scrolled to the end, so the editor needs no room kept for it.
-	 *   Its fade reaches a gutter either side, inside the grid's gap.
+	 * Desktop: the column of a split screen; the list beside it says where you are, so only a
+	 * sub-screen's back link shows. The title is 32/38, the form 440 px wide, and Save 260 px wide
+	 * 40 px under it, in the flow (Paper, 14 · "Profile, schedule"): the sections are short.
 	 */
 	@media (width >= 64rem) {
-		.column {
-			/* What the window shows besides the editor: the title above it (about 6.6rem) and
-			   the Save bar below (5rem), a little less, so the column always reaches past the
-			   window's foot and Save is pinned there from the first paint. */
-			--editor-reserve-offset: 11rem;
-		}
-
-		.back-link {
+		.back-link:not(.sub) {
 			display: none;
 		}
 
+		.title {
+			font: var(--type-statement);
+			letter-spacing: var(--tracking-statement);
+		}
+
+		/* No kept room: Save is in the flow, 40 px under the form, so it stays under a short one. */
 		.editor {
-			min-height: max(28rem, calc(100dvh - var(--editor-reserve-offset)));
+			min-height: 0;
+			max-width: var(--section-form);
 		}
 
 		.editor.bar,
@@ -284,10 +315,15 @@
 		}
 
 		.actions {
-			position: sticky;
-			left: auto;
+			position: static;
 			transform: none;
-			width: auto;
+			width: 16.25rem;
+			margin-top: var(--space-10);
+			padding: 0;
+		}
+
+		.actions::before {
+			content: none;
 		}
 	}
 </style>

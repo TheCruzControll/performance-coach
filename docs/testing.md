@@ -383,10 +383,11 @@ The desktop specs (most also run axe and take screenshots in both themes):
   sections and Sign out read and Tab in order; /design up to `--content-wide` with Color beside
   Type (one column at 1023 px); a 404 inside the shell, a 404 outside it and /offline centred.
 - `profile-desktop.serial.e2e.ts` (`resetTrainingProfile()` before each test): Profile in two
-  columns; each section's editor beside `ProfileList` (the open section `aria-current`), Save as
-  column chrome, the discard prompt from the list, the centred goal sheet, Tab list → editor →
-  Save; the skeleton (`expectNoShift`), a chunk error with Retry, an offline save and the 404; on
-  an iPhone, the 28rem skeleton and the fixed Save bar.
+  columns; each section's editor beside `ProfileList` (the open section `aria-current`), a 440 px
+  form with Save 260 px wide 40 px under it, the discard prompt from the list, the centred goal
+  sheet, Tab list → editor → Save; the title alone while loading (`expectNoShift`), a chunk error
+  with Retry, an offline save and the 404; on an iPhone, the loading editor's 28rem and the fixed
+  Save bar.
 - `onboarding-desktop.serial.e2e.ts`: every step a card centred in the window, walked welcome →
   review with the keyboard alone; Back, Skip and Continue in view under the form; no shift between
   steps (card and action row); the offline and no-goal notices in the card above the actions,

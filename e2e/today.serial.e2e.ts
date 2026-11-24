@@ -143,12 +143,12 @@ test('from a blank profile Today starts setup, and after two steps resumes where
 	await stepReady(page, 'welcome');
 	await page.getByRole('textbox', { name: 'What should your coach call you?' }).fill('Niko');
 	await page
-		.getByRole('radiogroup', { name: 'Weights in' })
-		.getByRole('radio', { name: 'kg' })
+		.getByRole('group', { name: 'Weights in' })
+		.getByRole('radio', { name: 'Kilograms' })
 		.check();
 	await page
-		.getByRole('radiogroup', { name: 'Distances in' })
-		.getByRole('radio', { name: 'km' })
+		.getByRole('group', { name: 'Distances in' })
+		.getByRole('radio', { name: 'Kilometres' })
 		.check();
 	await continueTo(page, 'goals');
 

@@ -1,24 +1,17 @@
 <!--
   @component
-  Profile → Name & units, also onboarding's welcome step: what the coach calls the athlete and
-  the units it plans and talks in. Saving also switches this device to those units (./basics.ts).
+  Profile → Name and units, also onboarding's welcome step (Paper, 9 · "Name and units"): what the
+  coach calls the athlete, then the units it plans and talks in. Units are two choice lists.
+  Saving also switches this device to those units (./basics.ts); per-device units stay on
+  Appearance.
 -->
 <script lang="ts">
 	import type { BasicsInput } from '#lib/domain/profile/schemas.ts';
-	import SegmentedControl from '../components/SegmentedControl.svelte';
+	import ChoiceGroup from '../components/ChoiceGroup.svelte';
 	import TextField from '../components/TextField.svelte';
 	import type { EditorProps } from './editors';
 
 	let { value = $bindable(), errors = {} }: EditorProps<BasicsInput> = $props();
-
-	const WEIGHTS: { value: BasicsInput['weightUnit']; label: string }[] = [
-		{ value: 'kg', label: 'kg' },
-		{ value: 'lb', label: 'lb' }
-	];
-	const DISTANCES: { value: BasicsInput['distanceUnit']; label: string }[] = [
-		{ value: 'km', label: 'km' },
-		{ value: 'mi', label: 'mi' }
-	];
 </script>
 
 <div class="basics">
@@ -34,45 +27,44 @@
 		data-testid="basics-name"
 	/>
 	<div class="units">
-		<div class="unit">
-			<span class="unit-label">Weights in</span>
-			<SegmentedControl label="Weights in" bind:value={value.weightUnit} options={WEIGHTS} />
-		</div>
-		<div class="unit">
-			<span class="unit-label">Distances in</span>
-			<SegmentedControl label="Distances in" bind:value={value.distanceUnit} options={DISTANCES} />
-		</div>
+		<ChoiceGroup
+			legend="Weights in"
+			variant="card"
+			bind:value={value.weightUnit}
+			options={[
+				{ value: 'kg', label: 'Kilograms' },
+				{ value: 'lb', label: 'Pounds' }
+			]}
+			data-testid="basics-weights"
+		/>
+		<ChoiceGroup
+			legend="Distances in"
+			variant="card"
+			bind:value={value.distanceUnit}
+			options={[
+				{ value: 'km', label: 'Kilometres' },
+				{ value: 'mi', label: 'Miles' }
+			]}
+			data-testid="basics-distances"
+		/>
 		<p class="note">Your coach plans in these units. Saving also switches this device to them.</p>
 	</div>
 </div>
 
 <style>
+	/* 28 px from the name to "Weights in", 20 between the two lists (Paper). */
 	.basics {
 		display: grid;
-		gap: var(--space-6);
+		gap: var(--space-7);
 	}
 
 	.units {
 		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: var(--space-3);
-	}
-
-	.unit {
-		display: grid;
-		gap: var(--space-2);
-	}
-
-	.unit-label {
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		color: var(--color-text-secondary);
+		gap: var(--space-5);
 	}
 
 	.note {
-		grid-column: 1 / -1;
-		font-size: var(--text-xs);
-		line-height: var(--leading-normal);
+		font: var(--type-caption);
 		color: var(--color-text-tertiary);
 	}
 </style>

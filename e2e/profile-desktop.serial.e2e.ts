@@ -1,7 +1,7 @@
 /**
  * Profile in a desktop window (docs/design-system.md, Responsive layout → Screens): Profile's list
  * 400 px wide beside About this app, and each training-profile section's editor beside the same
- * list, behind a hairline, its Save bar column chrome at the editor column's foot. Every designed
+ * list, behind a hairline: a 440 px form with Save 260 px wide 40 px under it. Every designed
  * state of the editor is checked in the split layout, with a screenshot and axe in both themes;
  * the phone keeps its list → editor → back flow. Serial (one test at a time, after the functional suites): every test starts from a
  * blank training profile, which every browser and worker shares.
@@ -16,7 +16,6 @@ import {
 	DESKTOP,
 	DESKTOP_WIDTHS,
 	boxOf,
-	expectInColumn,
 	expectMainCentred,
 	expectNoShift,
 	expectNoSideScroll,
@@ -53,7 +52,7 @@ const saveBar = (page: Page) => page.getByTestId('save-bar');
 const save = (page: Page) => page.getByTestId('save-section');
 const place = (page: Page, name: string) => page.getByRole('radio', { name });
 
-/** The editor has loaded in place of the skeleton. */
+/** The editor has loaded under the title. */
 async function editorReady(page: Page) {
 	await expect(editor(page)).toHaveAttribute('aria-busy', 'false');
 }
@@ -155,14 +154,20 @@ test.describe('in a desktop window', () => {
 		expect(Math.abs(editorColumn.width - 576)).toBeLessThanOrEqual(1);
 		// Back is the phone's: the list says where you are.
 		await expect(page.getByTestId('back-to-profile')).toBeHidden();
-		await expectInColumn(page, saveBar(page), column(page), [list(page)]);
+		// Paper, 14 · "Profile, schedule": the title is 32/38, and the form 440 px of the column.
+		await expect(page.getByRole('heading', { level: 1, name: 'Equipment' })).toHaveCSS(
+			'font-size',
+			'32px'
+		);
+		expect(Math.abs((await boxOf(editor(page))).width - 440)).toBeLessThanOrEqual(1);
+		await expectWithin(page, saveBar(page));
 
 		await place(page, 'Commercial gym').check();
 		const kit = page.getByRole('group', { name: 'What’s there?' });
 		await kit.getByRole('checkbox', { name: 'Barbell & plates' }).check();
 		await save(page).click();
 		await expect(toastWith(page, 'Saved')).toBeVisible();
-		await expectInColumn(page, saveBar(page), column(page), [list(page)]);
+		await expectWithin(page, saveBar(page));
 		expect(await query('select gym_type, equipment from equipment_profiles')).toEqual([
 			{ gym_type: 'commercial', equipment: ['barbell'] }
 		]);
@@ -176,29 +181,32 @@ test.describe('in a desktop window', () => {
 		expect(errors).toEqual([]);
 	});
 
-	test('on a long section Save is pinned at the window’s foot, and at the end sits under the last field', async ({
-		page
-	}) => {
+	test('Save sits 40 px under the form, 260 px wide, and scrolls with it', async ({ page }) => {
 		await gotoHydrated(page, '/profile/schedule');
 		await editorReady(page);
-		const height = page.viewportSize()!.height;
-		const bar = await boxOf(saveBar(page));
-		expect(bar.y + bar.height).toBeLessThanOrEqual(height + 1);
-		expect(bar.y + bar.height, 'pinned at the window’s foot').toBeGreaterThanOrEqual(height - 1);
-		await expectInColumn(page, saveBar(page), column(page), [list(page)]);
+		// Paper, 14 · "Profile, schedule": not pinned, in the column's flow after the form.
+		await expect(saveBar(page)).toHaveCSS('position', 'static');
+		const [form, bar, button] = [
+			await boxOf(editor(page)),
+			await boxOf(saveBar(page)),
+			await boxOf(save(page))
+		];
+		expect(Math.abs(button.width - 260), 'Save is 260 px wide').toBeLessThanOrEqual(1);
+		expect(Math.abs(button.x - form.x), 'Save starts where the form does').toBeLessThanOrEqual(1);
+		expect(
+			Math.abs(bar.y - (form.y + form.height) - 40),
+			'Save sits 40 px under the form'
+		).toBeLessThanOrEqual(1);
+		await expectWithin(page, saveBar(page));
 
-		await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+		// Scrolled, it moves with the form.
+		await page.evaluate(() => scrollTo(0, 200));
 		await expect
-			.poll(
-				async () => {
-					const last = editor(page).locator('> *').last();
-					const [fields, end] = [await boxOf(last), await boxOf(saveBar(page))];
-					return end.y - (fields.y + fields.height);
-				},
-				{ message: 'Save sits right under the editor' }
-			)
-			.toBeGreaterThanOrEqual(-1);
-		await expectInColumn(page, saveBar(page), column(page), [list(page)]);
+			.poll(async () => {
+				const [moved, under] = [await boxOf(editor(page)), await boxOf(saveBar(page))];
+				return Math.round(under.y - (moved.y + moved.height));
+			})
+			.toBe(40);
 	});
 
 	test('choosing another section asks first with unsaved changes, and simply goes without', async ({
@@ -297,7 +305,7 @@ test.describe('in a desktop window', () => {
 		const error = page.getByTestId('save-error');
 		await expect(error).toContainText('Can’t reach the server');
 		await expectWithin(page, error);
-		await expectInColumn(page, saveBar(page), column(page), [list(page)]);
+		await expectWithin(page, saveBar(page));
 		await expect(place(page, 'Home or garage gym')).toBeChecked();
 		await auditBothThemes(page, testInfo, 'profile-save-offline-desktop');
 
@@ -326,10 +334,10 @@ test.describe('in a desktop window', () => {
 		// page.route never sees a request the service worker answers, and it precaches every chunk.
 		test.use({ serviceWorkers: 'block' });
 
-		test('the editor takes the skeleton’s place without moving the column or Save', async ({
+		test('while the editor loads the screen is its title, and the editor arrives under it', async ({
 			page
 		}, testInfo) => {
-			// Name & units: a short editor, inside the room the skeleton keeps.
+			// Name & units: a short editor, inside the room the title's screen keeps.
 			const chunk = chunkOf('src/lib/ui/profile/BasicsEditor.svelte');
 			let release!: () => void;
 			const held = new Promise<void>((resolve) => (release = resolve));
@@ -342,17 +350,20 @@ test.describe('in a desktop window', () => {
 			await asked;
 			await expect(editor(page)).toHaveAttribute('aria-busy', 'true');
 			await fontsLoaded(page);
-			await expectInColumn(page, saveBar(page), column(page), [list(page)]);
-			await auditBothThemes(page, testInfo, 'profile-skeleton-desktop', true);
+			// No skeleton, and no Save until there is an editor to save.
+			await expect(editor(page).locator('.skeleton')).toHaveCount(0);
+			await expect(save(page)).toHaveCount(0);
+			await auditBothThemes(page, testInfo, 'profile-loading-desktop', true);
 
 			await expectNoShift(page, {
 				action: async () => {
 					release();
 					await editorReady(page);
 				},
-				boxes: [editor(page), saveBar(page)]
+				boxes: [page.getByRole('heading', { level: 1, name: 'Name and units' })]
 			});
 			await expect(page.getByTestId('basics-name')).toBeVisible();
+			await expectWithin(page, saveBar(page));
 		});
 
 		test('an editor that does not load shows its error with Retry in the editor column', async ({
@@ -362,12 +373,12 @@ test.describe('in a desktop window', () => {
 			await page.route(chunk, (route) => route.abort());
 			await page.goto('/profile/equipment');
 			const error = page.getByTestId('editor-error');
-			await expect(error).toContainText('This section didn’t load');
+			await expect(error).toContainText('Equipment didn’t load');
 			const retry = page.getByRole('button', { name: 'Try again' });
 			await expectWithin(page, error);
 			await expectWithin(page, retry);
-			await expect(save(page)).toBeDisabled();
-			await expectInColumn(page, saveBar(page), column(page), [list(page)]);
+			// No Save without an editor.
+			await expect(save(page)).toHaveCount(0);
 			await auditBothThemes(page, testInfo, 'profile-editor-error-desktop');
 
 			await page.unroute(chunk);
@@ -383,7 +394,7 @@ test.describe('on an iPhone', () => {
 	// page.route never sees a request the service worker answers.
 	test.use({ serviceWorkers: 'block' });
 
-	test('the list stays on Profile, the skeleton keeps 28rem and Save stays fixed above the tab bar', async ({
+	test('the list stays on Profile, the loading editor keeps 28rem, and Save comes fixed above the tab bar', async ({
 		page
 	}) => {
 		const chunk = chunkOf('src/lib/ui/profile/EquipmentEditor.svelte');
@@ -398,14 +409,20 @@ test.describe('on an iPhone', () => {
 		await fontsLoaded(page);
 		await expect(list(page)).toBeHidden();
 		await expect(page.getByTestId('back-to-profile')).toBeVisible();
+		// The title alone: the editor's room is kept, and Save waits for the editor.
+		await expect(page.getByRole('heading', { level: 1, name: 'Equipment' })).toHaveCSS(
+			'font-size',
+			'40px'
+		);
 		expect(await editor(page).evaluate((el) => getComputedStyle(el).minHeight)).toBe('448px');
-		expect(await saveBar(page).evaluate((el) => getComputedStyle(el).position)).toBe('fixed');
+		await expect(saveBar(page)).toHaveCount(0);
+		release();
+		await editorReady(page);
+		await expect(saveBar(page)).toHaveCSS('position', 'fixed');
 		const [bar, tabs] = [
 			await boxOf(saveBar(page)),
 			await boxOf(page.getByRole('navigation', { name: 'Primary' }))
 		];
 		expect(bar.y + bar.height).toBeLessThanOrEqual(tabs.y + 1);
-		release();
-		await editorReady(page);
 	});
 });

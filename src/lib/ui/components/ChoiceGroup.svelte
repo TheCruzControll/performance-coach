@@ -296,8 +296,10 @@
 		color: var(--color-text-secondary);
 	}
 
+	/* One line when it fits; a longer one (a catalogue hint in a phone's sheet) wraps at the end
+	   rather than pushing the row past its width. The label keeps its own width. */
 	[data-variant='card'] .sub.end {
-		flex: none;
+		flex: 0 1 auto;
 		text-align: end;
 	}
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SCHEMAS, validate } from '#lib/domain/profile/schemas.ts';
 import type { BodyWeightEntry } from '#lib/domain/profile/types.ts';
-import { bodyDraft, bodyPayload, type BodySaved } from './body';
+import { bodyDraft, bodyPayload, targetValue, type BodySaved } from './body';
 
 const entry = (value: number, unit: 'kg' | 'lb', measuredOn: string, id = 1): BodyWeightEntry => ({
 	id,
@@ -128,5 +128,32 @@ describe('bodyPayload', () => {
 			bodyWeight: []
 		});
 		expect(validate(SCHEMAS.body, bodyPayload(blank)).ok).toBe(true);
+	});
+});
+
+describe('targetValue', () => {
+	const today = new Date(2027, 0, 10);
+	const value = (targetWeight: number | null, targetDate: string | null, on: Date | null = today) =>
+		targetValue({ targetWeight, targetDate, weightUnit: 'kg' }, on);
+
+	it('says the weight and the date, with the year only when it is not this year’s', () => {
+		expect(value(77, '2027-03-01')).toBe('77 kg by 1 March');
+		expect(value(77, '2028-03-01')).toBe('77 kg by 1 March 2028');
+	});
+
+	it('says what there is of the two, and nothing without either', () => {
+		expect(value(77.5, null)).toBe('77.5 kg');
+		expect(value(null, '2027-06-30')).toBe('By 30 June');
+		expect(value(null, null)).toBeUndefined();
+	});
+
+	it('gives the year before the device’s date is known', () => {
+		expect(value(77, '2027-03-01', null)).toBe('77 kg by 1 March 2027');
+	});
+
+	it('says the owner’s unit', () => {
+		expect(targetValue({ targetWeight: 170, targetDate: null, weightUnit: 'lb' }, today)).toBe(
+			'170 lb'
+		);
 	});
 });

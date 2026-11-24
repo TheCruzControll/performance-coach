@@ -50,7 +50,7 @@ async function stored() {
 	};
 }
 
-/** The editor has loaded in place of the skeleton. */
+/** The editor has loaded under the title. */
 async function editorReady(page: Page) {
 	await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
 }
