@@ -5,7 +5,8 @@
   badge). A hairline sits under each row but a list's last. Renders a link with `href`, a button
   with `onclick`, a static row when `disabled` (not yet available), or a status row with `static`
   (a fact, "Backups · 6 h ago": no chevron, full contrast). `danger` draws the title in
-  the danger colour with no chevron ("Sign out"). Full-width, at least 60 px tall: an easy thumb
+  the danger colour with no chevron ("Sign out"); `muted` the title in secondary (a past item), and
+  `valueTone="muted"` the value in tertiary (a placeholder, "Choose"). Full-width, at least 60 px tall: an easy thumb
   target.
 -->
 <script lang="ts">
@@ -27,8 +28,13 @@
 		tone?: Tone;
 		/** The trailing value text ("kg, km", "3"), before the chevron. */
 		value?: string;
-		/** `warning` draws the value in the warning colour; its words must say why on their own. */
-		valueTone?: 'warning';
+		/**
+		 * `warning` draws the value in the warning colour; its words must say why on their own.
+		 * `muted` draws it in tertiary: a placeholder ("Choose") or a past item's detail.
+		 */
+		valueTone?: 'warning' | 'muted';
+		/** A past or set-aside item: the title in secondary (Injuries' "Better now"). */
+		muted?: boolean;
 		/** A status row: no action and no chevron, at full contrast (unlike `disabled`). */
 		static?: boolean;
 		/** The title in the danger colour, with no chevron ("Sign out"). */
@@ -44,6 +50,11 @@
 		'aria-current'?: 'page';
 		/** A status row whose value is still loading (a Skeleton in `trailing`). */
 		'aria-busy'?: boolean;
+		/** A row that opens a sheet (PickRow, SheetRow). */
+		'aria-haspopup'?: 'dialog';
+		/** The row's error line, and the error it marks (PickRow, SheetRow). */
+		'aria-describedby'?: string;
+		'aria-invalid'?: 'true';
 		'data-testid'?: string;
 	}
 
@@ -56,6 +67,7 @@
 		valueTone,
 		static: isStatic = false,
 		danger = false,
+		muted = false,
 		href,
 		onclick,
 		disabled = false,
@@ -80,12 +92,19 @@
 		class="row"
 		aria-disabled={disabled ? 'true' : undefined}
 		data-danger={danger ? '' : undefined}
+		data-muted={muted ? '' : undefined}
 		{...rest}
 	>
 		{@render body()}
 	</div>
 {:else if href}
-	<a class="row interactive" {href} data-danger={danger ? '' : undefined} {...rest}>
+	<a
+		class="row interactive"
+		{href}
+		data-danger={danger ? '' : undefined}
+		data-muted={muted ? '' : undefined}
+		{...rest}
+	>
 		{@render body()}
 	</a>
 {:else}
@@ -94,6 +113,7 @@
 		class="row interactive"
 		{onclick}
 		data-danger={danger ? '' : undefined}
+		data-muted={muted ? '' : undefined}
 		{...rest}
 	>
 		{@render body()}
@@ -184,6 +204,10 @@
 		color: var(--color-warning);
 	}
 
+	.value[data-tone='muted'] {
+		color: var(--color-text-tertiary);
+	}
+
 	.chevron {
 		display: grid;
 		color: var(--color-text-tertiary);
@@ -191,6 +215,10 @@
 
 	.row[data-danger] .title {
 		color: var(--color-danger);
+	}
+
+	.row[data-muted] .title {
+		color: var(--color-text-secondary);
 	}
 
 	/* Not available yet: quieter, without lowering text contrast below 4.5:1. */

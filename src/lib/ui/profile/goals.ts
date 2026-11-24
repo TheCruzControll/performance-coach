@@ -96,7 +96,8 @@ export function goalSummary(goal: Goal): string {
 	return parts.filter(Boolean).join(' · ');
 }
 
-const MONTH_NAMES = [
+/** The months' names, January first: a date in words. */
+export const MONTH_NAMES = [
 	'January',
 	'February',
 	'March',

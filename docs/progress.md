@@ -229,6 +229,12 @@ milestones.md.
   Today to the top of Progress, in every view, until `v2/14`; Today's goals and schedule went, as
   both live in Profile, so Today shows its state's panel alone until `v2/06b`. The e2e run and the
   budgets are CI's to prove.
+- **Instrument v2 Profile section frame (`v2/22a`).** A section is a 40/44 title and an optional
+  lede over its fields and rows; a pick-one answer is a row that opens a sheet (`PickRow`), a short
+  entry a sheet of fields (`SheetRow`), and a section can open sub-screens of its own. Name and
+  units is two choice lists, Body and nutrition one field and three rows, in Profile and in
+  onboarding. While the editor loads the screen is its title; at a desk Save sits under a 440 px
+  form. The other sections are `v2/22b` to `v2/22f`. The e2e run is CI's to prove.
 - **Instrument v2 at a desk (`v2/03c`), which completes the Instrument v2 shell (`v2/03`).** The
   rail is the canvas with a hairline, the four tabs 28 px apart and the avatar at its foot, with
   no brand mark. A readable screen is 616 px (560 of text) centred right of the rail but at most

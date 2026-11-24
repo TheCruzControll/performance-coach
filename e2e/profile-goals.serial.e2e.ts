@@ -70,7 +70,7 @@ const STRENGTH = {
 /** What a goal's row says it is for, on today's date: so a 2027 date passes in any year. */
 const when = (goal: object) => goalWhen(goal as Goal, new Date());
 
-/** The editor has loaded in place of the skeleton. */
+/** The editor has loaded under the title. */
 async function editorReady(page: Page) {
 	await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
 }

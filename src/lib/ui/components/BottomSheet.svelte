@@ -283,7 +283,12 @@
 		transition: opacity var(--duration-slow) var(--ease-standard);
 	}
 
+	/* A field inside a sheet sits on surface-3, a step above the sheet's surface-1 (Paper, 9 ·
+	   "A lift"): TextField, NumberField and TextArea read it, so no global rule is needed. Tertiary
+	   is under AA on surface-3, so a placeholder and a unit there are secondary (--field-quiet). */
 	.sheet {
+		--field-fill: var(--color-surface-3);
+		--field-quiet: var(--color-text-secondary);
 		position: absolute;
 		left: 50%;
 		bottom: 0;

@@ -193,8 +193,8 @@ test('welcome to review with the keyboard alone, each step a card with its actio
 	await checkStep(page, testInfo, 'welcome');
 	await tabTo(page, page.getByRole('textbox', { name: 'What should your coach call you?' }));
 	await page.keyboard.type('Niko');
-	const weights = page.getByRole('radiogroup', { name: 'Weights in' });
-	await arrowTo(page, weights, weights.getByRole('radio', { name: 'kg' }));
+	const weights = page.getByRole('group', { name: 'Weights in' });
+	await arrowTo(page, weights, weights.getByRole('radio', { name: 'Kilograms' }));
 	await tabTo(page, next(page));
 	await pressOn(page, 'Enter', 'goals');
 

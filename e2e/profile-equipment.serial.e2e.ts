@@ -37,7 +37,7 @@ const chunkOf = (source: string) => `**/${chunkFile(source)}`;
 
 const EDITOR = 'src/lib/ui/profile/EquipmentEditor.svelte';
 
-/** The editor has loaded in place of the skeleton. */
+/** The editor has loaded under the title. */
 async function editorReady(page: Page) {
 	await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
 }
@@ -179,9 +179,11 @@ test.describe('with the network in the test’s hands', () => {
 		const chunk = chunkOf(EDITOR);
 		await page.route(chunk, (route) => route.abort());
 		await page.goto('/profile/equipment');
-		await expect(page.getByTestId('editor-error')).toContainText('This section didn’t load');
+		await expect(page.getByTestId('editor-error')).toContainText('Equipment didn’t load');
 		await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
-		await expect(page.getByTestId('save-section')).toBeDisabled();
+		// No Save without an editor; the title stays in the outline.
+		await expect(page.getByTestId('save-section')).toHaveCount(0);
+		await expect(page.getByRole('heading', { level: 1, name: 'Equipment' })).toBeAttached();
 		// Fetched as a module, never as a modulepreload: WebKit would keep that failed preload and
 		// hand it to the reloaded page as well (vite.config.ts, build.modulePreload).
 		await expect(
@@ -207,7 +209,7 @@ test.describe('with the network in the test’s hands', () => {
 			expect(html).not.toContain(path.basename(file));
 			expect(html).not.toContain(readFileSync(`${CLIENT}/${file}`, 'utf8').trim().slice(0, 120));
 		}
-		// How the editor looks the moment it replaces the skeleton, before anything can repaint.
+		// How the editor looks the moment it arrives under the title, before anything can repaint.
 		await page.addInitScript(() => {
 			new MutationObserver((_, observer) => {
 				const region = document.querySelector('[data-testid="section-editor"]');
@@ -217,7 +219,7 @@ test.describe('with the network in the test’s hands', () => {
 				Object.assign(window, { __firstDisplay: display });
 			}).observe(document, { subtree: true, childList: true, attributeFilter: ['aria-busy'] });
 		});
-		// Hold its stylesheet: the skeleton stays until it has arrived.
+		// Hold its stylesheet: the screen stays its title until it has arrived.
 		let release!: () => void;
 		const held = new Promise<void>((resolve) => (release = resolve));
 		const sheet = `**/${styles[0]}`;
@@ -238,7 +240,7 @@ test.describe('with the network in the test’s hands', () => {
 		).toBe('grid');
 	});
 
-	test('the editor takes the skeleton’s place without moving anything', async ({ page }) => {
+	test('the editor arrives under the title without moving anything', async ({ page }) => {
 		await page.addInitScript(() => {
 			const shifts: number[] = [];
 			Object.assign(window, { __shifts: shifts });
@@ -248,7 +250,7 @@ test.describe('with the network in the test’s hands', () => {
 					shifts.push((entry as unknown as { value: number }).value);
 			}).observe({ type: 'layout-shift', buffered: true });
 		});
-		// Hold the editor back, so the skeleton is on screen first.
+		// Hold the editor back, so the title alone is on screen first.
 		let release!: () => void;
 		const held = new Promise<void>((resolve) => (release = resolve));
 		await page.route(chunkOf(EDITOR), async (route) => {
@@ -259,19 +261,22 @@ test.describe('with the network in the test’s hands', () => {
 		const region = page.getByTestId('section-editor');
 		const save = page.getByTestId('save-section');
 		await expect(region).toHaveAttribute('aria-busy', 'true');
+		// No skeleton, and no Save until there is an editor to save.
+		await expect(region.locator('.skeleton')).toHaveCount(0);
+		await expect(save).toHaveCount(0);
 		await page.evaluate(() => document.fonts.ready);
 		const shifts = () =>
 			page.evaluate(() => (window as unknown as { __shifts: number[] }).__shifts);
 		const before = {
 			top: (await region.boundingBox())!.y,
-			save: await save.boundingBox(),
 			shifts: (await shifts()).length
 		};
 
 		release();
 		await editorReady(page);
 		expect((await region.boundingBox())!.y).toBe(before.top);
-		expect(await save.boundingBox()).toEqual(before.save);
+		// Save arrives fixed above the tab bar, where it moves nothing.
+		await expect(save).toBeVisible();
 		expect((await shifts()).slice(before.shifts)).toEqual([]);
 	});
 });

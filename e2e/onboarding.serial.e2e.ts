@@ -117,12 +117,12 @@ test('a fight and a marathon, every 1RM blank: set up step by step, stored, and 
 	await captureScreen(page, testInfo, 'onboarding-welcome');
 	await page.getByRole('textbox', { name: 'What should your coach call you?' }).fill('Niko');
 	await page
-		.getByRole('radiogroup', { name: 'Weights in' })
-		.getByRole('radio', { name: 'kg' })
+		.getByRole('group', { name: 'Weights in' })
+		.getByRole('radio', { name: 'Kilograms' })
 		.check();
 	await page
-		.getByRole('radiogroup', { name: 'Distances in' })
-		.getByRole('radio', { name: 'km' })
+		.getByRole('group', { name: 'Distances in' })
+		.getByRole('radio', { name: 'Kilometres' })
 		.check();
 	await moveOn(page, 'continue', 'goals');
 

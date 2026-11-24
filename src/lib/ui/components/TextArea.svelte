@@ -81,7 +81,8 @@
 		padding: var(--space-4) var(--space-4-5);
 		border: 1px solid transparent;
 		border-radius: var(--radius-sm);
-		background: var(--color-surface-2);
+		/* Surface-2 on the page; a sheet sets surface-3 (BottomSheet's --field-fill). */
+		background: var(--field-fill, var(--color-surface-2));
 		color: var(--color-text);
 		font: var(--type-body);
 		resize: vertical;
@@ -89,7 +90,7 @@
 	}
 
 	.input::placeholder {
-		color: var(--color-text-tertiary);
+		color: var(--field-quiet, var(--color-text-tertiary));
 	}
 
 	.input:focus-visible {

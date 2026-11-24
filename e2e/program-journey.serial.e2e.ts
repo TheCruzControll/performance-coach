@@ -122,11 +122,11 @@ async function onboardBlank(page: Page, testInfo: TestInfo) {
 	await stepReady(page, 'welcome');
 	await page.getByRole('textbox', { name: 'What should your coach call you?' }).fill('Niko');
 	for (const [group, unit] of [
-		['Weights in', 'kg'],
-		['Distances in', 'km']
+		['Weights in', 'Kilograms'],
+		['Distances in', 'Kilometres']
 	]) {
 		await page
-			.getByRole('radiogroup', { name: group })
+			.getByRole('group', { name: group })
 			.getByRole('radio', { name: unit, exact: true })
 			.check();
 	}

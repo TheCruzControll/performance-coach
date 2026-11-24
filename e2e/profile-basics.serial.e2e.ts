@@ -13,16 +13,16 @@ import {
 	trackConsoleErrors
 } from './support';
 
-/** The editor has loaded in place of the skeleton. */
+/** The editor has loaded under the title. */
 async function editorReady(page: Page) {
 	await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
 }
 
-/** Whether `unit` is the one picked in the segmented control named `group`. */
+/** Whether `unit` is the one picked in the choice list named `group`. */
 const picked = (page: Page, group: string, unit: string) =>
 	expect(
-		page.getByRole('radiogroup', { name: group, exact: true }).getByRole('radio', { name: unit })
-	).toHaveAttribute('aria-checked', 'true');
+		page.getByRole('group', { name: group, exact: true }).getByRole('radio', { name: unit })
+	).toBeChecked();
 
 /** Whether `label` is the one picked in Profile → Appearance's choice list named `group`. */
 const devicePicked = (page: Page, group: string, label: string) =>
@@ -58,20 +58,31 @@ test('a new name and lb, mi save and stay; Profile is headed by the name and the
 	await expect(row).toHaveAttribute('href', '/profile/basics');
 	await row.click();
 	await expect(page).toHaveURL('/profile/basics');
-	await expect(page.getByRole('heading', { level: 1, name: 'Name and units' })).toBeVisible();
+	const title = page.getByRole('heading', { level: 1, name: 'Name and units' });
+	await expect(title).toBeVisible();
+	// Paper, 9 · "Section": the title is Hubot 40/44 on a phone.
+	await expect(title).toHaveCSS('font-size', '40px');
 	await editorReady(page);
 	await expect(nameField(page)).toHaveValue('Niko Cruz');
-	await picked(page, 'Weights in', 'kg');
-	await picked(page, 'Distances in', 'km');
+	// The units are two choice lists, in words.
+	await expect(page.getByTestId('basics-weights').getByRole('radio')).toHaveCount(2);
+	await expect(
+		page.getByTestId('basics-weights').getByRole('radio', { name: 'Kilograms' })
+	).toBeVisible();
+	await expect(
+		page.getByTestId('basics-weights').getByRole('radio', { name: 'Pounds' })
+	).toBeVisible();
+	await picked(page, 'Weights in', 'Kilograms');
+	await picked(page, 'Distances in', 'Kilometres');
 
 	await nameField(page).fill('Niko');
 	await page
-		.getByRole('radiogroup', { name: 'Weights in' })
-		.getByRole('radio', { name: 'lb' })
+		.getByRole('group', { name: 'Weights in' })
+		.getByRole('radio', { name: 'Pounds' })
 		.click();
 	await page
-		.getByRole('radiogroup', { name: 'Distances in' })
-		.getByRole('radio', { name: 'mi' })
+		.getByRole('group', { name: 'Distances in' })
+		.getByRole('radio', { name: 'Miles' })
 		.click();
 	await page.getByTestId('save-section').click();
 	await expect(toastWith(page, 'Saved')).toBeVisible();
@@ -84,8 +95,8 @@ test('a new name and lb, mi save and stay; Profile is headed by the name and the
 	await page.reload();
 	await editorReady(page);
 	await expect(nameField(page)).toHaveValue('Niko');
-	await picked(page, 'Weights in', 'lb');
-	await picked(page, 'Distances in', 'mi');
+	await picked(page, 'Weights in', 'Pounds');
+	await picked(page, 'Distances in', 'Miles');
 	await captureScreen(page, testInfo, 'profile-basics');
 
 	// Nothing unsaved, so leaving asks nothing.

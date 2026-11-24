@@ -102,14 +102,15 @@
 		padding: 0 var(--space-4-5);
 		border: 1px solid transparent;
 		border-radius: var(--radius-sm);
-		background: var(--color-surface-2);
+		/* Surface-2 on the page; a sheet sets surface-3 (BottomSheet's --field-fill). */
+		background: var(--field-fill, var(--color-surface-2));
 		color: var(--color-text);
 		font: var(--type-row);
 		transition: box-shadow var(--duration-fast) var(--ease-standard);
 	}
 
 	.input::placeholder {
-		color: var(--color-text-tertiary);
+		color: var(--field-quiet, var(--color-text-tertiary));
 	}
 
 	/* iOS Safari centres a date's value; keep it aligned with every other field's text. */

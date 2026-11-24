@@ -77,6 +77,10 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   stat tiles and disclosure are the legacy `Section` and `Stat`, above the view nav in every view,
   not anything Paper draws on Progress. Closes when `v2/14` redraws Progress's home
   (`src/routes/(app)/progress/WeekSoFar.svelte`).
+- **A section's sub-screens (an injury, a class, a tick list) have no URL of their own.** Browser
+  Back leaves the section, asking first if there are changes, and the sub-screen's back link is
+  the way back within it (v2/22a, `src/lib/ui/profile/subscreens.svelte.ts`). Revisit with
+  shallow routing in `v2/25`.
 - **Goals keeps the reorder arrows and the drag handle at each row's end, and the goal sheet is the
   pre-v2 form.** Paper draws neither at rest and reorders by long press; the owner kept the arrows
   (the keyboard's and VoiceOver's way) and the full form. With two or more goals each row is as

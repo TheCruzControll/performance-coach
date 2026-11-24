@@ -267,6 +267,66 @@ export function appRoutes(dir = ROUTES_DIR): AppRoute[] {
 	return routes;
 }
 
+/** `text` as a regular expression that matches it literally. */
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * A row that opens a sheet (PickRow, SheetRow), by its question: its accessible name is its
+ * title, then its answer, so `^question` finds it whatever the answer is.
+ */
+function sheetRow(scope: Page | Locator, label: string | RegExp): Locator {
+	return scope.getByRole('button', {
+		name: typeof label === 'string' ? new RegExp(`^${escape(label)}`) : label
+	});
+}
+
+/** A PickRow's answer: open its sheet by the row's question, pick, and the sheet closes. */
+export async function pick(
+	scope: Page | Locator,
+	page: Page,
+	question: string,
+	option: string | RegExp
+): Promise<void> {
+	await sheetRow(scope, question).click();
+	const sheet = page.getByRole('dialog', { name: question });
+	await sheet.getByRole('radio', { name: option, exact: typeof option === 'string' }).click();
+	await expect(sheet).toBeHidden();
+}
+
+/** A pick-several PickRow: open its sheet, tick each option, then close it with Escape. */
+export async function tick(
+	scope: Page | Locator,
+	page: Page,
+	question: string,
+	options: string[]
+): Promise<void> {
+	await sheetRow(scope, question).click();
+	const sheet = page.getByRole('dialog', { name: question });
+	for (const option of options) {
+		await sheet.getByRole('checkbox', { name: option, exact: true }).check();
+	}
+	await page.keyboard.press('Escape');
+	await expect(sheet).toBeHidden();
+}
+
+/**
+ * A SheetRow: open it by its label, and return its dialog (titled `title`, else the label) for
+ * its fields. Close it with `page.keyboard.press('Escape')`: what was typed stays.
+ */
+export async function openSheet(
+	scope: Page | Locator,
+	page: Page,
+	label: string | RegExp,
+	title?: string
+): Promise<Locator> {
+	await sheetRow(scope, label).click();
+	const sheet = page.getByRole('dialog', {
+		name: title ?? (typeof label === 'string' ? label : undefined)
+	});
+	await expect(sheet).toBeVisible();
+	return sheet;
+}
+
 /** A toast notification with this text (not the same words elsewhere on the screen). */
 export function toastWith(page: Page, text: string | RegExp) {
 	return page.locator('.toaster .toast').filter({ hasText: text });

@@ -6,6 +6,7 @@ import type { NutritionPhase } from '#lib/domain/profile/catalog.ts';
 import type { BodyInput } from '#lib/domain/profile/schemas.ts';
 import type { AthleteProfile, BodyWeightEntry } from '#lib/domain/profile/types.ts';
 import { cleanFloat, convertWeight, type WeightUnit } from '#lib/domain/units.ts';
+import { MONTH_NAMES } from './goals';
 
 /** What the section loads (getBody). */
 export interface BodySaved {
@@ -72,4 +73,25 @@ export function bodyPayload({ recorded, ...draft }: BodyDraft): BodyInput {
 		bodyWeight: recorded && draft.bodyWeight === recorded.shown ? null : draft.bodyWeight,
 		nutritionPhase: draft.nutritionPhase === 'none' ? null : draft.nutritionPhase
 	};
+}
+
+/**
+ * Target weight's answer on its row: "77 kg by 1 March", "77 kg", "By 1 March", or nothing. The
+ * date says its year when it is not `today`'s, and always before the device's date is known
+ * (`today` null: the server's render and the first paint).
+ */
+export function targetValue(
+	{
+		targetWeight,
+		targetDate,
+		weightUnit
+	}: Pick<BodyDraft, 'targetWeight' | 'targetDate' | 'weightUnit'>,
+	today: Date | null
+): string | undefined {
+	const weight = targetWeight == null ? '' : `${targetWeight} ${weightUnit}`;
+	if (!targetDate) return weight || undefined;
+	// Read from the string: a calendar date has no time zone.
+	const [year, month, day] = targetDate.split('-').map(Number);
+	const date = `${day} ${MONTH_NAMES[month! - 1]}${year === today?.getFullYear() ? '' : ` ${year}`}`;
+	return weight ? `${weight} by ${date}` : `By ${date}`;
 }

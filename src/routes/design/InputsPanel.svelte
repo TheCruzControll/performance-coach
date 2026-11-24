@@ -5,8 +5,10 @@
 	import DayPicker from '#lib/ui/components/DayPicker.svelte';
 	import NumberField from '#lib/ui/components/NumberField.svelte';
 	import NumberStepper from '#lib/ui/components/NumberStepper.svelte';
+	import PickRow from '#lib/ui/components/PickRow.svelte';
 	import Section from '#lib/ui/components/Section.svelte';
 	import SegmentedControl from '#lib/ui/components/SegmentedControl.svelte';
+	import SheetRow from '#lib/ui/components/SheetRow.svelte';
 	import Surface from '#lib/ui/components/Surface.svelte';
 	import TagInput from '#lib/ui/components/TagInput.svelte';
 	import TextArea from '#lib/ui/components/TextArea.svelte';
@@ -65,6 +67,13 @@
 	let years = $state<'under-year' | 'few-years' | 'several-years' | 'decade' | null>('few-years');
 	let yearsShort = $state<'under-year' | 'few-years' | 'several-years' | 'decade' | null>(null);
 	let planDays = $state<Weekday[]>(['mon', 'wed', 'fri']);
+
+	// Rows that open sheets: a pick-one with no answer yet, a pick-several, and a sheet of fields
+	// with its answer in words.
+	let season = $state<'base' | 'build' | 'peak' | null>(null);
+	let restDays = $state<Weekday[]>(['sun']);
+	let raceDistance = $state<number | null>(21.1);
+	const raceAnswer = $derived(raceDistance == null ? undefined : `${raceDistance} km`);
 </script>
 
 {#snippet readout(testId: string, value: unknown)}
@@ -387,6 +396,32 @@
 			</div>
 		</Surface>
 	</Section>
+
+	<Section title="Rows that open sheets">
+		<Surface padding="lg" radius="xl">
+			<div class="rows">
+				<PickRow
+					label="Part of the season"
+					description="A pick closes the sheet."
+					bind:value={season}
+					options={[
+						{ value: 'base', label: 'Base', hint: 'Volume first' },
+						{ value: 'build', label: 'Build', hint: 'Harder weeks' },
+						{ value: 'peak', label: 'Peak', hint: 'Sharpen up' }
+					]}
+				/>
+				<PickRow
+					label="Rest days"
+					multiple
+					bind:values={restDays}
+					options={WEEKDAYS.map((day) => ({ value: day, label: WEEKDAY_INFO[day].label }))}
+				/>
+				<SheetRow label="Next race" value={raceAnswer}>
+					<NumberField label="Distance" unit="km" bind:value={raceDistance} optional />
+				</SheetRow>
+			</div>
+		</Surface>
+	</Section>
 </div>
 
 <style>
@@ -405,6 +440,10 @@
 		grid-template-columns: 1fr 1fr;
 		gap: var(--space-3);
 		align-items: start;
+	}
+
+	.rows {
+		display: grid;
 	}
 
 	.with-value {

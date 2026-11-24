@@ -11,7 +11,9 @@
   review: from there Continue, Skip and Back return to the review (Back and Finish later still
   save a changed step first). Start coaching finishes the setup. The page can put more between
   the title and the editor: the welcome's intro, or on a return visit its card to pick up at the
-  furthest step advanced.
+  furthest step advanced. An editor may open sub-screens of its own (subscreens.svelte.ts): while
+  one is open, its back link, title and lede take the intro's place; Continue still saves the
+  whole step.
 
   From 1024 px the step is a card centred in the window, the progress bar inset along its top and
   Back, Skip and Continue in a row under the form (Back is in both places, one shown per
@@ -36,6 +38,7 @@
 	} from '#lib/ui/profile/editors.ts';
 	import type ProfileSummary from '#lib/ui/profile/ProfileSummary.svelte';
 	import type { SectionKey } from '#lib/ui/profile/sections.ts';
+	import { provideSubScreens } from '#lib/ui/profile/subscreens.svelte.ts';
 	import { fromReviewHref, stepHref, todayHref } from '../paths';
 
 	interface Props {
@@ -81,6 +84,8 @@
 	const finished = (s: OnboardingStep) => completed.includes(s) || skipped.includes(s);
 	/** A section saved as a whole (goals save one at a time, from their sheet). */
 	const savesSection = $derived(key !== null && key !== 'goals');
+	/** The sub-screens the step's editor opens: the innermost one's header takes the intro's. */
+	const subs = provideSubScreens();
 
 	let Editor = $state<SectionEditor['Editor'] | null>(null);
 	let Summary = $state<Component<ComponentProps<typeof ProfileSummary>> | null>(null);
@@ -214,12 +219,22 @@
 	</div>
 
 	<div class="intro">
-		<p class="eyebrow">
-			{STEP_INFO[step].short}{#if optional}<span class="opt">· Optional</span>{/if}
-		</p>
-		<h1 class="title">{title}</h1>
-		<p class="lede">{lede}</p>
-		{#if children}<div class="lead">{@render children()}</div>{/if}
+		{#if subs.top}
+			<!-- A sub-screen of the step's editor: back to the screen under it, inside the step. -->
+			<button type="button" class="nav sub" onclick={() => subs.close()} data-testid="sub-back">
+				<Icon name="chevron-left" size={20} />
+				{subs.top.back}
+			</button>
+			<h1 class="title" tabindex="-1" data-subscreen-title>{subs.top.title}</h1>
+			{#if subs.top.lede}<p class="lede">{subs.top.lede}</p>{/if}
+		{:else}
+			<p class="eyebrow">
+				{STEP_INFO[step].short}{#if optional}<span class="opt">· Optional</span>{/if}
+			</p>
+			<h1 class="title">{title}</h1>
+			<p class="lede">{lede}</p>
+			{#if children}<div class="lead">{@render children()}</div>{/if}
+		{/if}
 	</div>
 
 	<div class="body" aria-busy={!form && !failed} data-testid="section-editor">
@@ -314,6 +329,13 @@
 
 	.later {
 		justify-self: end;
+	}
+
+	/* A sub-screen's way back: a button with the back link's look. */
+	.sub {
+		justify-self: start;
+		margin-left: calc(-1 * var(--space-1));
+		color: var(--color-text);
 	}
 
 	/* Back's place in the action row, a desktop window's (below). */

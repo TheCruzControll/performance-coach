@@ -118,7 +118,7 @@ export function a11ySuite(theme: 'dark' | 'light'): void {
 				if (path === '/profile') await expect(page.getByTestId('db-status')).toBeVisible();
 				// Today on a blank profile: its setup card.
 				if (path === '/today') await expect(page.getByTestId('today-setup')).toBeVisible();
-				// A Profile section's editor loads after the screen, in place of its skeleton.
+				// A Profile section's editor loads after the screen, under its title.
 				const editor = page.getByTestId('section-editor');
 				if (await editor.count()) await expect(editor).toHaveAttribute('aria-busy', 'false');
 				const html = page.locator('html');
@@ -182,6 +182,17 @@ export function a11ySuite(theme: 'dark' | 'light'): void {
 				: page.getByTestId('back-to-profile');
 			await leave.click();
 			await expect(page.getByTestId('discard-sheet')).toBeVisible();
+			await page.waitForTimeout(500);
+			expect(await audit(page)).toEqual([]);
+		});
+
+		test('Body’s Nutrition phase sheet, open, has no violations', async ({ page }) => {
+			await gotoHydrated(page, '/profile/body');
+			await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
+			// Opened and left as it was: nothing is picked, so nothing reaches the database.
+			await page.getByTestId('nutrition-phase').click();
+			const sheet = page.getByRole('dialog', { name: 'Nutrition phase' });
+			await expect(sheet.getByRole('radio')).toHaveCount(5);
 			await page.waitForTimeout(500);
 			expect(await audit(page)).toEqual([]);
 		});
