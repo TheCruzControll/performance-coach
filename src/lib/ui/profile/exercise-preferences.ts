@@ -5,10 +5,15 @@
  * A save replaces the whole list, so the draft also keeps what was saved with each preference
  * (the coach’s note on why) and the payload sends it back. A reason belongs to its sentiment:
  * an exercise moved to the other list starts without one.
+ *
+ * Adding one searches the exercise library (the workout's `searchLibrary`), or the device's
+ * suggestions when the library could not load; what is stored is still the name, as words.
  */
-import type { Sentiment } from '#lib/domain/profile/catalog.ts';
+import { searchLibrary } from '#lib/client/workout/library.ts';
+import { EXERCISE_SUGGESTIONS, type Sentiment } from '#lib/domain/profile/catalog.ts';
 import type { ExercisePreferencesInput, FieldErrors } from '#lib/domain/profile/schemas.ts';
 import type { ExercisePreference } from '#lib/domain/profile/types.ts';
+import type { LibraryExercise } from '#lib/domain/workout/index.ts';
 
 export interface ExercisesDraft {
 	likes: string[];
@@ -55,4 +60,38 @@ export function listErrors(
 		if (index !== undefined) shown[Number(index) < likes ? 'likes' : 'dislikes'] ??= message;
 	}
 	return shown;
+}
+
+/** How many results the search shows: few enough to sit above the phone's keyboard. */
+export const SEARCH_LIMIT = 8;
+
+/** A search result: the exercise's name, and whether either list already holds it. */
+export interface SearchResult {
+	name: string;
+	added: boolean;
+}
+
+/**
+ * The exercises `query` names, best first, at most eight: from the library through the
+ * workout's search (names and aliases, 'RDL'), or, with no library (`null`), the suggestions
+ * that start with it, then the ones that contain it. `added` when `taken` holds the name in any
+ * case. A blank query gives none.
+ */
+export function searchExercises(
+	library: readonly LibraryExercise[] | null,
+	query: string,
+	taken: readonly string[]
+): SearchResult[] {
+	const q = query.trim().toLowerCase();
+	if (!q) return [];
+	const names = library
+		? searchLibrary(library, q, SEARCH_LIMIT).results.map((e) => e.name)
+		: [
+				...EXERCISE_SUGGESTIONS.filter((e) => e.toLowerCase().startsWith(q)),
+				...EXERCISE_SUGGESTIONS.filter(
+					(e) => !e.toLowerCase().startsWith(q) && e.toLowerCase().includes(q)
+				)
+			].slice(0, SEARCH_LIMIT);
+	const held = new Set(taken.map((name) => name.trim().toLowerCase()));
+	return names.map((name) => ({ name, added: held.has(name.toLowerCase()) }));
 }

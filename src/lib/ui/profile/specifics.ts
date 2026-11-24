@@ -1,7 +1,8 @@
 /**
  * Editing state for Profile → Running & Muay Thai, built from what the services return and the
  * disciplines in play (the edit route's context). Each part is there while its discipline is in
- * play or something about it is saved, and the owner can add either one.
+ * play or something about it is saved, and the owner can add either one. Each row's answer in
+ * words ("24 km in 3 runs", "5:45 a km") comes from here too.
  *
  * Times are typed as text. The iPhone's decimal keypad has no ':', so '.', ',', a space or ':'
  * each separate hours, minutes and seconds ("1.45.30", "5,45"); parseDuration reads only ':'.
@@ -184,10 +185,73 @@ export function specificsPayload({ running, muayThai }: SpecificsDraft) {
 	return { running: running && runningPayload(running), muayThai };
 }
 
-/** A race's name on its card: its distance, or how far an "Other" one was. */
-export function raceName(race: RaceDraft, unit: Unit): string {
+/** A race's name on its row: its distance, or how far an "Other" one was. */
+export function raceName(
+	race: Pick<RaceDraft, 'distance'> & Partial<Pick<RaceDraft, 'customDistance'>>,
+	unit: Unit
+): string {
 	if (race.distance === 'other' && race.customDistance != null) {
 		return `${race.customDistance} ${unit}`;
 	}
 	return race.distance ? RACE_DISTANCE_INFO[race.distance].label : 'New race';
 }
+
+// ---- The rows' answers ----------------------------------------------------------------------
+
+/** A number as written: at most two decimals, no trailing zeros (24.50 → "24.5"). */
+const trim = (n: number) => String(Math.round(n * 100) / 100);
+
+/** "3 runs", "1 session": a count and its noun, the noun plural unless the count is one. */
+const count = (n: number, one: string, many: string) => `${trim(n)} ${n === 1 ? one : many}`;
+
+/** A distance in the running unit: "18 km", "11.5 mi". */
+export const distanceValue = (distance: number | null, unit: Unit) =>
+	distance == null ? undefined : `${trim(distance)} ${unit}`;
+
+/** A usual running week: "24 km in 3 runs", "24 km", "3 runs", or nothing told. */
+export function runningWeekValue(
+	run: Pick<RunningDraft, 'weeklyDistance' | 'runsPerWeek' | 'unit'>
+): string | undefined {
+	const distance = distanceValue(run.weeklyDistance, run.unit);
+	const runs = run.runsPerWeek == null ? undefined : count(run.runsPerWeek, 'run', 'runs');
+	return distance && runs ? `${distance} in ${runs}` : (distance ?? runs);
+}
+
+/** An easy pace as a time a unit: "5:45 a km", "8:05 a mile"; nothing while blank or unreadable. */
+export function paceValue(pace: string, unit: Unit): string | undefined {
+	const seconds = timeSeconds(pace);
+	if (typeof seconds !== 'number') return undefined;
+	return `${formatDuration(seconds)} a ${unit === 'km' ? 'km' : 'mile'}`;
+}
+
+/** Recent races in words: "None", the one race and its time ("10K in 48:30"), or "3 races". */
+export function racesValue(
+	races: readonly (Pick<RaceDraft, 'distance' | 'time'> &
+		Partial<Pick<RaceDraft, 'customDistance'>>)[],
+	unit: Unit
+): string {
+	const [race] = races;
+	if (!race) return 'None';
+	if (races.length > 1) return `${races.length} races`;
+	const seconds = timeSeconds(race.time);
+	const name = raceName(race, unit);
+	return typeof seconds === 'number' ? `${name} in ${formatDuration(seconds)}` : name;
+}
+
+/** A usual Muay Thai week: "2 sessions, 1 sparring", either alone, or nothing told. */
+export function muayThaiWeekValue(
+	mt: Pick<MuayThaiDraft, 'sessionsPerWeek' | 'sparringPerWeek'>
+): string | undefined {
+	const parts = [
+		mt.sessionsPerWeek == null ? undefined : count(mt.sessionsPerWeek, 'session', 'sessions'),
+		mt.sparringPerWeek == null ? undefined : `${trim(mt.sparringPerWeek)} sparring`
+	].filter(Boolean);
+	return parts.length ? parts.join(', ') : undefined;
+}
+
+/** Fights so far: "None" for none, else the number; nothing until told. */
+export const fightsValue = (fights: number | null) =>
+	fights == null ? undefined : fights === 0 ? 'None' : String(fights);
+
+/** A heart rate in whole beats a minute: "188 bpm". */
+export const bpmValue = (bpm: number | null) => (bpm == null ? undefined : `${bpm} bpm`);

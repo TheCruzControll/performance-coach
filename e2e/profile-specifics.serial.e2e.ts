@@ -1,14 +1,17 @@
 /**
- * Profile → Running & Muay Thai: running volume, easy pace and race times, and Muay Thai
- * sessions, sparring and fights, each shown while its discipline is in play. Serial (one test at
- * a time, after the functional suites): every test starts from a blank training profile, which
- * every browser and worker shares.
+ * Profile → Running and Muay Thai: running volume, easy pace, heart rate and race times, and
+ * Muay Thai sessions, sparring and fights, each shown while its discipline is in play. Each
+ * figure is a row that opens a short sheet of fields; Recent races is a sub-screen of race rows,
+ * each race a sheet. Serial (one test at a time, after the functional suites): every test starts
+ * from a blank training profile, which every browser and worker shares.
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { DESKTOP, expectNoSideScroll } from './desktop';
 import {
 	captureScreen,
 	gotoHydrated,
+	openSheet,
 	profileAction,
 	query,
 	resetTrainingProfile,
@@ -55,22 +58,68 @@ async function editorReady(page: Page) {
 	await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
 }
 
-const part = (page: Page, name: 'Running' | 'Muay Thai') =>
+const part = (page: Page, name: 'Running' | 'Heart rate' | 'Muay Thai') =>
 	page.getByRole('region', { name, exact: true });
+/** The race rows on Recent races, and their titles (each race's distance). */
 const races = (page: Page) => page.getByTestId('race');
-const raceNames = (page: Page) => races(page).getByRole('heading');
+const raceNames = (page: Page) => races(page).locator('.title');
 const field = (scope: Locator | Page, name: string) =>
 	scope.getByRole('textbox', { name, exact: true });
 const save = (page: Page) => page.getByTestId('save-section');
+const TIME_FORMAT = 'Type it as h.mm.ss or m.ss, like 1.45.30';
 
-/** Add a race, pick its distance and type its time; the race, wherever it is in the list. */
+/** Close the open sheet as a phone's keyboard or a desk's does; what was typed stays. */
+async function closeSheet(page: Page, sheet: Locator) {
+	await page.keyboard.press('Escape');
+	await expect(sheet).toBeHidden();
+}
+
+/** Open a SheetRow in `scope`, fill its fields by name, and close it. */
+async function fillSheet(
+	page: Page,
+	scope: Locator,
+	label: string,
+	fields: Record<string, string>,
+	title?: string
+) {
+	const sheet = await openSheet(scope, page, label, title);
+	for (const [name, text] of Object.entries(fields)) await field(sheet, name).fill(text);
+	await closeSheet(page, sheet);
+}
+
+/** Recent races, from the Running group: a screen of its own, with its way back. */
+async function openRaces(page: Page) {
+	await page.getByTestId('races-row').click();
+	await expect(page.getByRole('heading', { level: 1, name: 'Recent races' })).toBeFocused();
+	await expect(page.getByTestId('sub-back')).toHaveText('Running and Muay Thai');
+}
+
+/** The open race's sheet: one race's at a time. */
+const raceSheet = (page: Page) => page.getByRole('dialog', { name: 'A recent race' });
+
+/** Add a race on Recent races: its sheet opens at once; pick its distance and type its time. */
 async function addRace(page: Page, distance: string, time: string) {
-	const place = await races(page).count();
-	await page.getByRole('button', { name: 'Add a race' }).click();
-	const race = races(page).nth(place);
-	await race.getByRole('radio', { name: distance, exact: true }).check();
-	await field(race, 'Time').fill(time);
-	return race;
+	await page.getByTestId('add-race').click();
+	const sheet = raceSheet(page);
+	await expect(sheet).toBeVisible();
+	await sheet.getByRole('radio', { name: distance, exact: true }).check();
+	await field(sheet, 'Your time').fill(time);
+	return sheet;
+}
+
+/** Open the race in this place on Recent races. */
+async function openRace(page: Page, place: number) {
+	await races(page).nth(place).click();
+	const sheet = raceSheet(page);
+	await expect(sheet).toBeVisible();
+	return sheet;
+}
+
+/** A row's error is one red line under it, and the row is marked invalid and says why. */
+async function expectRowError(row: Locator, message: string) {
+	await expect(row).toHaveAttribute('aria-invalid', 'true');
+	await expect(row).toHaveAccessibleDescription(message);
+	await expect(row.locator('..').getByText(message, { exact: true })).toBeVisible();
 }
 
 test.beforeEach(async () => {
@@ -92,15 +141,16 @@ test('Profile lists the section, and running and Muay Thai goals bring both part
 	).toBeVisible();
 	await editorReady(page);
 	await expect(part(page, 'Running')).toBeVisible();
+	await expect(part(page, 'Heart rate')).toBeVisible();
 	await expect(part(page, 'Muay Thai')).toBeVisible();
 	await expect(page.getByTestId('specifics-empty')).toHaveCount(0);
 	await expect(page.getByRole('button', { name: /^Add (running|Muay Thai)$/ })).toHaveCount(0);
-	await expect(races(page)).toHaveCount(0);
-	const { scrollWidth, innerWidth } = await page.evaluate(() => ({
-		scrollWidth: document.documentElement.scrollWidth,
-		innerWidth: window.innerWidth
-	}));
-	expect(scrollWidth).toBeLessThanOrEqual(innerWidth);
+	// Each figure is a row with its answer, "Add" until there is one; no races says None.
+	await expect(page.getByTestId('run-week')).toHaveAccessibleName(/^A usual week\s*Add$/);
+	await expect(page.getByTestId('races-row')).toHaveAccessibleName(/^Recent races\s*None$/);
+	await expect(page.getByTestId('hr-max')).toHaveAccessibleName(/^Max\s*Add$/);
+	await expect(page.getByTestId('mt-fights')).toHaveAccessibleName(/^Fights so far\s*Add$/);
+	await expectNoSideScroll(page);
 	expect(errors).toEqual([]);
 });
 
@@ -108,49 +158,76 @@ test('times typed on the decimal keypad save in seconds, and read back written o
 	page
 }, testInfo) => {
 	await seedGoals('running', 'muay_thai');
-	await page.goto('/profile/specifics');
+	await gotoHydrated(page, '/profile/specifics');
 	await editorReady(page);
 	const running = part(page, 'Running');
-	await field(running, 'Weekly distance').fill('40');
-	await field(running, 'Runs').fill('4');
+	await fillSheet(page, running, 'A usual week', { 'Weekly distance': '24', Runs: '3' });
+	await expect(page.getByTestId('run-week')).toHaveAccessibleName(
+		/^A usual week\s*\d+ km in \d+ runs$/
+	);
 	// The iPhone's decimal keypad has no ':', so a time is typed with its '.'.
-	const pace = field(running, 'Easy pace');
+	const paceSheet = await openSheet(running, page, 'Easy pace');
+	const pace = field(paceSheet, 'Easy pace');
 	await expect(pace).toHaveAttribute('inputmode', 'decimal');
-	await expect(page.getByText('m.ss per km, like 5.45')).toBeVisible();
+	await expect(paceSheet.getByText('m.ss per km, like 5.45')).toBeVisible();
 	await pace.fill('5.45');
+	await closeSheet(page, paceSheet);
+	await expect(page.getByTestId('run-pace')).toHaveAccessibleName(/^Easy pace\s*5:45 a km$/);
+	const heartRate = part(page, 'Heart rate');
+	await fillSheet(page, heartRate, 'Max', { 'Max heart rate': '188' }, 'Max heart rate');
+	await expect(page.getByTestId('hr-max')).toHaveAccessibleName(/^Max\s*188 bpm$/);
 
+	await openRaces(page);
 	const half = await addRace(page, 'Half marathon', '1.45.30');
-	await expect(field(half, 'Time')).toHaveAttribute('inputmode', 'decimal');
+	await expect(field(half, 'Your time')).toHaveAttribute('inputmode', 'decimal');
 	await half.getByLabel(/^When/).fill('2026-10-12');
+	await closeSheet(page, half);
 	await expect(raceNames(page)).toHaveText(['Half marathon']);
+	// The new race's sheet opened from its row, so the focus is back there.
+	await expect(races(page).first()).toBeFocused();
 
-	// An "Other" race needs to say how far it was: nothing is saved until it does.
-	const other = await addRace(page, 'Other', '58.10');
+	// Another distance needs to say how far it was: nothing is saved until it does.
+	await closeSheet(page, await addRace(page, 'Another distance', '58.10'));
 	await save(page).click();
-	await expect(other.getByRole('alert')).toHaveText('How far was it?');
-	await expect(half.getByRole('alert')).toHaveCount(0);
-	await expect(field(other, 'How far?')).toBeFocused();
+	await expectRowError(races(page).nth(1), 'How far was it?');
+	await expect(races(page).first()).not.toHaveAttribute('aria-invalid');
+	await expect(races(page).nth(1)).toBeFocused();
 	await expect(page.getByTestId('save-error')).toContainText('Check the highlighted fields');
+	const other = await openRace(page, 1);
+	await expect(other.getByRole('alert')).toHaveText('How far was it?');
 	await field(other, 'How far?').fill('12');
+	await closeSheet(page, other);
 	await expect(raceNames(page)).toHaveText(['Half marathon', '12 km']);
 
 	// A time that is not one is refused on its own race, before anything is posted.
-	const tenK = await addRace(page, '10K', 'abc');
+	await closeSheet(page, await addRace(page, '10K', 'abc'));
 	await save(page).click();
-	await expect(tenK.getByRole('alert')).toHaveText('Type it as h.mm.ss or m.ss, like 1.45.30');
-	await expect(races(page).getByRole('alert')).toHaveCount(1);
+	await expectRowError(races(page).nth(2), TIME_FORMAT);
+	await expect(page.locator('[data-testid="race"][aria-invalid="true"]')).toHaveCount(1);
 	expect(await stored()).toEqual({ running: [], races: [], muayThai: [] });
-	await field(tenK, 'Time').fill('47.05');
+	const tenK = await openRace(page, 2);
+	await expect(tenK.getByRole('alert')).toHaveText(TIME_FORMAT);
+	await field(tenK, 'Your time').fill('47.05');
+	await closeSheet(page, tenK);
+
+	// Back on the section, the focus is on the row that opened the races.
+	await page.getByTestId('sub-back').click();
+	await expect(page.getByTestId('races-row')).toBeFocused();
+	await expect(page.getByTestId('races-row')).toHaveAccessibleName(/^Recent races\s*3 races$/);
 
 	const muayThai = part(page, 'Muay Thai');
-	await field(muayThai, 'Sessions').fill('3');
-	await field(muayThai, 'Sparring').fill('1');
-	await expect(field(muayThai, 'Fights')).toHaveAttribute('inputmode', 'numeric');
-	await field(muayThai, 'Fights').fill('2');
+	await fillSheet(page, muayThai, 'A usual week', { Sessions: '3', Sparring: '1' });
+	await expect(page.getByTestId('mt-week')).toHaveAccessibleName(
+		/^A usual week\s*3 sessions, 1 sparring$/
+	);
+	const fights = await openSheet(muayThai, page, 'Fights so far');
+	await expect(field(fights, 'Fights')).toHaveAttribute('inputmode', 'numeric');
+	await field(fights, 'Fights').fill('2');
+	await closeSheet(page, fights);
 	await save(page).click();
 	await expect(toastWith(page, 'Saved')).toBeVisible();
 	expect(await stored()).toEqual({
-		running: [{ unit: 'km', weekly: 40, runs: 4, longest: null, pace: 345 }],
+		running: [{ unit: 'km', weekly: 24, runs: 3, longest: null, pace: 345 }],
 		races: [
 			{ distance: '10k', custom: null, seconds: 2825, raced_on: null },
 			{ distance: 'other', custom: 12, seconds: 3490, raced_on: null },
@@ -163,17 +240,30 @@ test('times typed on the decimal keypad save in seconds, and read back written o
 
 	await page.reload();
 	await editorReady(page);
-	await expect(pace).toHaveValue('5:45');
+	await expect(page.getByTestId('run-week')).toHaveAccessibleName(
+		/^A usual week\s*24 km in 3 runs$/
+	);
+	await expect(page.getByTestId('run-pace')).toHaveAccessibleName(/^Easy pace\s*5:45 a km$/);
+	await expect(page.getByTestId('hr-max')).toHaveAccessibleName(/^Max\s*188 bpm$/);
+	await expect(page.getByTestId('mt-week')).toHaveAccessibleName(
+		/^A usual week\s*3 sessions, 1 sparring$/
+	);
+	await expect(page.getByTestId('mt-fights')).toHaveAccessibleName(/^Fights so far\s*2$/);
+	const paceAgain = await openSheet(running, page, 'Easy pace');
+	await expect(field(paceAgain, 'Easy pace')).toHaveValue('5:45');
+	await closeSheet(page, paceAgain);
+	await openRaces(page);
 	await expect(raceNames(page)).toHaveText(['10K', '12 km', 'Half marathon']);
 	for (const [i, time] of ['47:05', '58:10', '1:45:30'].entries()) {
-		await expect(field(races(page).nth(i), 'Time')).toHaveValue(time);
+		await expect(races(page).nth(i)).toHaveAccessibleName(new RegExp(`\\s*${time}$`));
 	}
-	await expect(races(page).nth(2).getByLabel(/^When/)).toHaveValue('2026-10-12');
-	await expect(field(muayThai, 'Sessions')).toHaveValue('3');
-	await expect(field(muayThai, 'Sparring')).toHaveValue('1');
-	await expect(field(muayThai, 'Fights')).toHaveValue('2');
+	const halfAgain = await openRace(page, 2);
+	await expect(field(halfAgain, 'Your time')).toHaveValue('1:45:30');
+	await expect(halfAgain.getByLabel(/^When/)).toHaveValue('2026-10-12');
+	await closeSheet(page, halfAgain);
 
 	// Nothing unsaved: leaving asks nothing.
+	await page.getByTestId('sub-back').click();
 	await page.getByTestId('back-to-profile').click();
 	await expect(page).toHaveURL('/profile');
 });
@@ -194,47 +284,58 @@ test('removing a race in the middle leaves the others as they were, errors inclu
 		},
 		muayThai: null
 	});
-	await page.goto('/profile/specifics');
+	await gotoHydrated(page, '/profile/specifics');
 	await editorReady(page);
+	await expect(page.getByTestId('races-row')).toHaveAccessibleName(/^Recent races\s*3 races$/);
+	await openRaces(page);
 	await expect(raceNames(page)).toHaveText(['5K', '10K', 'Half marathon']);
-	const half = races(page).nth(2);
-	await field(half, 'Time').fill('abc');
+	const halfSheet = await openRace(page, 2);
+	await field(halfSheet, 'Your time').fill('abc');
+	await closeSheet(page, halfSheet);
 	await save(page).click();
-	await expect(half.getByRole('alert')).toHaveText('Type it as h.mm.ss or m.ss, like 1.45.30');
+	await expectRowError(races(page).nth(2), TIME_FORMAT);
 
-	// The cards below stay the same elements, so nothing in them (half-typed text, say) moves.
-	await half.evaluate((el) => el.setAttribute('data-kept', ''));
-	await field(races(page).first(), 'Time').fill('22.30');
-	const remove = page.getByRole('button', { name: 'Remove 10K' });
-	await remove.focus();
-	await page.keyboard.press('Enter');
+	// The rows below stay the same elements, so nothing in them (half-typed text, say) moves.
+	await races(page)
+		.nth(2)
+		.evaluate((el) => el.setAttribute('data-kept', ''));
+	const fiveK = await openRace(page, 0);
+	await field(fiveK, 'Your time').fill('22.30');
+	await closeSheet(page, fiveK);
+	const tenK = await openRace(page, 1);
+	await tenK.getByTestId('race-remove').click();
+	await expect(tenK).toBeHidden();
 	await expect(raceNames(page)).toHaveText(['5K', 'Half marathon']);
 	await expect(races(page).nth(1)).toHaveAttribute('data-kept', '');
-	// Its error stayed with it, and keyboard focus moved to the next race's Remove.
-	await expect(races(page).nth(1).getByRole('alert')).toHaveText(
-		'Type it as h.mm.ss or m.ss, like 1.45.30'
-	);
-	await expect(races(page).first().getByRole('alert')).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'Remove Half marathon' })).toBeFocused();
+	// Its error stayed with it, and the focus stayed in the list.
+	await expectRowError(races(page).nth(1), TIME_FORMAT);
+	await expect(races(page).first()).not.toHaveAttribute('aria-invalid');
+	// Removing index 1 leaves Half marathon at index 1, and removeRace focuses rows[1].
+	await expect(races(page).nth(1)).toBeFocused();
 	await expect(page.getByRole('status').filter({ hasText: 'Removed 10K' })).toHaveCount(1);
-	await expect(field(races(page).first(), 'Time')).toHaveValue('22.30');
+	await expect(races(page).first()).toHaveAccessibleName(/^5K\s*22\.30$/);
 
-	await field(races(page).nth(1), 'Time').fill('1 44 59');
+	const halfAgain = await openRace(page, 1);
+	await field(halfAgain, 'Your time').fill('1 44 59');
+	await closeSheet(page, halfAgain);
 	await save(page).click();
 	await expect(toastWith(page, 'Saved')).toBeVisible();
 	expect((await stored()).races).toEqual([
 		{ distance: '5k', custom: null, seconds: 1350, raced_on: null },
 		{ distance: 'half_marathon', custom: null, seconds: 6299, raced_on: null }
 	]);
+	// Saved, Recent races stays open, its rows now what was stored.
+	await expect(page.getByRole('heading', { level: 1, name: 'Recent races' })).toBeVisible();
+	await expect(raceNames(page)).toHaveText(['5K', 'Half marathon']);
 });
 
 test('with neither in play the screen offers both, and what is added stays after a save', async ({
 	page
 }, testInfo) => {
-	await page.goto('/profile/specifics');
+	await gotoHydrated(page, '/profile/specifics');
 	await editorReady(page);
 	const empty = page.getByTestId('specifics-empty');
-	await expect(empty).toContainText('No running or Muay Thai yet');
+	await expect(empty).toContainText('If you also run or train Muay Thai, add it');
 	await expect(empty.getByRole('button', { name: 'Add running' })).toBeVisible();
 	await expect(empty.getByRole('button', { name: 'Add Muay Thai' })).toBeVisible();
 	await expect(part(page, 'Running')).toHaveCount(0);
@@ -243,12 +344,11 @@ test('with neither in play the screen offers both, and what is added stays after
 
 	await empty.getByRole('button', { name: 'Add Muay Thai' }).click();
 	await expect(empty).toHaveCount(0);
-	const muayThai = part(page, 'Muay Thai');
-	await expect(field(muayThai, 'Sessions')).toBeFocused();
+	await expect(page.getByTestId('mt-week')).toBeFocused();
 	await expect(page.getByRole('status').filter({ hasText: 'Added Muay Thai' })).toHaveCount(1);
 	// The other one can still be added.
 	await expect(page.getByRole('button', { name: 'Add running' })).toBeVisible();
-	await field(muayThai, 'Sessions').fill('2');
+	await fillSheet(page, part(page, 'Muay Thai'), 'A usual week', { Sessions: '2' });
 	await save(page).click();
 	await expect(toastWith(page, 'Saved')).toBeVisible();
 	// Running was never shown, so the save left it as it was: not there.
@@ -261,15 +361,38 @@ test('with neither in play the screen offers both, and what is added stays after
 	// Saved, it is part of the screen with no goal in it.
 	await page.reload();
 	await editorReady(page);
-	await expect(field(part(page, 'Muay Thai'), 'Sessions')).toHaveValue('2');
+	await expect(page.getByTestId('mt-week')).toHaveAccessibleName(/^A usual week\s*2 sessions$/);
 	await expect(page.getByTestId('specifics-empty')).toHaveCount(0);
 	await page.getByRole('button', { name: 'Add running' }).click();
-	await expect(field(part(page, 'Running'), 'Weekly distance')).toBeFocused();
+	await expect(page.getByTestId('run-week')).toBeFocused();
 	await expect(page.getByRole('button', { name: /^Add (running|Muay Thai)$/ })).toHaveCount(0);
 });
 
+test.describe('at a desk', () => {
+	test.use(DESKTOP);
+
+	test('Recent races opens in the column with its way back, and a race is the centred dialog', async ({
+		page
+	}) => {
+		await seedGoals('running');
+		await gotoHydrated(page, '/profile/specifics');
+		await editorReady(page);
+		await openRaces(page);
+		await expect(page.getByTestId('sub-back')).toBeVisible();
+		const sheet = await addRace(page, '5K', '22.40');
+		await expect(sheet).toHaveClass(/\bvisible\b/);
+		const panel = sheet.locator('.sheet');
+		await expect.poll(() => panel.evaluate((el) => el.getAnimations().length)).toBe(0);
+		const [box, window] = [(await panel.boundingBox())!, (await sheet.boundingBox())!];
+		expect(Math.abs(box.x + box.width / 2 - (window.x + window.width / 2))).toBeLessThanOrEqual(2);
+		await closeSheet(page, sheet);
+		await expect(races(page)).toHaveAccessibleName(/^5K\s*22\.40$/);
+		await expectNoSideScroll(page);
+	});
+});
+
 for (const theme of ['dark', 'light'] as const) {
-	test(`both parts, a race and its errors have no WCAG A/AA violations (${theme})`, async ({
+	test(`the rows, a race and their errors have no WCAG A/AA violations (${theme})`, async ({
 		page
 	}, testInfo) => {
 		await page.addInitScript(
@@ -277,23 +400,35 @@ for (const theme of ['dark', 'light'] as const) {
 			theme
 		);
 		await seedGoals('running', 'muay_thai');
-		await page.goto('/profile/specifics');
+		await gotoHydrated(page, '/profile/specifics');
 		await editorReady(page);
 		if (theme === 'light')
 			await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-		await field(part(page, 'Running'), 'Easy pace').fill('5.5');
-		const race = await addRace(page, 'Other', 'abc');
+		await fillSheet(page, part(page, 'Running'), 'Easy pace', { 'Easy pace': '5.5' });
+		await openRaces(page);
+		await closeSheet(page, await addRace(page, 'Another distance', 'abc'));
 		await save(page).click();
+		await expect(races(page)).toHaveAttribute('aria-invalid', 'true');
+		const audit = async () => {
+			await page.evaluate(() => document.fonts.ready);
+			await page.waitForTimeout(400);
+			const { violations } = await new AxeBuilder({ page })
+				.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+				.analyze();
+			return violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.target.join(' ')}`));
+		};
+		// The race's sheet, open on its two errors.
+		const race = await openRace(page, 0);
 		await expect(race.getByRole('alert')).toHaveCount(2);
-		await expect(part(page, 'Running').getByRole('alert')).toHaveText('Type it as m.ss, like 5.45');
-		await page.evaluate(() => document.fonts.ready);
-		await page.waitForTimeout(400);
-		const { violations } = await new AxeBuilder({ page })
-			.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-			.analyze();
-		expect(violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.target.join(' ')}`))).toEqual(
-			[]
+		expect(await audit()).toEqual([]);
+		await closeSheet(page, race);
+		// The section: the easy pace marked, and Recent races saying it needs an answer.
+		await page.getByTestId('sub-back').click();
+		await expectRowError(page.getByTestId('run-pace'), 'Type it as m.ss, like 5.45');
+		await expect(page.getByTestId('races-row')).toHaveAccessibleName(
+			/^Recent races\s*Needs an answer$/
 		);
+		expect(await audit()).toEqual([]);
 		await captureScreen(page, testInfo, `profile-specifics-errors-${theme}`);
 	});
 }

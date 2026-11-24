@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { SCHEMAS, validate } from '#lib/domain/profile/schemas.ts';
 import type { ExercisePreference } from '#lib/domain/profile/types.ts';
-import { exercisesDraft, exercisesPayload, listErrors } from './exercise-preferences';
+import type { LibraryExercise } from '#lib/domain/workout/index.ts';
+import {
+	exercisesDraft,
+	exercisesPayload,
+	listErrors,
+	searchExercises
+} from './exercise-preferences';
 
 /** As the services return them: dislikes first (the repository sorts by sentiment). */
 const saved: ExercisePreference[] = [
@@ -108,5 +114,47 @@ describe('listErrors', () => {
 			likes: undefined,
 			dislikes: 'Each exercise once'
 		});
+	});
+});
+
+describe('searchExercises', () => {
+	/** A library entry with only what the search reads: its name and aliases. */
+	const entry = (name: string, aliases: string[] = []) =>
+		({ id: name, key: null, name, aliases }) as unknown as LibraryExercise;
+	const library = [entry('Front squat'), entry('Front raise'), entry('Back squat')];
+
+	it('finds library exercises by name, best first, marking those already in a list', () => {
+		expect(searchExercises(library, 'front', ['front squat'])).toEqual([
+			{ name: 'Front squat', added: true },
+			{ name: 'Front raise', added: false }
+		]);
+	});
+
+	it('finds an exercise by its alias, and gives its name', () => {
+		const rdl = [entry('Romanian deadlift', ['RDL']), entry('Deadlift')];
+		expect(searchExercises(rdl, 'rdl', [])).toEqual([{ name: 'Romanian deadlift', added: false }]);
+	});
+
+	it('gives nothing for a blank query', () => {
+		expect(searchExercises(library, '', [])).toEqual([]);
+		expect(searchExercises(null, '   ', [])).toEqual([]);
+	});
+
+	it('searches the suggestions with no library: those starting with it, then containing it', () => {
+		expect(searchExercises(null, 'dead', [])).toEqual([
+			{ name: 'Deadlift', added: false },
+			{ name: 'Romanian deadlift', added: false }
+		]);
+		expect(searchExercises(null, ' Squat ', ['BACK SQUAT'])).toEqual([
+			{ name: 'Back squat', added: true },
+			{ name: 'Front squat', added: false },
+			{ name: 'Bulgarian split squat', added: false }
+		]);
+	});
+
+	it('lists eight at most', () => {
+		const many = Array.from({ length: 12 }, (_, i) => entry(`Press ${i + 1}`));
+		expect(searchExercises(many, 'press', [])).toHaveLength(8);
+		expect(searchExercises(null, 'e', [])).toHaveLength(8);
 	});
 });

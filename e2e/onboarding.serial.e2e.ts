@@ -158,11 +158,20 @@ test('a fight and a marathon, every 1RM blank: set up step by step, stored, and 
 	await captureScreen(page, testInfo, 'onboarding-strength');
 	await moveOn(page, 'continue', 'specifics');
 
-	// Running and Muay Thai goals bring the specifics step.
+	// Running and Muay Thai goals bring the specifics step: each figure a row opening its sheet.
 	const running = page.getByRole('region', { name: 'Running', exact: true });
-	await running.getByRole('textbox', { name: 'Easy pace', exact: true }).fill('5.45');
+	await running.getByRole('button', { name: /^Easy pace/ }).click();
+	const pace = page.getByRole('dialog', { name: 'Easy pace' });
+	await pace.getByRole('textbox', { name: 'Easy pace', exact: true }).fill('5.45');
+	await page.keyboard.press('Escape');
+	await expect(pace).toBeHidden();
 	const muayThai = page.getByRole('region', { name: 'Muay Thai', exact: true });
-	await muayThai.getByRole('textbox', { name: 'Sessions', exact: true }).fill('3');
+	await muayThai.getByRole('button', { name: /^A usual week/ }).click();
+	const week = page.getByRole('dialog', { name: 'A usual week' });
+	await week.getByRole('textbox', { name: 'Sessions', exact: true }).fill('3');
+	await page.keyboard.press('Escape');
+	await expect(week).toBeHidden();
+	await expect(running.getByTestId('run-pace')).toHaveAccessibleName(/^Easy pace\s*5:45 a km$/);
 	await captureScreen(page, testInfo, 'onboarding-specifics');
 	// No empty profile has this step, so a11y-suite.ts cannot reach it: audited here, both themes.
 	expect(await audit(page)).toEqual([]);

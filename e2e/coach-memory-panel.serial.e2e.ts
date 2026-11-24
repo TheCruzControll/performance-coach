@@ -89,9 +89,7 @@ test('a dislike said to the coach is in Profile, and a new conversation knows it
 	// Profile → Exercises holds it, as the owner's own dislike.
 	await gotoHydrated(page, '/profile/exercises');
 	await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
-	await expect(
-		page.getByRole('list', { name: 'Exercises you’d rather swap out', exact: true })
-	).toContainText(SPLIT_SQUAT);
+	await expect(page.getByTestId('dislikes').getByRole('list')).toContainText(SPLIT_SQUAT);
 
 	// A new conversation: its panel shows the dislike, with Profile → Exercises to change it.
 	await openKnows(page);

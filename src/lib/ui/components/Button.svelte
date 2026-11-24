@@ -37,6 +37,8 @@
 		/** A disclosure's: whether what it shows is shown, and its id. */
 		'aria-expanded'?: boolean;
 		'aria-controls'?: string;
+		/** The id of the sub-screen this opens, so closing it can put the focus back here. */
+		'data-opens'?: string;
 		'data-testid'?: string;
 		children: Snippet;
 	}
