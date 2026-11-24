@@ -234,6 +234,10 @@ milestones.md.
   plates as rows (`PickRow`s, and a sheet with Bar weight and a row per plate); the rest timer is
   "Rest for" and four rows, then the rest by its class with Done resting, one line on Train while
   it runs. The e2e run and the budgets are CI's to prove.
+- **Instrument v2 logging off the plan (`v2/09b`).** With no workout, `/workout` asks "What did
+  you do", then "What kind", and an own session starts titled by its type; the session page is the
+  duration stepper and rows for What kind, Effort (1 to 10), Notes, More to keep and Session
+  options, each opening its sheet. The e2e run and the budgets are CI's to prove.
 - **Instrument v2 Profile section frame (`v2/22a`).** A section is a 40/44 title and an optional
   lede over its fields and rows; a pick-one answer is a row that opens a sheet (`PickRow`), a short
   entry a sheet of fields (`SheetRow`), and a section can open sub-screens of its own. Name and

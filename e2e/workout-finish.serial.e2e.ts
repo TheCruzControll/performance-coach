@@ -576,6 +576,14 @@ test.describe('discarding a workout', () => {
 			);
 			await menu(page).getByTestId('confirm-discard').click();
 			await expect(page.getByTestId('workout-empty')).toBeVisible();
+			// No header on the empty page: the sync pill sits in its top line while the discard
+			// waits, and opens the sync sheet.
+			const pill = page.getByTestId('workout-empty').getByTestId('sync-pill');
+			await expect(pill).toBeVisible();
+			await pill.click();
+			await expect(page.getByTestId('sync-sheet')).toBeVisible();
+			await page.keyboard.press('Escape');
+			await expect(page.getByTestId('sync-sheet')).toBeHidden();
 
 			for (const route of held.splice(0)) await route.abort().catch(() => {});
 			await page.unroute('**/api/workouts/**');

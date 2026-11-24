@@ -717,7 +717,9 @@ later-pass screen).
   logger as a card under them). The rest timer docks at the top of the main column under the
   header, over nothing, first in the DOM. A session, the start flow and every state screen keep one
   readable column, centred. Below 1024 px one column, the logger and the rest pill in the thumb
-  zone (The workout screen).
+  zone (The workout screen). With no workout, `/workout` has no header: 'What did you do' sits at
+  the foot of the window with its × at the top, the sync pill beside it once a change has waited
+  (a discard not yet synced), in the readable column from 1024 px.
 - **Workout history** (`/progress/workouts/[[id]]`): split. From 1024 px the list (waiting to sync,
   then completed) beside the picked workout's detail on the same route (`aria-current`); with
   none picked, a calm 'Pick a workout' card. Below 1024 px the list and the detail are separate
@@ -908,10 +910,11 @@ workout pages and is audited on `/design` → Workout, one state at a time.
 | `OtherFixSheet`                  | A refused session log: why first, then `SessionFields` with the server's errors at their fields; a metric its plan lacks can be removed; Save re-queues it under the same id.                                                     |
 | `SubstituteFixSheet`             | A refused swap: the slot's alternatives again, ranked for the swap's reason, under why; choosing one re-queues the swap under the same id.                                                                                        |
 | `StartFlow`                      | Getting your session ready (a skeleton, aria-busy), the conflict sheet, signed out, or unreachable with no kit and a session of the owner's own instead; at the readable width.                                                   |
-| `EmptyWorkout`, `SignedOutState` | No workout on this device: Today, or a strength, run or other session of the owner's own. After a 401: no workout details, the changes waiting and Sign in.                                                                       |
+| `EmptyWorkout`, `SignedOutState` | No workout here: 'What did you do', then Strength, A run, or Muay Thai or something else, which asks 'What kind' (a `pushState` step); its × goes back, or to Today; no header. After a 401: the changes waiting and Sign in.     |
 | `SegmentRow`                     | `src/routes/workout/run`. A run's segment: number, what it is, its target or what was run with the pace, its state in words; a 44 px button, the arrows move between rows.                                                        |
 | `RunView`, `SegmentFields`       | The run: the current segment's distance, time and heart rate (nudged or typed, the pace worked out as they change), Log segment, the segments, the totals, RPE and notes. Options (the run's quick actions) beside Log segment.   |
-| `OtherView`, `SessionFields`     | `src/routes/workout/session`. What the plan asked for, then type, duration, RPE chips, each metric's control (`MetricField`) and notes, and Options (the session's quick actions); a draft on the device until Save.              |
+| `OtherView`                      | `src/routes/workout/session`. The plan's line or 'Today · your own session', a 52 px duration stepper, then What kind, Effort (`EffortScale`, 1 to 10), Notes, More to keep (`KeepRows`), Session options: rows opening sheets.   |
+| `SessionFields`                  | The Fix editor's fields (`OtherFixSheet`): type, duration, RPE chips, each metric's control (`MetricField`) and notes; unchanged until v2/12.                                                                                     |
 | `WorkoutList`                    | `src/routes/(app)/progress/workouts`. History, newest first: waiting to sync (not links), then each workout's dot, title, date, duration and key number; one 44 px link, `aria-current`.                                          |
 | `WorkoutDetail`                  | One workout in words: its numbers, PRs, sets with RPE and states, a run's segments (`RunDetail`) or a session's metrics (`OtherDetail`); a name opens its history sheet.                                                          |
 | `ResumeBar`                      | `src/routes/(app)`. One plain line on the tab bar: Resume {title} with the time, the sync pill and a chevron, N changes waiting to sync, or Continue here on Today; it raises `--resume-inset`, so it covers nothing.             |

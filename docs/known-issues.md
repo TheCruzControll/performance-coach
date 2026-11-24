@@ -55,8 +55,13 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
 - **`EmptyState` and `Notice` still take `icon` (and `tone`), and draw neither.** Closes when the
   last screen row drops them.
 - **Some screens still offer two actions in one `EmptyState`.** `SpecificsEditor.svelte:265`,
-  `ReviewPrompt.svelte:58`, `KnowsSheet.svelte:68`, `StartFlow.svelte:128`,
-  `EmptyWorkout.svelte:18`. Each closes with its screen row (v2/22, v2/14, v2/20, v2/10).
+  `ReviewPrompt.svelte:58`, `KnowsSheet.svelte:68`, `StartFlow.svelte:133`. Each closes with its
+  screen row (v2/22, v2/14, v2/20, v2/10).
+- **An own session's discipline is Muay Thai whatever its type.** The ad-hoc kit has always
+  recorded `muay_thai`; a mobility or conditioning session started from "What kind" counts there.
+  Closes when the ad-hoc kit maps a type to its discipline.
+- **The session page shows its title in the workout header, not as Paper's 40 px title.** Closes
+  with v2/10's header.
 - **The workout's rest is still the v1 pill (`src/lib/ui/workout/RestTimer.svelte`).** Train's
   rest follows Instrument v2 (`v2/09a`); the workout's resting screen is v2/10's. Closes with v2/10.
 - **Paper's desktop plate words differ from the phone's** ('What goes on the bar', 'Plates at this

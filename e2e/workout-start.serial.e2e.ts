@@ -496,11 +496,13 @@ test.describe('ad hoc', () => {
 		}, device);
 		await page.goto('/workout');
 		const empty = page.getByTestId('workout-empty');
-		await expect(empty.getByRole('link', { name: 'Muay Thai and other' })).toHaveAttribute(
+		await empty.getByTestId('adhoc-other').click();
+		await expect(empty.getByTestId('adhoc-kind-class')).toHaveAttribute(
 			'href',
-			'/workout?new=other'
+			'/workout?new=other&kind=class'
 		);
-		await empty.getByRole('link', { name: 'Run' }).click();
+		await page.goBack();
+		await empty.getByTestId('adhoc-run').click();
 		await expect(page).toHaveURL(/\/workout\/run$/);
 		await expect(page.getByTestId('workout-header')).toContainText('Run');
 		await expect(page.getByTestId('run-entry')).toBeVisible();
@@ -517,6 +519,26 @@ test.describe('ad hoc', () => {
 			session: null,
 			session_lineage: null
 		});
+	});
+
+	test('a session of your own started as its kind is titled by it and starts as that type', async ({
+		page
+	}) => {
+		await page.goto('/workout?new=other&kind=pad_work');
+		await expect(page).toHaveURL(/\/workout\/session$/);
+		await expect(page.getByTestId('workout-header').getByRole('heading', { level: 1 })).toHaveText(
+			'Pad work'
+		);
+		await expect(page.getByTestId('session-line')).toHaveText('Today · your own session');
+		await expect(page.getByTestId('session-kind')).toContainText('Pad work');
+		const { id, kit } = (await activeWorkout(page))!;
+		expect(kit).toMatchObject({
+			kind: 'other',
+			title: 'Pad work',
+			plannedSessionId: null,
+			other: { kind: 'pad_work', durationMinutes: 60 }
+		});
+		expect(await landed(page, id)).toMatchObject({ status: 'in_progress', lineage: null });
 	});
 });
 

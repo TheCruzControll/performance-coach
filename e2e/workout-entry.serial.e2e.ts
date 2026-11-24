@@ -8,8 +8,8 @@
  * - A completed session is a done line on Today that opens its History detail; the session
  *   screen reads Done · View.
  * - A training day has no 'Log something' link (it is in Train's More); a rest day's 'Log
- *   something anyway' and Train's 'Log a session' open the ad-hoc options; History's empty state
- *   links to Today.
+ *   something anyway' and Train's 'Log a session' open the ad-hoc options, whose × goes back where
+ *   the owner came from; History's empty state links to Today.
  * - The states are axe-clean in both themes and captured; on a desktop window Today's Start and
  *   the session's have hover and focus states and work by keyboard.
  * Serial: it stores a program, which empties the workouts. A test that fails requests with
@@ -246,6 +246,9 @@ test('a rest day’s Log something anyway and Train’s Log a session open the a
 	await page.getByTestId('log-a-session').click();
 	await expect(page).toHaveURL(/\/workout$/);
 	await expect(page.getByTestId('adhoc-run')).toBeVisible();
+	// Arrived from Train, the × goes back there.
+	await page.getByTestId('workout-close').click();
+	await expect(page).toHaveURL(/\/train/);
 });
 
 test('History’s empty state links to Today', async ({ page }) => {

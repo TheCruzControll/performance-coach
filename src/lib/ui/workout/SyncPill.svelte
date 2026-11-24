@@ -7,8 +7,8 @@
   focus. Quiet beside logging: small type on a faint surface, a warning tint only when the owner is
   needed; Saved, when all is well, is quiet text with its check and no pill. With `onopen`
   (whenever there is something to show) it is a 44 px button that opens the sync sheet, the pill inside it taking the hover (fine pointers) and the focus ring; `onintent` (pointer down,
-  hover, focus) lets the page fetch the sheet first. The workout header shows it, and the resume
-  bar reuses it. It sits flush right, so its box never depends on the words: the two longest any
+  hover, focus) lets the page fetch the sheet first. The workout header shows it (the empty
+  /workout page in its top line, once a change has waited), and the resume bar reuses it. It sits flush right, so its box never depends on the words: the two longest any
   state can show sit hidden in the same grid cell, in tabular figures, and size it at every text
   size (counts stop at "999+"), and the 44 px height is held whether or not it is a button. A change
   of words, which comes without input, never moves or resizes it.

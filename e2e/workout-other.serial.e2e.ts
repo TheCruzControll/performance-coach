@@ -1,7 +1,8 @@
 /**
  * Logging an other session on /workout/session against the real server (sync 'real'): the
- * fixture's Muay Thai class, seeded as an ad-hoc workout, saved with its minutes, RPE and metrics
- * and stored in Postgres; a change after it synced edits the one record with one audit row; an
+ * fixture's Muay Thai class, seeded as an ad-hoc workout, saved with its minutes, effort and
+ * metrics and stored in Postgres; the page is the duration's stepper and rows, each opening its
+ * sheet (What kind, Effort, Notes, More to keep and a metric's own); a change after it synced edits the one record with one audit row; an
  * ad-hoc conditioning session takes a metric of the owner's own; a refused other.log on a planned
  * class is fixed from the sync sheet; a reload restores what was changed but not saved. Each test
  * asserts only its own workout's rows, by client id. Serial, with the other workout specs that
@@ -36,8 +37,11 @@ test.beforeAll(async () => {
 const entry = (page: Page) => page.getByTestId('session-entry');
 const stepper = (scope: Locator, testId: string) =>
 	scope.getByTestId(testId).getByRole('spinbutton');
-const rpe = (page: Page, label: string) =>
-	entry(page).getByRole('radio', { name: label, exact: true });
+/** The session's title: the workout header's. */
+const title = (page: Page) => page.getByTestId('workout-header').getByRole('heading', { level: 1 });
+const sheet = (page: Page, name: string) => page.getByRole('dialog', { name, exact: true });
+const effortSheet = (page: Page) => sheet(page, 'How hard was it');
+const keepSheet = (page: Page) => sheet(page, 'More to keep');
 const save = (page: Page) => page.getByTestId('save-session');
 const pill = (page: Page) => page.getByTestId('sync-pill');
 const synced = (page: Page) => expect.poll(() => readOutbox(page), { timeout: 15_000 }).toEqual([]);
@@ -46,6 +50,37 @@ async function type(field: Locator, text: string) {
 	await field.click();
 	await field.fill(text);
 	await field.press('Enter');
+}
+
+/** Closes the open sheets, the top one first, back to the page. */
+async function closeSheets(page: Page) {
+	const open = page.locator('dialog[open]');
+	for (let n = await open.count(); n > 0; n--) {
+		await page.keyboard.press('Escape');
+		await expect(open).toHaveCount(n - 1);
+	}
+}
+
+/** Effort `n` from its row's sheet, which stays open until closed. */
+async function effort(page: Page, n: string) {
+	await page.getByTestId('session-effort').click();
+	await effortSheet(page).getByRole('radio', { name: n, exact: true }).check();
+	await closeSheets(page);
+}
+
+/** More to keep's sheet, opened from its row. */
+async function keep(page: Page) {
+	await page.getByTestId('session-keep').click();
+	await expect(keepSheet(page)).toBeVisible();
+	return keepSheet(page);
+}
+
+/** A metric's own sheet, opened from its row in More to keep: its control (MetricField). */
+async function metric(page: Page, key: string) {
+	await (await keep(page)).getByTestId(`keep-${key}`).click();
+	const field = page.getByTestId(`metric-${key}`);
+	await expect(field).toBeVisible();
+	return field;
 }
 
 /** Opens the session page against the real server, the store connected. */
@@ -102,17 +137,42 @@ test.describe('logging an other session', () => {
 	}, testInfo) => {
 		const workoutId = await seedWorkout(page, kit);
 		await open(page);
-		await expect(entry(page).getByRole('heading', { level: 2 })).toHaveText('Muay Thai class');
-		await expect(page.getByTestId('session-plan')).toHaveText('Class · 90 min · RPE 7');
-		await expect(entry(page).getByRole('radio', { name: 'Class', exact: true })).toBeChecked();
+		await expect(title(page)).toHaveText('Muay Thai class');
+		// Ad hoc: its own line, not a plan's.
+		await expect(page.getByTestId('session-line')).toHaveText(/ · your own session$/);
+		await expect(page.getByTestId('session-plan')).toHaveCount(0);
+		await expect(page.getByTestId('session-kind')).toContainText('Class');
 		// The stopwatch's minutes until changed: the workout started 12 minutes ago.
 		await expect(stepper(entry(page), 'session-duration')).toHaveValue('12');
-		await expect(stepper(entry(page), 'metric-rounds')).toHaveValue('6');
+		await expect(page.getByTestId('session-effort')).toContainText('Add');
+		await expect(page.getByTestId('session-keep')).toContainText('Rounds, sparred');
+		await expect((await metric(page, 'rounds')).getByRole('spinbutton')).toHaveValue('6');
+		await expect(keepSheet(page).getByTestId('keep-sparred')).toContainText('No');
+		await audit(page, 'a metric’s sheet over More to keep');
+		await closeSheets(page);
 		await expect(page.getByTestId('session-status')).toHaveText('Not saved yet');
 
+		// What kind is a pick: a tap picks and closes, and the row says it.
+		await page.getByTestId('session-kind').click();
+		await sheet(page, 'What kind').getByRole('radio', { name: 'Sparring' }).click();
+		await expect(sheet(page, 'What kind')).toBeHidden();
+		await expect(page.getByTestId('session-kind')).toContainText('Sparring');
+		await page.getByTestId('session-kind').click();
+		await sheet(page, 'What kind').getByRole('radio', { name: 'Class' }).click();
+		await expect(page.getByTestId('session-kind')).toContainText('Class');
+
 		await type(stepper(entry(page), 'session-duration'), '90');
-		await rpe(page, '8').check();
-		await entry(page).getByRole('switch', { name: 'Sparred' }).check();
+		await page.getByTestId('session-effort').click();
+		await effortSheet(page).getByRole('radio', { name: '8', exact: true }).check();
+		await expect(effortSheet(page).getByRole('status')).toHaveText(
+			'8 is hard. It shows as Hard on the session.'
+		);
+		await audit(page, 'the effort sheet');
+		await closeSheets(page);
+		await expect(page.getByTestId('session-effort')).toContainText('Hard');
+		await (await metric(page, 'sparred')).getByRole('switch', { name: 'Sparred' }).check();
+		await expect(keepSheet(page).getByTestId('keep-sparred')).toContainText('Yes');
+		await closeSheets(page);
 		await save(page).click();
 		await expect(page.getByTestId('session-status')).toHaveText(/^Saved/);
 		await expect(save(page)).toBeDisabled();
@@ -154,7 +214,9 @@ test.describe('logging an other session', () => {
 			})
 		]);
 
-		await type(stepper(entry(page), 'metric-rounds'), '7');
+		await type((await metric(page, 'rounds')).getByRole('spinbutton'), '7');
+		await closeSheets(page);
+		await expect(page.getByTestId('session-keep')).toContainText('Rounds, sparred');
 		await expect(page.getByTestId('session-status')).toHaveText('Changes not saved');
 		await expect(save(page)).toHaveText('Save changes');
 		await save(page).click();
@@ -188,15 +250,24 @@ test.describe('logging an other session', () => {
 			other: { kind: 'conditioning', durationMinutes: 30, targetRpe: null, metrics: [] }
 		});
 		await open(page);
-		await expect(entry(page).getByTestId('session-metrics')).toContainText(
-			'Add what you want to keep'
-		);
-		await entry(page).getByTestId('add-metric').click();
-		await entry(page).getByTestId('metric-name').fill('Bike calories');
-		await entry(page).getByTestId('confirm-metric').click();
+		await expect(page.getByTestId('session-keep')).toContainText('Add');
+		const kept = await keep(page);
+		await expect(kept).toContainText('Name it once and pick number, yes or no, or a few words.');
+		await kept.getByTestId('add-metric').click();
+		const adding = sheet(page, 'Track something else');
+		// A name it cannot use is said at the field, and nothing is added.
+		await adding.getByTestId('confirm-metric').click();
+		await expect(adding).toContainText('Name the metric');
+		await adding.getByTestId('metric-name').fill('Bike calories');
+		await adding.getByTestId('confirm-metric').click();
+		await expect(adding).toBeHidden();
+		await kept.getByTestId('keep-bike_calories').click();
 		// A fraction typed into a new metric (it starts at 0, a whole number) is kept, not rounded.
-		await type(stepper(entry(page), 'metric-bike_calories'), '120.5');
-		await expect(stepper(entry(page), 'metric-bike_calories')).toHaveValue('120.5');
+		const calories = page.getByTestId('metric-bike_calories');
+		await type(calories.getByRole('spinbutton'), '120.5');
+		await expect(calories.getByRole('spinbutton')).toHaveValue('120.5');
+		await closeSheets(page);
+		await expect(page.getByTestId('session-keep')).toContainText('Bike calories');
 		await save(page).click();
 
 		await synced(page);
@@ -215,11 +286,15 @@ test.describe('logging an other session', () => {
 		await open(page);
 		await synced(page);
 		const drafted = () => readWorkout(page, workoutId).then((w) => w?.device);
-		await rpe(page, '6').check();
-		await entry(page).getByRole('switch', { name: 'Sparred' }).check();
-		await entry(page).getByTestId('session-notes').fill('Clinch work');
+		await effort(page, '6');
+		await (await metric(page, 'sparred')).getByRole('switch', { name: 'Sparred' }).check();
+		await closeSheets(page);
+		await page.getByTestId('session-notes-row').click();
+		await page.getByTestId('session-notes').fill('Clinch work');
+		await closeSheets(page);
+		await expect(page.getByTestId('session-notes-row')).toContainText('Edit');
 		// Typed and still focused: no Enter, no blur, yet each number is kept as it is typed.
-		await stepper(entry(page), 'metric-rounds').fill('5');
+		await (await metric(page, 'rounds')).getByRole('spinbutton').fill('5');
 		await expect.poll(drafted).toMatchObject({
 			session: {
 				metrics: expect.arrayContaining([expect.objectContaining({ key: 'rounds', value: 5 })])
@@ -234,10 +309,19 @@ test.describe('logging an other session', () => {
 		await page.reload();
 		await expect(page.locator('main#main[data-ready]')).toBeAttached();
 		await expect(stepper(entry(page), 'session-duration')).toHaveValue('75');
-		await expect(rpe(page, '6')).toBeChecked();
-		await expect(stepper(entry(page), 'metric-rounds')).toHaveValue('5');
-		await expect(entry(page).getByRole('switch', { name: 'Sparred' })).toBeChecked();
-		await expect(entry(page).getByTestId('session-notes')).toHaveValue('Clinch work');
+		await expect(page.getByTestId('session-effort')).toContainText('Moderate');
+		await page.getByTestId('session-effort').click();
+		await expect(effortSheet(page).getByRole('radio', { name: '6', exact: true })).toBeChecked();
+		await closeSheets(page);
+		await expect((await metric(page, 'rounds')).getByRole('spinbutton')).toHaveValue('5');
+		await closeSheets(page);
+		await expect(
+			(await metric(page, 'sparred')).getByRole('switch', { name: 'Sparred' })
+		).toBeChecked();
+		await closeSheets(page);
+		await page.getByTestId('session-notes-row').click();
+		await expect(page.getByTestId('session-notes')).toHaveValue('Clinch work');
+		await closeSheets(page);
 		await expect(page.getByTestId('session-status')).toHaveText('Not saved yet');
 		expect(await readOutbox(page)).toEqual([]);
 		expect(await recordOf(workoutId)).toEqual([]);
@@ -309,7 +393,7 @@ test.describe('logging an other session', () => {
 test.describe('on a desktop window', () => {
 	test.use(DESKTOP);
 
-	test('one readable column, centred; the steppers and the Toggle by keyboard; hover and focus states', async ({
+	test('one readable column, centred; the steppers, the Toggle and the effort by keyboard; hover and focus states', async ({
 		page
 	}, testInfo) => {
 		await seedWorkout(page, kit);
@@ -335,27 +419,47 @@ test.describe('on a desktop window', () => {
 		await expect(minutes).toHaveAttribute('aria-valuenow', String(from + 1));
 		await minutes.press('PageUp');
 		await expect(minutes).toHaveAttribute('aria-valuenow', String(from + 6));
-		const rounds = stepper(entry(page), 'metric-rounds');
+		const rounds = (await metric(page, 'rounds')).getByRole('spinbutton');
 		await rounds.focus();
 		await rounds.press('ArrowUp');
 		await expect(rounds).toHaveAttribute('aria-valuenow', '7');
+		await closeSheets(page);
 
-		// The Toggle: Space flips it.
-		const sparred = entry(page).getByRole('switch', { name: 'Sparred' });
+		// The Toggle, in its sheet: Space flips it.
+		const sparred = (await metric(page, 'sparred')).getByRole('switch', { name: 'Sparred' });
 		await sparred.focus();
 		await page.keyboard.press('Space');
 		await expect(sparred).toBeChecked();
+		await closeSheets(page);
+
+		// Effort by keyboard: Enter opens its sheet, a centred dialog; the arrows move the pick, and
+		// Escape gives the focus back to the row.
+		const effortRow = page.getByTestId('session-effort');
+		await effortRow.focus();
+		await page.keyboard.press('Enter');
+		const scale = effortSheet(page);
+		await expect(scale).toBeVisible();
+		const panel = await boxOf(scale.locator('.sheet'));
+		expect(panel.width).toBeLessThanOrEqual(481);
+		await scale.getByRole('radio', { name: '7', exact: true }).check();
+		await scale.getByRole('radio', { name: '7', exact: true }).press('ArrowRight');
+		await expect(scale.getByRole('radio', { name: '8', exact: true })).toBeChecked();
+		await page.keyboard.press('Escape');
+		await expect(scale).toBeHidden();
+		await expect(effortRow).toBeFocused();
+		await expect(effortRow).toContainText('Hard');
+
 		await save(page).focus();
 		await page.keyboard.press('Enter');
 		await expect(page.getByTestId('session-status')).toHaveText(/^Saved/);
 
-		// Hover tints a secondary button.
-		const add = entry(page).getByTestId('add-metric');
-		const background = () => add.evaluate((el) => getComputedStyle(el).backgroundColor);
+		// Hover tints a row.
+		await page.mouse.move(0, 0);
+		const background = () => effortRow.evaluate((el) => getComputedStyle(el).backgroundColor);
 		const resting = await background();
-		await add.hover();
+		await effortRow.hover();
 		await expect.poll(background).not.toBe(resting);
-		expect((await boxOf(add)).height).toBeGreaterThanOrEqual(44);
+		expect((await boxOf(effortRow)).height).toBeGreaterThanOrEqual(44);
 
 		await captureScreen(page, testInfo, 'desktop-workout-muay-thai');
 		await audit(page, 'the session on a desktop');
