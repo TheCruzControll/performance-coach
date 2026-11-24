@@ -102,8 +102,10 @@
 			/>
 		</div>
 	</Surface>
+	<!-- The compact size's one use: shell.e2e.ts measures its 44 px hit area here. -->
 	<SegmentedControl
 		label="Range"
+		size="sm"
 		bind:value={range}
 		options={[
 			{ value: '4w', label: '4 weeks' },

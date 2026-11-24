@@ -43,8 +43,11 @@ async function boxOf(locator: Locator): Promise<Box> {
 	return box!;
 }
 
-/** The visible panel inside a sheet's full-window <dialog>. */
-const panelOf = (dialog: Locator) => dialog.locator('.sheet');
+/**
+ * The visible panel inside a sheet's full-window <dialog>: its own, the first, as a pick-one row's
+ * sheet (PickRow) nests inside the body of the sheet it sits in (the plate calculator's Bar).
+ */
+const panelOf = (dialog: Locator) => dialog.locator('.sheet').first();
 
 /** A sheet has finished opening: shown, and no transition still running on its panel. */
 async function settled(dialog: Locator) {
@@ -97,7 +100,7 @@ async function openPlates(page: Page): Promise<OpenSheet> {
 	await openMore(page);
 	const opener = page.getByTestId('open-plates');
 	await opener.click();
-	const dialog = page.getByRole('dialog', { name: 'Plate calculator' });
+	const dialog = page.getByRole('dialog', { name: 'Plates per side' });
 	await settled(dialog);
 	return { opener, dialog, under: moreSheet(page) };
 }
@@ -200,7 +203,7 @@ test.describe('a sheet from 1024 px', () => {
 				borders.every((b) => b >= 1),
 				`borders ${borders}`
 			).toBe(true);
-			await expect(dialog.locator('.handle')).toBeHidden();
+			await expect(dialog.locator('.handle').first()).toBeHidden();
 			// The dialog holds focus: it starts on the dialog itself, named by its title.
 			await expect(panelOf(dialog)).toBeFocused();
 			await captureScreen(page, testInfo, sheet.shot);
@@ -308,7 +311,7 @@ test.describe('a small desktop window', () => {
 		};
 		// The plate calculator fits whole: nothing to scroll.
 		await fits();
-		const body = dialog.locator('.body');
+		const body = dialog.locator('.body').first();
 		expect(await body.evaluate((el) => el.scrollHeight - el.clientHeight)).toBe(0);
 
 		// A long form instead: the dialog stops at 85% of the window and its content scrolls
@@ -715,7 +718,7 @@ test.describe('on a phone', () => {
 		).toBeLessThanOrEqual(1);
 		const { radii } = await frameOf(dialog);
 		expect(radii.slice(2), 'square bottom corners').toEqual([0, 0]);
-		await expect(dialog.locator('.handle')).toBeVisible();
+		await expect(dialog.locator('.handle').first()).toBeVisible();
 		await captureScreen(page, testInfo, 'plate-calculator-phone');
 		await touchSwipe(page, dialog, 320);
 		await expect(dialog).toBeHidden();

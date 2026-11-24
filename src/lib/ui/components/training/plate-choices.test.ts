@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { STANDARD_PLATES } from '#lib/domain/plates.ts';
-import { barOptions, PAIR_CHOICES, plateRows, withChoice } from './plate-choices';
+import { defaultPlateInventory } from '#lib/client/plates.ts';
+import { calculatePlates, STANDARD_PLATES, type PlateStock } from '#lib/domain/plates.ts';
+import {
+	barOptions,
+	barValue,
+	inventoryLead,
+	inventoryValue,
+	PAIR_CHOICES,
+	plateAnswer,
+	plateChoiceWords,
+	plateRows,
+	withChoice
+} from './plate-choices';
 
 describe('barOptions', () => {
 	it('offers the common bars, named as Train always has', () => {
@@ -41,7 +52,13 @@ describe('plateRows', () => {
 			2.5: '2'
 		});
 		expect(values(rows[0]!)).toEqual(['none', ...PAIR_CHOICES.map(String), 'any']);
-		expect(rows[0]!.options.map((o) => o.label)).toEqual(['None', '1', '2', '3', 'Any']);
+		expect(rows[0]!.options.map((o) => o.label)).toEqual([
+			'None',
+			'1 pair',
+			'2 pairs',
+			'3 pairs',
+			'Any'
+		]);
 	});
 
 	it('keeps a plate and a pair count the editor does not offer, in their places', () => {
@@ -69,5 +86,110 @@ describe('withChoice', () => {
 			{ weight: 15, pairs: 3 },
 			{ weight: 10 }
 		]);
+	});
+});
+
+describe('plateAnswer', () => {
+	const KG = STANDARD_PLATES.kg.map((weight) => ({ weight }));
+	const NO_SMALL = [25, 20, 15, 10, 5, 2.5].map((weight) => ({ weight }));
+
+	it('says the plates for one side as one line, heaviest first', () => {
+		expect(plateAnswer(calculatePlates(102.5, 20, KG), 102.5, 20, 'kg')).toEqual({
+			line: '25 · 15 · 1.25',
+			caption: 'kg on each side, heaviest first',
+			note: null
+		});
+		expect(plateAnswer(calculatePlates(225, 45, STANDARD_PLATES.lb), 225, 45, 'lb').line).toBe(
+			'45 · 45'
+		);
+	});
+
+	it('names the closest load and how short, when the gym cannot make it', () => {
+		expect(plateAnswer(calculatePlates(102.5, 20, NO_SMALL), 102.5, 20, 'kg')).toEqual({
+			line: '25 · 15',
+			caption: 'kg on each side, heaviest first',
+			note: 'Closest load is 100 kg, 2.5 kg short.'
+		});
+	});
+
+	it('is the bar alone at its weight, and says so below it', () => {
+		expect(plateAnswer(calculatePlates(15, 20, KG), 15, 20, 'kg')).toEqual({
+			line: 'Just the bar',
+			caption: 'The 20 kg bar on its own',
+			note: 'Below the 20 kg bar: the bar alone is the lightest load.'
+		});
+		expect(plateAnswer(calculatePlates(20, 20, KG), 20, 20, 'kg')).toEqual({
+			line: 'Just the bar',
+			caption: 'The 20 kg bar on its own',
+			note: null
+		});
+		expect(plateAnswer(calculatePlates(0, 0, KG), 0, 0, 'kg')).toEqual({
+			line: 'Nothing to load',
+			caption: null,
+			note: null
+		});
+	});
+});
+
+describe('inventoryValue', () => {
+	const standard = (): PlateStock[] => STANDARD_PLATES.kg.map((weight) => ({ weight }));
+	const without = (...weights: number[]) => standard().filter((p) => !weights.includes(p.weight));
+	const limit = (plates: PlateStock[], weight: number, pairs: number) =>
+		plates.map((p) => (p.weight === weight ? { weight, pairs } : p));
+
+	it('is what this gym has with every standard plate, as many as a load needs', () => {
+		expect(inventoryValue('kg', defaultPlateInventory('kg'))).toBe('What this gym has');
+	});
+
+	it('names up to three missing plates, then counts them', () => {
+		expect(inventoryValue('kg', { plates: without(1.25) })).toBe('No 1.25 kg plates');
+		expect(inventoryValue('kg', { plates: without(1.25, 0.5) })).toBe('No 1.25 or 0.5 kg plates');
+		expect(inventoryValue('kg', { plates: without(1.25, 0.5, 0.25) })).toBe(
+			'No 1.25, 0.5 or 0.25 kg plates'
+		);
+		expect(inventoryValue('kg', { plates: without(1.25, 0.5, 0.25, 2.5) })).toBe(
+			'4 weights missing'
+		);
+	});
+
+	it('says where pairs are limited, after any missing plate', () => {
+		expect(inventoryValue('kg', { plates: limit(standard(), 15, 2) })).toBe(
+			'Pairs limited on 15 kg'
+		);
+		expect(inventoryValue('kg', { plates: limit(limit(standard(), 15, 2), 2.5, 1) })).toBe(
+			'Pairs limited on 2 plates'
+		);
+		expect(inventoryValue('kg', { plates: limit(without(1.25), 15, 2) })).toBe('No 1.25 kg plates');
+	});
+});
+
+describe('the words of the bar and plates', () => {
+	it('says a plate choice as None, its pairs or Any', () => {
+		expect(['none', 'any', '1', '2'].map((c) => plateChoiceWords(c as 'none'))).toEqual([
+			'None',
+			'Any',
+			'1 pair',
+			'2 pairs'
+		]);
+		expect(
+			plateRows('kg', [])
+				.at(0)!
+				.options.map((o) => o.label)
+		).toEqual(['None', '1 pair', '2 pairs', '3 pairs', 'Any']);
+	});
+
+	it('says the bar by its weight, or No bar for a machine', () => {
+		expect(barValue(20, 'kg')).toBe('20 kg');
+		expect(barValue(0, 'kg')).toBe('No bar');
+		expect(barValue(17.5, 'lb')).toBe('17.5 lb');
+	});
+
+	it("leads Bar and plates in the calculator's unit", () => {
+		expect(inventoryLead('kg')).toBe(
+			'What this gym has, in kilograms. Any means as many pairs as a load needs.'
+		);
+		expect(inventoryLead('lb')).toBe(
+			'What this gym has, in pounds. Any means as many pairs as a load needs.'
+		);
 	});
 });

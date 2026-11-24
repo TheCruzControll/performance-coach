@@ -1,9 +1,10 @@
 <!--
   @component
-  Train's plate-calculator sheet: the BottomSheet together with the calculator it holds. Train
-  imports this on first intent, so neither weighs on the screen's initial JavaScript. The
-  calculator loads with this device's bar and plates (client/plates.ts), the same inventory the
-  workout's plate sheet uses, and keeps every change to it.
+  Train's plate calculator, 'Plates per side': the BottomSheet together with the calculator it
+  holds (Paper, 4 · Train "Plates for a bar"). Train imports this on first intent, so neither
+  weighs on the screen's initial JavaScript. The calculator loads with this device's bar and
+  plates (client/plates.ts), the same inventory the workout's plate sheet uses, and keeps every
+  change to it.
 -->
 <script lang="ts">
 	import { readPlateInventory, writePlateInventory } from '#lib/client/plates.ts';
@@ -23,13 +24,7 @@
 	let inventory = $state({ kg: readPlateInventory('kg'), lb: readPlateInventory('lb') });
 </script>
 
-<BottomSheet
-	bind:open
-	title="Plate calculator"
-	description="Per side, heaviest plate first."
-	{onclose}
-	data-testid="plates-sheet"
->
+<BottomSheet bind:open title="Plates per side" {onclose} data-testid="plates-sheet">
 	<PlateCalculator
 		initialUnit={unit}
 		{inventory}

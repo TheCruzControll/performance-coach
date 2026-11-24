@@ -2,7 +2,8 @@
  * The legacy components on /design, on a phone, in both themes (Instrument v2, v2/02d). v2 draws no
  * cards, chips, segmented controls or stat tiles, so these lose their fills, pills, tint and amber
  * and keep their boxes: a card its padding and a hairline outline, a chip its 28 px height, a badge
- * its 22 px, a segmented track its 44 px, a stat its padding. Colours are the rgb strings
+ * its 22 px, a segmented track its 44 px (the default size, md; the compact sm track is 36 px and
+ * sits on /design's Inputs tab), a stat its padding. Colours are the rgb strings
  * getComputedStyle returns.
  */
 import { expect, test, type Page } from '@playwright/test';
@@ -123,6 +124,8 @@ for (const theme of ['dark', 'light'] as const) {
 			const control = page.getByRole('radiogroup', { name: 'Range' });
 			await expect(control).toHaveCSS('border-top-width', '0px');
 			await expect(control).toHaveCSS('background-color', c.surface2);
+			// The default size (md, DataPanel's Range): a 44 px track. The compact size (sm, 36 px) is
+			// InputsPanel's, and its options' hit areas stay 44 px (shell.e2e.ts).
 			expect((await control.boundingBox())!.height).toBe(44);
 
 			await expect(control.locator('.thumb')).toHaveCSS('background-color', c.inverse);

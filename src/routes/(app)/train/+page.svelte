@@ -367,7 +367,7 @@
 </div>
 <p class="visually-hidden" role="status">{loading ? 'Loading the week…' : ''}</p>
 
-<!-- A running rest still shows on Train with its sheet closed (v2/09 redesigns it). Each sheet
+<!-- A kept rest shows on Train as one line, the column's last (RestTimerSheet). Each sheet
      renders nothing until its code has arrived (a dynamic component that is null). More's tools
      open over it. -->
 <more.component

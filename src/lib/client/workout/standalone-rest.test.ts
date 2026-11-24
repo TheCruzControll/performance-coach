@@ -54,6 +54,27 @@ describe('the standalone rest: a reload', () => {
 		expect(readStandaloneRest(T0, storage)).toBeNull();
 	});
 
+	it('keeps which rest it is, and reads a rest stored before it kept it as before', () => {
+		const storage = memoryStorage();
+		const isolation = { ...startRest(T0, 90_000), restClass: 'isolation' as const };
+		writeStandaloneRest(isolation, storage);
+		expect(readStandaloneRest(T0 + 1_000, storage)).toEqual(isolation);
+		expect(JSON.parse(storage.entries.get(STANDALONE_REST_KEY)!)).toEqual(isolation);
+		// v1 as it was stored before: no class, the same rest.
+		expect(readStandaloneRest(T0 + 1_000, holding(startRest(T0, 90_000)))).toEqual(
+			startRest(T0, 90_000)
+		);
+	});
+
+	it('drops a class it does not know, and still reads the rest', () => {
+		const read = readStandaloneRest(
+			T0 + 1_000,
+			holding({ ...startRest(T0, 90_000), restClass: 'naps' })
+		);
+		expect(read).toEqual(startRest(T0, 90_000));
+		expect(read).not.toHaveProperty('restClass');
+	});
+
 	it('uses the page’s localStorage by default', () => {
 		const storage = memoryStorage();
 		Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true });

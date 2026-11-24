@@ -16,8 +16,8 @@ import { captureScreen } from './support';
 // precaches the build behind it.
 test.use({ serviceWorkers: 'block' });
 
-/** The sheet's description: only Train's plate-sheet chunk carries it. */
-const SHEET_MARKUP = 'Per side, heaviest plate first.';
+/** The sheet's title: only Train's plate-sheet chunk carries it (the workout's is not fetched). */
+const SHEET_MARKUP = 'Plates per side';
 const THEMES = ['dark', 'light'] as const;
 
 /**
@@ -97,7 +97,7 @@ test('on a cold page the first tap opens the sheet, whose code is fetched on int
 	await captureScreen(page, testInfo, 'plate-calculator-pending');
 
 	release();
-	const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
+	const sheet = page.getByRole('dialog', { name: 'Plates per side' });
 	await expect(sheet).toBeVisible();
 	await expect(sheet.getByTestId('plates-result')).toContainText('25 · 15');
 	await expect(page.getByTestId('open-plates').locator('..')).toHaveAttribute('aria-busy', 'false');
@@ -160,7 +160,7 @@ for (const theme of THEMES) {
 		// again, or by reloading Train with ?tool=plates where it does not (Chromium).
 		offline = false;
 		await notice.getByRole('button', { name: 'Try again' }).click();
-		const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
+		const sheet = page.getByRole('dialog', { name: 'Plates per side' });
 		await expect(sheet).toBeVisible();
 		await expect(sheet.getByTestId('plates-result')).toContainText('25 · 15');
 		await expect(notice).toHaveCount(0);

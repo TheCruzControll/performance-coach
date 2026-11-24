@@ -144,6 +144,11 @@ export function a11ySuite(theme: 'dark' | 'light'): void {
 			await expect(page.getByTestId('plates-result')).toBeVisible();
 			await page.waitForTimeout(500);
 			expect(await audit(page)).toEqual([]);
+			// Bar and plates, its own sheet over the calculator's.
+			await page.getByTestId('plates-inventory-toggle').click();
+			await expect(page.getByTestId('plates-inventory')).toBeVisible();
+			await page.waitForTimeout(500);
+			expect(await audit(page), 'Bar and plates').toEqual([]);
 		});
 
 		test('the keyboard focus ring reaches 3:1 against the page behind it', async ({ page }) => {

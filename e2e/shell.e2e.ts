@@ -396,16 +396,18 @@ test.describe('app shell on an iPhone viewport', () => {
 		const opener = page.getByTestId('open-plates');
 		await opener.click();
 
-		const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
+		const sheet = page.getByRole('dialog', { name: 'Plates per side' });
 		await expect(sheet).toBeVisible();
-		await expect(sheet.getByTestId('plates-result')).toContainText('25 · 15');
+		const result = sheet.getByTestId('plates-result');
+		await expect(result).toHaveText('25 · 15');
+		await expect(sheet.getByTestId('plates-caption')).toHaveText('kg on each side, heaviest first');
 
 		await sheet.getByRole('button', { name: 'Increase Target weight' }).click();
 		await expect(sheet.getByRole('spinbutton', { name: 'Target weight' })).toHaveAttribute(
 			'aria-valuenow',
 			'102.5'
 		);
-		await expect(sheet.getByTestId('plates-result')).toContainText('25 · 15 · 1.25');
+		await expect(result).toHaveText('25 · 15 · 1.25');
 		await captureScreen(page, testInfo, 'plate-calculator');
 
 		// Escape while typing cancels the edit only: the sheet (a modal <dialog>) stays open.
@@ -419,12 +421,26 @@ test.describe('app shell on an iPhone viewport', () => {
 		await expect(target).toHaveAttribute('aria-valuenow', '102.5');
 		await expect(target).not.toBeFocused();
 
+		// The bar is a row that opens a pick-one sheet over the calculator's: a pick closes it, the
+		// focus back on the row, which says the bar picked.
+		const barRow = sheet.getByTestId('plates-bar-row');
+		const bars = page.getByRole('dialog', { name: 'Bar', exact: true });
+		await expect(barRow).toContainText('20 kg');
+		// From the keyboard, so every engine has the row focused (WebKit focuses no button on a click).
+		await barRow.focus();
+		await page.keyboard.press('Enter');
+		await bars.getByRole('radio', { name: '10 kg bar' }).click();
+		await expect(bars).toBeHidden();
+		await expect(barRow).toBeFocused();
+		await expect(barRow).toContainText('10 kg');
+
 		// A target lighter than the bar is explained, and the stepper cannot go below the bar.
-		await sheet.getByRole('radio', { name: '10 kg bar' }).click();
 		await target.focus();
 		await page.keyboard.press('Home');
 		await expect(target).toHaveAttribute('aria-valuenow', '10');
-		await sheet.getByRole('radio', { name: '20 kg bar' }).click();
+		await barRow.click();
+		await bars.getByRole('radio', { name: '20 kg bar' }).click();
+		await expect(bars).toBeHidden();
 		await expect(sheet.getByTestId('plates-warning')).toContainText('Below the 20 kg bar');
 		await expect(target).toHaveAttribute('aria-valuemin', '20');
 		await captureScreen(page, testInfo, 'plate-calculator-below-bar');
@@ -432,9 +448,16 @@ test.describe('app shell on an iPhone viewport', () => {
 		await page.keyboard.press('Enter');
 		await expect(sheet.getByTestId('plates-warning')).toHaveCount(0);
 
-		await sheet.getByRole('radio', { name: 'Pounds' }).click();
+		// Units are a pick-one row too.
+		const unitsRow = sheet.getByTestId('plates-units-row');
+		const unitsSheet = page.getByRole('dialog', { name: 'Units', exact: true });
+		await unitsRow.click();
+		await unitsSheet.getByRole('radio', { name: 'Pounds' }).click();
+		await expect(unitsSheet).toBeHidden();
+		await expect(unitsRow).toContainText('Pounds');
 		await expect(target).toHaveAttribute('aria-valuenow', '220');
-		await expect(sheet.getByTestId('plates-result')).toContainText('45 · 35 · 5');
+		await expect(result).toHaveText('45 · 35 · 5 · 2.5');
+		await expect(sheet.getByTestId('plates-caption')).toHaveText('lb on each side, heaviest first');
 
 		await sheet.getByRole('button', { name: 'Close' }).click();
 		await expect(sheet).toBeHidden();
@@ -467,7 +490,7 @@ test.describe('app shell on an iPhone viewport', () => {
 		await gotoHydrated(page, '/train');
 		await openMore(page);
 		await page.getByTestId('open-plates').click();
-		const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
+		const sheet = page.getByRole('dialog', { name: 'Plates per side' });
 		await expect(page.getByTestId('plates-sheet')).toHaveClass(/\bvisible\b/);
 		const target = sheet.getByRole('spinbutton', { name: 'Target weight' });
 
@@ -496,7 +519,7 @@ test.describe('app shell on an iPhone viewport', () => {
 			document.querySelector('main')!.prepend(link);
 		});
 		await page.getByRole('link', { name: 'Plate calculator', exact: true }).click();
-		const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
+		const sheet = page.getByRole('dialog', { name: 'Plates per side' });
 		await expect(sheet).toBeVisible();
 		await expect(moreSheet(page)).toBeVisible();
 		expect(await overflow()).toBe('hidden');
@@ -574,10 +597,14 @@ test.describe('app shell on an iPhone viewport', () => {
 			await gotoHydrated(page, '/train');
 			await openMore(page);
 			await page.getByTestId('open-plates').click();
-			const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
+			const sheet = page.getByRole('dialog', { name: 'Plates per side' });
 			await expect(sheet).toBeVisible();
-			// The dialog is transparent; the panel inside it carries --color-surface-1.
-			return sheet.locator('.sheet').evaluate((el) => getComputedStyle(el).backgroundColor);
+			// The dialog is transparent; the panel inside it carries --color-surface-1. Its own, the
+			// first: the Bar and Units rows' sheets (PickRow) nest inside its body.
+			return sheet
+				.locator('.sheet')
+				.first()
+				.evaluate((el) => getComputedStyle(el).backgroundColor);
 		};
 		expect(await sheetBackground('Dark')).toBe('rgb(21, 21, 23)');
 		expect(await sheetBackground('Light')).toBe('rgb(255, 255, 255)');
@@ -601,22 +628,27 @@ test.describe('app shell on an iPhone viewport', () => {
 			await gotoHydrated(page, '/train');
 			await openMore(page);
 			await page.getByTestId('open-plates').click();
-			const sheet = page.getByRole('dialog', { name: 'Plate calculator' });
+			const sheet = page.getByRole('dialog', { name: 'Plates per side' });
 			await expect(sheet).toBeVisible();
 			return sheet;
 		};
 
+		// The sheet's own handle and title, the first: the Bar and Units rows' sheets (PickRow) nest
+		// inside its body.
 		const dark = await sheetIn('Dark');
-		const handle = await dark.locator('.handle').boundingBox();
+		const handle = await dark.locator('.handle').first().boundingBox();
 		expect(handle!.width).toBeCloseTo(36, 0);
 		expect(handle!.height).toBeCloseTo(4, 0);
-		await expect(dark.locator('.handle')).toHaveCSS('background-color', 'rgb(58, 58, 63)');
-		const title = dark.locator('.title');
+		await expect(dark.locator('.handle').first()).toHaveCSS('background-color', 'rgb(58, 58, 63)');
+		const title = dark.locator('.title').first();
 		await expect(title).toHaveCSS('font-size', '26px');
 		expect(await title.evaluate((el) => getComputedStyle(el).fontFamily)).toMatch(/^"Hubot Sans"/);
 
 		const light = await sheetIn('Light');
-		await expect(light.locator('.handle')).toHaveCSS('background-color', 'rgb(201, 201, 195)');
+		await expect(light.locator('.handle').first()).toHaveCSS(
+			'background-color',
+			'rgb(201, 201, 195)'
+		);
 	});
 
 	test('no screen scrolls sideways', async ({ page }) => {
@@ -679,11 +711,11 @@ test.describe('app shell on an iPhone viewport', () => {
 	});
 
 	test('compact segmented controls keep a 44px hit area', async ({ page }) => {
-		// The plate calculator's "Bar" is one (PlateCalculator and PlateInventory use size="sm").
-		await gotoHydrated(page, '/train');
-		await openMore(page);
-		await page.getByTestId('open-plates').click();
-		const bar = page.getByRole('radiogroup', { name: 'Bar' });
+		// The /design Inputs "Range" demo is the compact variant's one use (size="sm"): no screen
+		// keeps one since the plate calculator's Bar became a row (v2/09a).
+		await gotoHydrated(page, '/design');
+		await page.getByRole('tab', { name: 'Inputs' }).click();
+		const bar = page.getByRole('radiogroup', { name: 'Range' });
 		const options = bar.getByRole('radio');
 		await expect(options).toHaveCount(3);
 		// Measure in the middle of the screen, clear of the fixed tab bar.

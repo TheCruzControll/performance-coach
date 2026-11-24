@@ -84,5 +84,20 @@ export const REST_CLASS_WORDS: readonly { restClass: RestClass; label: string; h
 	{ restClass: 'main', label: 'Main lifts', hint: 'Squat, bench, deadlift and top sets' },
 	{ restClass: 'compound', label: 'Other compounds', hint: 'Rows, presses, lunges' },
 	{ restClass: 'isolation', label: 'Isolation', hint: 'Curls, raises, extensions' },
-	{ restClass: 'timed', label: 'Timed', hint: 'Planks, holds, carries' }
+	{ restClass: 'timed', label: 'Timed holds', hint: 'Planks, holds, carries' }
 ];
+
+/** Train's resting sheet's title: the rest's class, or 'Rest' for one stored before it kept it. */
+export const restTitle = (restClass?: RestClass): string =>
+	REST_CLASS_WORDS.find((row) => row.restClass === restClass)?.label ?? 'Rest';
+
+/** Under the time on Train's resting sheet: how long it is, and that it keeps time. */
+export function restCaption(reading: RestReading): string {
+	if (reading.phase === 'over') return `since it ended, after ${reading.total}.`;
+	if (reading.phase === 'paused') return `Paused, of ${reading.total}.`;
+	return `of ${reading.total}. It keeps time on this phone, even if you leave.`;
+}
+
+/** Train's one line while a rest is kept, before the time: 'Resting', 'Paused', 'Rest over'. */
+export const restLineLabel = (reading: RestReading): string =>
+	reading.phase === 'over' ? 'Rest over' : reading.phase === 'paused' ? 'Paused' : 'Resting';

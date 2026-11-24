@@ -1,11 +1,12 @@
 <!--
   @component
-  The workout's plate calculator, opened from a set row of an exercise loaded with a bar or
-  plates: M1's calculator at that set's weight and unit, with this device's bar and plates
-  (client/plates.ts, the inventory Train's calculator uses too), whose every change is kept.
-  Code-split with its BottomSheet (a centred dialog from 1024 px) and fetched on the row
-  button's first touch, so none of it weighs on /workout's initial JavaScript. Each tap opens it
-  afresh from that set; closing returns focus to the row's button.
+  The workout's plate calculator, 'Plates per side' with the set named under it (Paper, 5 ·
+  Workout), opened from a set row of an exercise loaded with a bar or plates: M1's calculator at
+  that set's weight and unit, with this device's bar and plates (client/plates.ts, the inventory
+  Train's calculator uses too), whose every change is kept. Code-split with its BottomSheet (a
+  centred dialog from 1024 px) and fetched on the row button's first touch, so none of it weighs
+  on /workout's initial JavaScript. Each tap opens it afresh from that set; closing returns focus
+  to the row's button.
 -->
 <script lang="ts">
 	import { readPlateInventory, writePlateInventory } from '#lib/client/plates.ts';
@@ -31,7 +32,7 @@
 
 <BottomSheet
 	bind:open
-	title="Plate calculator"
+	title="Plates per side"
 	description={request.label}
 	data-testid="workout-plates"
 >

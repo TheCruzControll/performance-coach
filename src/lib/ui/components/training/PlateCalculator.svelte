@@ -1,32 +1,40 @@
 <!--
   @component
-  Plate calculator body: target weight stepper, bar choice and the loaded-sleeve picture.
+  The plate calculator's body (Instrument v2, Paper 4 · Train "Plates for a bar" and 5 · Workout
+  "Plates per side"): a 52 px stepper for the target, the plates for one side as one line with
+  what it means ('25 · 15 · 1.25', 'kg on each side, heaviest first'), a note when the load can't
+  be made (the closest one, and how short), then Bar, Units and Bar and plates as rows. The answer
+  follows each step: there is no Calculate. Bar and Units are pick-one rows (PickRow), each opening
+  a sheet over the calculator's.
   Opens in `initialUnit` (the app-wide preference, or a set's unit) at `initialTarget` (a set's
   weight) when given; switching units here is local to the calculator and never changes the
   preference. Loaded on demand (dynamic import) so the screens that open it hydrate without it.
   - Without `inventory` it uses M1's standard bars and plates, as it always has.
   - With this device's `inventory` (client/plates.ts, one per unit), the solver loads only what
-    the gym has: a bar picked here is the device's, and 'Bar and plates' (the pencil beside the
-    bar presets) opens the inventory editor (PlateInventory.svelte, its own chunk, fetched on
-    that tap), whose every change `onInventoryChange` keeps.
+    the gym has: a bar picked here is the device's, and the Bar and plates row opens its sheet
+    (PlateInventory.svelte, its own chunk, fetched on that tap), whose every change
+    `onInventoryChange` keeps.
 -->
 <script lang="ts">
 	import type { PlateInventory as Inventory } from '#lib/client/plates.ts';
 	import { calculatePlates, STANDARD_BARS, STANDARD_PLATES } from '#lib/domain/plates.ts';
 	import {
-		cleanFloat,
 		convertWeight,
 		DEFAULT_LOAD_INCREMENT,
 		roundToIncrement,
 		type WeightUnit
 	} from '#lib/domain/units.ts';
-	import Icon from '../Icon.svelte';
-	import IconButton from '../IconButton.svelte';
+	import ListRow from '../ListRow.svelte';
 	import NumberStepper from '../NumberStepper.svelte';
-	import SegmentedControl from '../SegmentedControl.svelte';
-	import PlateDiagram from './PlateDiagram.svelte';
+	import PickRow from '../PickRow.svelte';
 	import type PlateInventoryView from './PlateInventory.svelte';
-	import { barOptions } from './plate-choices.ts';
+	import {
+		barOptions,
+		barValue,
+		inventoryValue,
+		plateAnswer,
+		UNIT_WORDS
+	} from './plate-choices.ts';
 
 	interface Props {
 		/** Unit the calculator opens in. */
@@ -46,6 +54,11 @@
 		lb: { target: 225, bar: '45' }
 	};
 
+	const UNIT_OPTIONS = (['kg', 'lb'] as const).map((value) => ({
+		value,
+		label: UNIT_WORDS[value]
+	}));
+
 	// The calculator's own state, seeded from what it opens with.
 	// svelte-ignore state_referenced_locally
 	let unit = $state(initialUnit);
@@ -58,6 +71,7 @@
 	const bar = $derived(stock ? stock.bar : Number(barWeight));
 	const bars = $derived(barOptions(unit, bar));
 	const result = $derived(calculatePlates(target, bar, stock?.plates ?? STANDARD_PLATES[unit]));
+	const answer = $derived(plateAnswer(result, target, bar, unit));
 
 	function pickBar(value: string) {
 		if (stock) onInventoryChange?.(unit, { bar: Number(value) });
@@ -72,37 +86,31 @@
 		unit = next;
 	}
 
-	// The inventory editor: its chunk is fetched on the first tap; a failed fetch says so, and the
-	// next tap fetches again.
+	// Bar and plates: its chunk is fetched on the first tap, and its sheet opens once it arrives; a
+	// failed fetch says so under the rows, and the next tap fetches again.
 	let Editor = $state.raw<typeof PlateInventoryView | null>(null);
 	let editing = $state(false);
 	let failed = $state(false);
-	const editorId = $props.id();
 
-	function toggleEditor() {
-		editing = !editing;
+	function openEditor() {
+		editing = true;
 		failed = false;
-		if (!editing || Editor) return;
+		if (Editor) return;
 		import('./PlateInventory.svelte')
 			.then((module) => (Editor = module.default))
-			.catch(() => (failed = true));
+			.catch(() => {
+				failed = true;
+				editing = false;
+			});
 	}
 </script>
 
 <div class="calc">
-	<SegmentedControl
-		label="Units"
-		value={unit}
-		options={[
-			{ value: 'kg', label: 'Kilograms' },
-			{ value: 'lb', label: 'Pounds' }
-		]}
-		onchange={changeUnit}
-	/>
-
 	<NumberStepper
 		bind:value={target}
 		label="Target weight"
+		size="md"
+		hideLabel
 		{unit}
 		min={bar}
 		max={unit === 'kg' ? 500 : 1100}
@@ -111,116 +119,103 @@
 		data-testid="plates-target"
 	/>
 
-	<!-- 'Bar and plates' sits beside the bar presets, not under the result, so the calculator still
-	     fits a 1024 × 700 window whole. -->
-	<div class="bar">
-		<SegmentedControl label="Bar" size="sm" value={String(bar)} options={bars} onchange={pickBar} />
+	<!-- The answer and its note, announced together as they change. -->
+	<div aria-live="polite">
+		<div class="answer">
+			<p class="line" data-testid="plates-result">{answer.line}</p>
+			{#if answer.caption}<p class="caption" data-testid="plates-caption">{answer.caption}</p>{/if}
+		</div>
+		{#if answer.note}<p class="note" data-testid="plates-warning">{answer.note}</p>{/if}
+	</div>
+
+	<div class="rows">
+		<PickRow
+			label="Bar"
+			options={bars}
+			bind:value={() => String(bar), (value) => value !== null && pickBar(value)}
+			summary={barValue(bar, unit)}
+			data-testid="plates-bar-row"
+		/>
+		<PickRow
+			label="Units"
+			options={UNIT_OPTIONS}
+			bind:value={() => unit, (value) => value !== null && changeUnit(value)}
+			data-testid="plates-units-row"
+		/>
 		{#if stock && onInventoryChange}
-			<IconButton
-				icon="pencil"
-				label="Bar and plates"
-				size="sm"
-				variant="filled"
-				aria-expanded={editing}
-				aria-controls={editorId}
-				onclick={toggleEditor}
+			<ListRow
+				title="Bar and plates"
+				value={inventoryValue(unit, stock)}
+				aria-haspopup="dialog"
+				onclick={openEditor}
 				data-testid="plates-inventory-toggle"
 			/>
 		{/if}
 	</div>
-
-	<div class="result" aria-live="polite">
-		<PlateDiagram plates={result.perSide} {unit} />
-		{#if result.perSide.length}
-			<p class="per-side numeric" data-testid="plates-result">
-				{result.perSide.join(' · ')}
-				<span class="per-side-unit">{unit} per side</span>
-			</p>
-		{:else}
-			<p class="per-side muted">Just the bar</p>
-		{/if}
-		{#if result.remainder < 0}
-			<p class="warning" data-testid="plates-warning">
-				<Icon name="info" size={16} />
-				<span>Below the {bar} {unit} bar — the lightest load is the empty bar.</span>
-			</p>
-		{:else if !result.exact}
-			<p class="warning" data-testid="plates-warning">
-				<Icon name="info" size={16} />
-				<span
-					>Closest loadable is {result.achieved}
-					{unit} — {cleanFloat(result.remainder, 2)}
-					{unit} short.</span
-				>
-			</p>
-		{/if}
-	</div>
-
-	{#if stock && onInventoryChange}
-		<div id={editorId} hidden={!editing}>
-			{#if failed}
-				<p class="warning" role="alert">
-					<Icon name="alert" size={16} />
-					<span>Couldn’t open bar and plates. Check your connection, then try again.</span>
-				</p>
-			{:else if Editor && editing}
-				<Editor {unit} inventory={stock} onchange={(change) => onInventoryChange(unit, change)} />
-			{/if}
-		</div>
+	{#if failed}
+		<p class="failed" role="alert">
+			Couldn’t open bar and plates. Check your connection, then try again.
+		</p>
 	{/if}
 </div>
+
+{#if Editor && stock && onInventoryChange}
+	<Editor
+		bind:open={editing}
+		{unit}
+		inventory={stock}
+		onchange={(change) => onInventoryChange(unit, change)}
+	/>
+{/if}
 
 <style>
 	.calc {
 		display: grid;
-		gap: var(--space-5);
 	}
 
-	.result {
+	/* Paper: the plates centred, 32/38 Mona in 600, the caption 4 px under it. 16 px under it when
+	   a note follows, 24 otherwise. */
+	.answer {
 		display: grid;
-		gap: var(--space-2);
-		padding: var(--space-3) var(--space-3) var(--space-4);
-		border-radius: var(--radius-lg);
-		background: var(--color-surface-2);
-		border: 1px solid var(--color-border);
-	}
-
-	.per-side {
+		justify-items: center;
+		gap: var(--space-1);
+		padding: var(--space-6) 0;
 		text-align: center;
-		font-size: var(--text-2xl);
-		font-weight: var(--weight-bold);
 	}
 
-	.per-side-unit {
-		display: block;
-		font-family: var(--font-sans);
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
-		color: var(--color-text-tertiary);
-		letter-spacing: var(--tracking-normal);
+	.answer:has(+ .note) {
+		padding-bottom: var(--space-4);
 	}
 
-	.bar {
-		display: flex;
-		align-items: center;
-		gap: var(--space-2);
+	.line {
+		font: var(--type-statement);
+		font-family: var(--font-numeric);
+		letter-spacing: var(--tracking-statement);
+		font-variant-numeric: lining-nums;
 	}
 
-	.bar > :global(:first-child) {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.muted {
+	.caption {
+		font: var(--type-secondary);
 		color: var(--color-text-tertiary);
 	}
 
-	.warning {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: var(--space-1-5);
-		font-size: var(--text-sm);
-		color: var(--color-warning);
+	/* The load the gym can't make: the closest one, and how short. Plain words, no warning colour. */
+	.note {
+		padding-bottom: var(--space-6);
+		font: var(--type-body);
+		color: var(--color-text);
+		text-align: center;
+	}
+
+	.rows {
+		display: grid;
+		border-top: 1px solid var(--color-hairline);
+	}
+
+	/* v2: an error is one red line. */
+	.failed {
+		padding: var(--space-2) 0;
+		font: var(--type-secondary);
+		color: var(--color-danger);
 	}
 </style>

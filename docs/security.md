@@ -185,9 +185,9 @@ session (a 401's purge) blocks that card until the server answers as the owner a
 preferences (theme, units in localStorage) are kept on purpose**: they are not account data. The
 workout settings (`pc:workout:v1`: rest per exercise type, auto-start rest, sound, vibration,
 keep-awake), the plate inventory (`pc:plates:v1`, one per unit) and Train's rest timer
-(`pc:rest:v1`) are device preferences too, and sign-out keeps them. `"storage"` and `"cookies"`
-are deliberately not sent: `"storage"` would also wipe those preferences and unregister the
-offline app shell, and `"cookies"` applies to the whole registrable domain (`nikocruz.com`), not
+(`pc:rest:v1`, the rest and which rest it is) are device preferences too, and sign-out keeps
+them. `"storage"` and `"cookies"` are deliberately not sent: `"storage"` would also wipe those
+preferences and unregister the offline app shell, and `"cookies"` applies to the whole registrable domain (`nikocruz.com`), not
 just this app. If the server cannot be reached the client says so and changes nothing (the
 HttpOnly cookie can only be deleted by the server).
 
