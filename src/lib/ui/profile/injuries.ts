@@ -1,10 +1,12 @@
 /**
- * Editing state for Profile → Injuries: one card per injury or limitation, built from what the
- * services return. Resolved ones stay listed (the coach keeps them as history); only the
- * active ones are programmed around. Also the name a card goes by ("Left knee").
+ * Editing state for Profile → Injuries: one row per injury or limitation, built from what the
+ * services return. Resolved ones stay listed under Better now (the coach keeps them as history);
+ * only the active ones are programmed around. Also the name a row goes by ("Left knee"), its
+ * answer, and the movements to avoid as the one line of words the owner types.
  */
 import {
 	BODY_AREA_LABEL,
+	SEVERITY_INFO,
 	type BodyArea,
 	type Severity,
 	type Side
@@ -88,6 +90,37 @@ export function injuryTitle({ bodyArea, side }: Pick<InjuryDraft, 'bodyArea' | '
 	if (side === 'both') return `${area}, both sides`;
 	if (bodyArea === 'other') return `${area}, ${side} side`;
 	return `${side === 'left' ? 'Left' : 'Right'} ${area.toLowerCase()}`;
+}
+
+/** An injury's row answer: how much it limits you ("Mild"). A resolved one shows none. */
+export function injuryRowValue({
+	severity,
+	active
+}: Pick<InjuryDraft, 'severity' | 'active'>): string | undefined {
+	return active && severity ? SEVERITY_INFO[severity].label : undefined;
+}
+
+/** The movements to avoid as one line to edit: "Box jumps, Deep lunges". */
+export function avoidText(avoid: readonly string[]): string {
+	return avoid.join(', ');
+}
+
+/**
+ * The movements in a line of words, split on commas: each trimmed, empty ones dropped, and a
+ * repeat in any case dropped, keeping its first spelling. The schema's limits (12 movements,
+ * 60 characters each) are checked on Save.
+ */
+export function avoidList(text: string): string[] {
+	const seen = new Set<string>();
+	const list: string[] = [];
+	for (const part of text.split(',')) {
+		const movement = part.trim();
+		const folded = movement.toLowerCase();
+		if (!movement || seen.has(folded)) continue;
+		seen.add(folded);
+		list.push(movement);
+	}
+	return list;
 }
 
 /**

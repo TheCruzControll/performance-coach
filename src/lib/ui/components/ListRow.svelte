@@ -55,6 +55,8 @@
 		/** The row's error line, and the error it marks (PickRow, SheetRow). */
 		'aria-describedby'?: string;
 		'aria-invalid'?: 'true';
+		/** The id of the sub-screen this row opens, so closing it can put the focus back here. */
+		'data-opens'?: string;
 		'data-testid'?: string;
 	}
 

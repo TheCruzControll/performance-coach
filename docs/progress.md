@@ -235,6 +235,11 @@ milestones.md.
   units is two choice lists, Body and nutrition one field and three rows, in Profile and in
   onboarding. While the editor loads the screen is its title; at a desk Save sits under a 440 px
   form. The other sections are `v2/22b` to `v2/22f`. The e2e run is CI's to prove.
+- **Instrument v2 Injuries (`v2/22b`).** One row per injury with how much it limits you, resolved
+  ones under Better now, and Add an injury as a link; each injury opens its own screen asking
+  where, which side and how much it limits you as sheets, what to leave out as one line of words,
+  and any notes, then It's better now and Remove this injury, in Profile and in onboarding. Saved
+  with the section, as before. The e2e run is CI's to prove.
 - **Instrument v2 at a desk (`v2/03c`), which completes the Instrument v2 shell (`v2/03`).** The
   rail is the canvas with a hairline, the four tabs 28 px apart and the avatar at its foot, with
   no brand mark. A readable screen is 616 px (560 of text) centred right of the rail but at most

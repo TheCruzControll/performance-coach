@@ -21,7 +21,7 @@ export interface SubScreen {
 /**
  * The sub-screens open in a section, innermost last. The host (SectionScreen, onboarding's Step)
  * draws the innermost one's back link and title in place of its own; the editor draws its body.
- * Focus goes to the new title on open, and back to whatever opened it on close.
+ * Focus goes to the new title on open, and back to whatever opens it on close (see `close`).
  */
 export class SubScreens {
 	stack = $state<SubScreen[]>([]);
@@ -40,11 +40,23 @@ export class SubScreens {
 		});
 	}
 
-	close() {
-		this.stack.pop();
+	/**
+	 * Close the one on top. The focus goes back to what opened it, if it is still there; an editor
+	 * that draws its screen in place of its list has unmounted it, so then to the element that
+	 * opens this screen (`data-opens="<id>"`, the row in whichever list it is now), and failing
+	 * that to `fallback` (Add an injury, once the injury was removed).
+	 */
+	close(fallback?: () => HTMLElement | null | undefined) {
+		const screen = this.stack.pop();
 		const opener = this.#openers.pop();
 		void tick().then(() => {
-			if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+			const target =
+				opener instanceof HTMLElement && opener.isConnected
+					? opener
+					: ((screen &&
+							document.querySelector<HTMLElement>(`[data-opens="${CSS.escape(screen.id)}"]`)) ??
+						fallback?.());
+			target?.focus();
 		});
 	}
 

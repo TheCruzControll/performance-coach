@@ -81,6 +81,10 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   Back leaves the section, asking first if there are changes, and the sub-screen's back link is
   the way back within it (v2/22a, `src/lib/ui/profile/subscreens.svelte.ts`). Revisit with
   shallow routing in `v2/25`.
+- **A new injury's screen closes when it is first saved; the list shows it again.** A sub-screen
+  stays open after Save, but a new injury's draft key (`new:1`) becomes its stored id once saved, so the remounted editor cannot find the screen it had open and goes back to the list
+  (`src/lib/ui/profile/InjuriesEditor.svelte`). Found building `v2/22b`. Closes if a save hands
+  back each new row's id against its draft key, so the screen can follow it.
 - **Goals keeps the reorder arrows and the drag handle at each row's end, and the goal sheet is the
   pre-v2 form.** Paper draws neither at rest and reorders by long press; the owner kept the arrows
   (the keyboard's and VoiceOver's way) and the full form. With two or more goals each row is as

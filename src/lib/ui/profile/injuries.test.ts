@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { SCHEMAS, validate } from '#lib/domain/profile/schemas.ts';
 import type { Injury } from '#lib/domain/profile/types.ts';
 import {
+	avoidList,
+	avoidText,
 	errorsByRow,
 	injuriesDraft,
 	injuriesPayload,
+	injuryRowValue,
 	injuryTitle,
 	newInjury,
 	type InjuryDraft
@@ -55,6 +58,39 @@ describe('injuryTitle', () => {
 
 	it('names a new injury whose area is not picked yet', () => {
 		expect(injuryTitle({ bodyArea: null, side: 'right' })).toBe('New injury or limitation');
+	});
+});
+
+describe('injuryRowValue', () => {
+	it('is how much an active injury limits you', () => {
+		expect(injuryRowValue({ severity: 'mild', active: true })).toBe('Mild');
+		expect(injuryRowValue({ severity: 'severe', active: true })).toBe('Severe');
+	});
+
+	it('is nothing for a resolved injury, or one without a severity yet', () => {
+		expect(injuryRowValue({ severity: 'mild', active: false })).toBeUndefined();
+		expect(injuryRowValue({ severity: null, active: true })).toBeUndefined();
+	});
+});
+
+describe('avoidText and avoidList', () => {
+	it('joins the movements into one line, and none into an empty one', () => {
+		expect(avoidText(['Box jumps', 'Deep lunges'])).toBe('Box jumps, Deep lunges');
+		expect(avoidText([])).toBe('');
+	});
+
+	it('splits a line on commas, trimming each and dropping the empty ones', () => {
+		expect(avoidList(' box jumps,, deep lunges ,')).toEqual(['box jumps', 'deep lunges']);
+		expect(avoidList('')).toEqual([]);
+	});
+
+	it('drops a repeat in any case, keeping the first spelling', () => {
+		expect(avoidList('Box jumps, box jumps')).toEqual(['Box jumps']);
+	});
+
+	it('gives back the movements it was handed', () => {
+		const avoid = ['Jumping lunges', 'Box jumps'];
+		expect(avoidList(avoidText(avoid))).toEqual(avoid);
 	});
 });
 
