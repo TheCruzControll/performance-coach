@@ -60,8 +60,8 @@ test.afterAll(async ({ request }) => {
 	await resetReviews(request);
 });
 
-const todaySession = (page: Page, title: string) =>
-	page.getByTestId('today-session').filter({ has: page.getByText(title, { exact: true }) });
+/** Today's day: the first session to do, with its one Start. */
+const todayDay = (page: Page) => page.getByTestId('today-day');
 const prompt = (page: Page) => page.getByTestId('review-prompt');
 const card = (page: Page) => page.getByTestId('review-next-week');
 const items = (page: Page) => page.getByTestId('review-next-item');
@@ -116,7 +116,8 @@ async function weeklyJourney(page: Page, request: APIRequestContext, testInfo: T
 		await expect(page.locator('[data-testid="today-plan"][data-kits="saved"]')).toBeAttached({
 			timeout: 10_000
 		});
-		const start = todaySession(page, 'Easy run').getByTestId('start-workout');
+		await expect(page.getByTestId('today-title')).toHaveText('Easy run');
+		const start = todayDay(page).getByTestId('start-workout');
 		await expect(start).toHaveAttribute('href', `/workout?start=${s.lineages.pending}`);
 		await shoot(page, testInfo, 'today-start');
 		await start.click();

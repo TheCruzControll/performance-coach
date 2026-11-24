@@ -2,27 +2,29 @@
   @component
   One of Today's code-split panels (panels/index.ts). On the page the server rendered, the panel
   is static markup (`served`), kept as sent while its code loads, and the live panel takes its
-  place once it has. After a client navigation it holds `height` while its code loads: a skeleton,
-  or, if the import failed, 'Couldn’t load this part of Today' with Retry, which imports it again
-  in place (WebKit fetches anew). If that fails too while online, Today reloads: Chromium keeps a
-  failed module fetch for the document's lifetime, and after a deploy the old chunk is gone.
-  Offline, the notice stays. The rest of Today works throughout.
+  place once it has. After a client navigation it fills the rest of Today's column (at least
+  `height`, when given) while its code loads: 'Getting today' at the foot, no grey blocks; or, if
+  the import failed, one statement with Try again, which imports it again in place (WebKit
+  fetches anew). If that fails too while online, Today reloads: Chromium keeps a failed module
+  fetch for the document's lifetime, and after a deploy the old chunk is gone. Offline, the
+  statement stays. The rest of Today works throughout.
 -->
 <!-- eslint-disable-next-line @typescript-eslint/no-explicit-any -- any panel's props -->
 <script lang="ts" generics="P extends Record<string, any>">
 	import { onMount, type Component } from 'svelte';
 	import Button from '#lib/ui/components/Button.svelte';
-	import Card from '#lib/ui/components/Card.svelte';
-	import EmptyState from '#lib/ui/components/EmptyState.svelte';
-	import Skeleton from '#lib/ui/components/Skeleton.svelte';
 	import { preloadPanel, settledPanel, type PanelImport } from './index';
 	import ServedInPlace from './ServedInPlace.svelte';
 	import ServedMarkup from './ServedMarkup.svelte';
 
 	interface Props {
 		load: PanelImport<P>;
-		/** Room the panel holds while it loads or fails: about its height on a phone. */
-		height: string;
+		/**
+		 * Room the panel holds while it loads or fails, at least: about its height on a phone, for a
+		 * panel with something under it (setup, build, the preview). The plan has none: it fills
+		 * the column to its foot.
+		 */
+		height?: string;
 		props: P;
 		/** The panel as the server rendered it (+page.ts), kept as sent until its code arrives. */
 		served?: string;
@@ -78,28 +80,52 @@
 {:else}
 	<div class="reserve" style:min-height={height} aria-busy={!failed} data-testid="today-panel">
 		{#if failed}
-			<Card padding="lg" data-testid="today-panel-error">
-				<EmptyState
-					compact
-					icon="alert"
-					tone="combat"
-					title="Couldn’t load this part of Today"
-					description="Everything else here still works. Check your connection, then try again."
-				>
-					{#snippet actions()}
-						<Button variant="secondary" icon="refresh" onclick={retry}>Try again</Button>
-					{/snippet}
-				</EmptyState>
-			</Card>
+			<section
+				class="statement-wrap"
+				data-testid="today-panel-error"
+				aria-labelledby="today-panel-failed"
+			>
+				<h2 id="today-panel-failed" class="statement">Couldn’t load today</h2>
+				<p class="lead">Everything else here still works. Check your connection and try again.</p>
+				<Button variant="secondary" size="lg" block onclick={retry} data-testid="today-retry">
+					Try again
+				</Button>
+			</section>
 		{:else}
-			<span class="visually-hidden">Loading…</span>
-			<Skeleton {height} radius="var(--radius-lg)" />
+			<p class="getting">Getting today</p>
 		{/if}
 	</div>
 {/if}
 
 <style>
 	.reserve {
-		display: grid;
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+	}
+
+	/* Paper's 180 px foot under 'Getting today', as the plan's own loading line has it. */
+	.getting {
+		margin-top: auto;
+		padding-bottom: calc(var(--space-20) * 2 + var(--space-5));
+		font: var(--type-secondary);
+		color: var(--color-text-quiet);
+	}
+
+	.statement-wrap {
+		margin-top: auto;
+		padding-bottom: var(--space-14);
+	}
+
+	.statement {
+		font: var(--type-statement);
+		letter-spacing: var(--tracking-statement);
+		color: var(--color-text);
+	}
+
+	.lead {
+		padding: var(--space-3) 0 var(--space-7);
+		font: var(--type-body);
+		color: var(--color-text-secondary);
 	}
 </style>

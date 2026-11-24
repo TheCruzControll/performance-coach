@@ -2,12 +2,12 @@
  * 'Ask the coach' links (PRD §12, the brief's contextual entry points): Coach opened on a new
  * conversation with a question waiting in the composer, the chip that says where it came from
  * (`from`, the coach's ENTRY_LABEL) and what it is about (`ref`, a source ref the turn context
- * carries). Built from strings alone, so the screens that link to Coach (the workout's sheets,
- * Today's plan) load no coach module: Coach reads the query (coach/[[thread]]/words.ts prefillOf).
+ * carries). Built from strings alone, so the screens that link to Coach (the workout's sheets, a
+ * review) load no coach module: Coach reads the query (coach/[[thread]]/words.ts prefillOf).
  */
 
 /** Where each entry point is, as the turn endpoint and Coach's chip name it. */
-export type AskFrom = 'workout' | 'exercise' | 'today' | 'weekly_review' | 'cycle_review';
+export type AskFrom = 'workout' | 'exercise' | 'weekly_review' | 'cycle_review';
 
 /** What the question is about: a workout or an exercise by its id, a review by its page key. */
 export interface AskRef {
@@ -22,7 +22,6 @@ export interface AskRef {
 export const ASK_QUESTIONS = Object.freeze({
 	workout: 'Can we change today’s workout?',
 	exercise: (name: string) => `How has my ${name} progressed?`,
-	today: 'What should I focus on next week?',
 	/** A review's 'Discuss with your coach' (M6, review-narrative-ui). */
 	review: (kind: 'weekly' | 'cycle') => `Can we go through my ${kind} review?`
 });

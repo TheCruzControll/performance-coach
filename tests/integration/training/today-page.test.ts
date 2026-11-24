@@ -66,12 +66,8 @@ describe('Today’s page data', () => {
 			expect(data.setup).toMatchObject({ complete: true });
 			expect(data.program).toBe('active');
 			const view = await data.plan;
-			expect(view).toMatchObject({ failed: false, starts: null, complete: null });
-			expect(view?.failed === false && view.week).toMatchObject({
-				label: 'Week 1',
-				today: TODAY,
-				selected: TODAY
-			});
+			expect(view).toMatchObject({ failed: false, today: TODAY, day: { state: 'session' } });
+			expect(view?.failed === false && view.dots).toHaveLength(7);
 			// This week's figures are Progress's now (v2/06a): Today reads none.
 			expect(data).not.toHaveProperty('week');
 			expect(pool.peak()).toBeGreaterThan(1);

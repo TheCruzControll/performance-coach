@@ -58,8 +58,11 @@ const PUSH_THROUGH =
 
 // ---- The screens ------------------------------------------------------------------------------
 
-const todaySession = (page: Page, title: string) =>
-	page.getByTestId('today-session').filter({ has: page.getByText(title, { exact: true }) });
+/** Today's day: the first session to do, with its one Start. */
+const todayDay = (page: Page) => page.getByTestId('today-day');
+/** A session done today, as its line under the day: the link to its History detail. */
+const doneLine = (page: Page, title: string) =>
+	page.getByTestId('today-done').filter({ hasText: title }).getByTestId('done-workout');
 const main = (page: Page) => page.getByTestId('workout-main');
 const card = (page: Page) => main(page).getByTestId('exercise');
 const heading = (page: Page) => card(page).getByRole('heading', { level: 2 });
@@ -122,8 +125,9 @@ async function seedWorkoutDay(request: APIRequestContext): Promise<SeededProgram
 /** Today → Start workout on the strength session: the workout page on its first exercise. */
 async function startFromToday(page: Page, testInfo: TestInfo, shot: string): Promise<string> {
 	await openToday(page);
-	const start = todaySession(page, STRENGTH).getByTestId('start-workout');
-	await expect(start).toHaveText('Start workout');
+	await expect(page.getByTestId('today-title')).toHaveText(STRENGTH);
+	const start = todayDay(page).getByTestId('start-workout');
+	await expect(start).toHaveText('Start');
 	await shoot(page, testInfo, shot);
 	await start.click();
 	await expect(page).toHaveURL(/\/workout$/);
@@ -470,12 +474,13 @@ async function strengthJourney(page: Page, request: APIRequestContext, testInfo:
 		await expect(sheet).toBeHidden();
 	});
 
-	await test.step('9. Today shows the session Done', async () => {
+	await test.step('9. Today shows the session done, under the next one', async () => {
 		await openToday(page);
-		const doneLink = todaySession(page, STRENGTH).getByTestId('done-workout');
-		await expect(doneLink).toHaveText('Done · View');
+		const doneLink = doneLine(page, STRENGTH);
+		await expect(doneLink).toContainText(STRENGTH);
 		await expect(doneLink).toHaveAttribute('href', `/progress/workouts/${workoutId}`);
-		await expect(todaySession(page, STRENGTH).getByTestId('start-workout')).toHaveCount(0);
+		// The next session to do leads the day now.
+		await expect(page.getByTestId('today-title')).not.toHaveText(STRENGTH);
 		await shoot(page, testInfo, 'today-done');
 		await expectNoCoachRuns();
 	});

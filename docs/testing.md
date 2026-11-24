@@ -1096,20 +1096,22 @@ says (`e2e/program-support.ts`): the `'today'` and `'today-rest'` fixtures on `t
 dates the route returns.
 
 - **Lazy panels** (`e2e/today-panels.serial.e2e.ts`): a Today panel's late code moves nothing (first
-  load and client navigation, phone and desktop); a failed panel chunk shows a Retry notice that
-  recovers (WebKit in place, Chromium by reload).
+  load and client navigation, phone and desktop); a failed panel chunk is one statement with Try
+  again that recovers (WebKit in place, Chromium by reload).
 - **Build my program** (`e2e/build-program.serial.e2e.ts`): builds a program from Today's Build card
   on phone and desktop. `tests/integration/training/build-actions.test.ts` and
   `tests/integration/training/today-program.test.ts` cover the build actions' time-zone handling and
   Today's program state.
-- **Today's plan** (`e2e/today-plan.serial.e2e.ts`): today's sessions, each opening its detail, and
-  Up next in date order across weeks; a session skipped from its detail comes back Skipped, Up next
-  unchanged; a client navigation whose data fails shows the designed error, whose Try again
-  recovers, and offline shows the designed offline state; a desktop window (the readable column,
-  hover and focus on a session card); a rest day naming the next session; a program that starts next
-  week, with week 1's first session; a finished first block ('Nothing planned yet', an empty Up next
-  and the way to Train). `tests/integration/training/today-load.test.ts` covers the same states on
-  real Postgres and fails soft, recording the failure, when the database cannot be reached.
+- **Today's day** (`e2e/today-plan.serial.e2e.ts`): the day with one Start and its one line (a
+  goal to set, then the next session, which opens it), the week as dots with another day tapped and
+  Back to today; skipping today's sessions from their page (the next one leads, then 'Skipped'); a
+  client navigation whose data fails shows the designed error, whose Try again recovers, and
+  offline shows the designed offline state; a desktop window (the readable column, a 260 px Start
+  with hover and focus); a rest day naming the next session; a program that starts next week, with
+  week 1's first session; a finished first block ('Nothing yet', the way back to every week and Log
+  something). `tests/integration/training/today-load.test.ts` covers the same states on real
+  Postgres, with each other day and a done day's length, and fails soft, recording the failure,
+  when the database cannot be reached; `src/routes/(app)/today/day-words.test.ts` covers the words.
 - **Demo profiles** (`tests/integration/training/demo-profiles.test.ts`):
   `scripts/lib/demo-profiles.ts` commits through its own pg client, so it runs inside
   `withCommitted`; the demo profiles read back complete and `previewProgram` accepts them.
@@ -1312,8 +1314,8 @@ and the active workout. Numbers: docs/performance.md, "M4 (workout)".
 - `journey-offline.serial.e2e.ts`: offline logging, edits and deletes surviving a reload; one
   sync on reconnect with exact Postgres counts; replays creating no duplicates; two tabs; a 500
   then a pass, an answer lost after the commit, and a refused change discarded.
-- `journey-run-muay-thai.serial.e2e.ts`: a 14-segment run and a Muay Thai class from Today,
-  synced and in History.
+- `journey-run-muay-thai.serial.e2e.ts`: a 14-segment run, opened from Today's line, and a Muay
+  Thai class, each started from its session page, synced and in History.
 
 ### Screenshots
 
@@ -1564,7 +1566,7 @@ Chromium and Linux WebKit at the iPhone viewport; each screen's spec repeats its
 - `coach-memory-panel.serial.e2e.ts`: 'What the coach knows'; a dislike persists into a new
   conversation through structured memory, not chat.
 - `coach-usage.serial.e2e.ts`, `coach-exercise-sheet.serial.e2e.ts`, `coach-entry.serial.e2e.ts`
-  (Ask the coach from a workout, a history sheet and Today), `coach-support.serial.e2e.ts`.
+  (Ask the coach from a workout and a history sheet), `coach-support.serial.e2e.ts`.
 - `coach-degrade.serial.e2e.ts`: with the coach failing, unavailable and not launched, a whole
   workout runs and no workout page, Today, Train or History sends a coach request.
 - `coach-journey.serial.e2e.ts`: the eight M5 journeys and the screenshot set. After a CI run,

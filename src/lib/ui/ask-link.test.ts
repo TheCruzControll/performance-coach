@@ -5,11 +5,11 @@ const query = (href: string) => new URL(href, 'https://coach.test');
 
 describe('askHref', () => {
 	it('opens Coach with the question and where it was asked from', () => {
-		const url = query(askHref(ASK_QUESTIONS.today, 'today'));
+		const url = query(askHref(ASK_QUESTIONS.workout, 'workout'));
 		expect(url.pathname).toBe('/coach');
 		expect([...url.searchParams]).toEqual([
-			['ask', 'What should I focus on next week?'],
-			['from', 'today']
+			['ask', 'Can we change today’s workout?'],
+			['from', 'workout']
 		]);
 	});
 

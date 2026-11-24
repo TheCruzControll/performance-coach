@@ -79,12 +79,6 @@ describe('prefillOf', () => {
 			label: 'From an exercise’s history',
 			ref: { type: 'exercise', id: 'back_squat' }
 		});
-		expect(prefill(askHref(ASK_QUESTIONS.today, 'today'))).toEqual({
-			text: 'What should I focus on next week?',
-			from: 'today',
-			label: 'From Today',
-			ref: null
-		});
 	});
 
 	it('reads a review’s Discuss link back as its chip and its review ref', () => {

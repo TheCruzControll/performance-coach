@@ -2,9 +2,9 @@
  * Today until onboarding is complete: a setup card with how many of the steps that apply are
  * done and Continue to the step to resume at, which is how the owner gets into onboarding after
  * first sign-in and back into it after a reload. The card is server-rendered and fails soft: a
- * read that fails is a designed error with Retry, never a 500. Once it is complete, Today offers
- * to build the program, with the commitments marked on the week strip; the goals and schedule
- * live in Profile. This week (v2/06a: moved from Today to the top of Progress) is sessions,
+ * read that fails is one statement with Try again, never a 500. Once it is complete, Today offers
+ * to build the program, with no week until there is one (v2/06b); the goals and schedule live in
+ * Profile. This week (v2/06a: moved from Today to the top of Progress) is sessions,
  * training load and distance from Monday to today against the same days last week (no data yet
  * before the first session, 0 for an empty week after it, a designed error with Retry when the
  * read fails). Serial (one test at a time, after the functional suites): every test starts from a blank
@@ -214,7 +214,7 @@ test('once onboarding is complete, Today has no setup card: it offers to build t
 	await expect(card(page)).toHaveCount(0);
 });
 
-test('once set up, Today offers the Build card with the week’s shape; This week leads Progress', async ({
+test('once set up, Today offers the Build card alone; This week leads Progress', async ({
 	page,
 	request
 }, testInfo) => {
@@ -228,14 +228,9 @@ test('once set up, Today offers the Build card with the week’s shape; This wee
 	for (const gone of ['today-goals', 'today-schedule', 'today-side', 'today-week']) {
 		await expect(page.getByTestId(gone)).toHaveCount(0);
 	}
-	// The class is marked on Tuesday and Thursday of the week strip, and named for screen readers.
-	const days = page.getByRole('list', { name: 'This week' }).locator('> li');
-	await expect(days).toHaveCount(7);
-	for (const [i, booked] of [false, true, false, true, false, false, false].entries()) {
-		await expect(days.nth(i).getByTestId('today-day-booked')).toHaveCount(booked ? 1 : 0);
-		if (booked) await expect(days.nth(i)).toContainText('Muay Thai class');
-		else await expect(days.nth(i)).not.toContainText('Muay Thai class');
-	}
+	// No week before a program (v2/06b): Paper's no-program Today draws none.
+	await expect(page.getByRole('list', { name: 'This week' })).toHaveCount(0);
+	await expect(page.getByTestId('week-dots')).toHaveCount(0);
 	await expect(page.getByRole('link', { name: /Plate calculator/ })).toHaveCount(0);
 
 	// On Progress, This week sits above the views: nothing logged yet, so no data yet.
@@ -377,7 +372,7 @@ test('reordering goals in Profile saves the new order', async ({ page, request }
 		]);
 });
 
-test('a setup read that fails is a designed error with Retry inside the shell, and Retry recovers', async ({
+test('a setup read that fails is one statement with Try again inside the shell, which recovers', async ({
 	page
 }, testInfo) => {
 	await gotoHydrated(page, '/today');
@@ -390,7 +385,8 @@ test('a setup read that fails is a designed error with Retry inside the shell, a
 	try {
 		await page.reload();
 		const failed = page.getByTestId('today-setup-error');
-		await expect(failed).toContainText('Couldn’t load your setup');
+		await expect(failed.getByRole('heading', { level: 2 })).toHaveText('Couldn’t load today');
+		await expect(failed).toContainText('Your profile is safe.');
 		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
 		await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
 		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
@@ -415,12 +411,12 @@ test('a setup read that fails is a designed error with Retry inside the shell, a
 test.describe('in a desktop window', () => {
 	test.use(DESKTOP);
 
-	test('the setup card sits in the wide column, and its Continue has a hover state', async ({
+	test('the setup card sits in the readable column, and its Continue has a hover state', async ({
 		page
 	}, testInfo) => {
 		await gotoHydrated(page, '/today');
 		await expect(card(page)).toBeVisible();
-		await expectMainCentred(page, await tokenPx(page, '--content-wide'));
+		await expectMainCentred(page, await tokenPx(page, '--content-readable'));
 		await expectNoSideScroll(page);
 		const main = (await page.locator('main#main').boundingBox())!;
 		const box = (await card(page).boundingBox())!;

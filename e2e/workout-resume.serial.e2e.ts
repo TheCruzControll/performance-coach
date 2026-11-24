@@ -465,7 +465,7 @@ test.describe('a fresh device', () => {
 		await seedProgram(request, { fixture: 'today-rest', start: 'this_week' });
 		await query('update athlete_profiles set onboarding_completed_at = now()');
 		await openTab(page, '/today');
-		await expect(page.getByTestId('today-rest')).toBeVisible();
+		await expect(page.getByTestId('today-day')).toHaveAttribute('data-state', 'rest');
 		await expect(page.locator('[data-testid="today-plan"][data-kits="saved"]')).toBeAttached({
 			timeout: 10_000
 		});

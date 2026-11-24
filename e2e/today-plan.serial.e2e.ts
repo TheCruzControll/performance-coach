@@ -1,21 +1,25 @@
 /**
- * Today once a program exists (src/routes/(app)/today/panels/Program.svelte, plan.server.ts):
- * the week on a WeekStrip with today selected and today's sessions, each opening its detail, and
- * 'Up next' across weeks. The designed rest-day, starts-Monday, block-complete, skipped, failed
- * and offline states. M2's goals stay below; its static week shape and schedule step aside.
+ * Today once a program exists (src/routes/(app)/today/panels/Program.svelte, plan.server.ts),
+ * Instrument v2 (v2/06b): the date, the week as seven dots, and at the foot the day: its title,
+ * when, one sentence from the coach and one Start, then one line under it (a goal to set, or the
+ * next session). A tap on a dot shows that day, with Back to today. The designed rest-day,
+ * starts-Monday, block-complete, skipped, failed and offline states, each a day of its own.
  * Serial: programs are the one owner's, which every browser and worker shares. Fixture programs
  * come from the test-only route at dates the server computes (e2e/program-support.ts), so these
  * hold on any weekday, Sunday included.
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { addDays } from '../src/lib/domain/calendar';
 import { longDate } from '../src/lib/ui/program/words';
+import { lineLabel, startsTitle, STARTS_LEAD } from '../src/routes/(app)/today/day-words';
 import { DESKTOP, expectMainCentred, expectNoSideScroll, tokenPx } from './desktop';
 import { PROGRAM_TZ, seedProgram, type ProgramStart, type SeededProgram } from './program-support';
 import type { ProgramFixture } from '../src/lib/server/test-support/program-fixtures';
 import {
 	captureScreen,
 	gotoHydrated,
+	profileAction,
 	query,
 	resetTrainingProfile,
 	toastWith,
@@ -92,96 +96,152 @@ async function auditThemes(page: Page) {
 	}
 }
 
-const plan = (page: Page) => page.getByTestId('today-plan');
-const strip = (page: Page) => page.getByTestId('week-strip');
-const cards = (page: Page) => page.getByTestId('today-day').getByTestId('session-card');
-const upNext = (page: Page) => page.getByTestId('up-next-card');
-const titles = (cards: ReturnType<typeof upNext>) =>
-	cards.evaluateAll((all) => all.map((c) => c.querySelector('.title')!.textContent));
+const dots = (page: Page) => page.getByTestId('week-dots');
+const dot = (page: Page, date: string) => dots(page).locator(`[data-date="${date}"]`);
+const day = (page: Page) => page.getByTestId('today-day');
+const title = (page: Page) => page.getByTestId('today-title');
+const start = (page: Page) => day(page).getByTestId('start-workout');
+const lineOf = (page: Page, kind: string) =>
+	page.locator(`[data-testid="today-line"][data-kind="${kind}"]`);
+const logLink = (page: Page) => page.getByTestId('log-something-else');
 const todayTab = (page: Page) =>
 	page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Today' });
+
+/** Skip a session from its own page, as the owner does. */
+async function skipFromItsPage(page: Page, lineage: string, toast: string) {
+	await gotoHydrated(page, `/train/session/${lineage}`);
+	await page.getByTestId('skip-session').click();
+	const sheet = page.getByRole('dialog', { name: 'Skip session' });
+	await expect(sheet.getByLabel(/^Reason/)).toBeVisible();
+	await sheet.getByTestId('edit-save').click();
+	await expect(toastWith(page, toast)).toBeVisible();
+}
 
 test.describe('a program with sessions today', () => {
 	let seeded: SeededProgram;
 	test.beforeEach(async ({ request }) => {
 		seeded = await seed(request, 'today', 'this_week');
 	});
+	const todays = (title: string) =>
+		seeded.sessions.find((s) => s.date === seeded.today && s.title === title)!;
 
-	test('Today lists today’s sessions, each opening its detail, and Up next in date order across weeks', async ({
-		page
+	test('Today is the day: one Start, the one line, and the week as dots a tap away from any day', async ({
+		page,
+		request
 	}, testInfo) => {
 		const errors = trackConsoleErrors(page);
 		await watchShifts(page);
+		// The phone's window (the iPhone 15 Pro's): Start has to clear the tab bar in it.
+		await page.setViewportSize({ width: 393, height: 659 });
 		await gotoHydrated(page, '/today');
 
-		// The program's week replaces M2's week shape; the goals and schedule are in Profile.
-		await expect(strip(page)).toHaveAttribute('aria-label', 'Week 1');
-		const today = strip(page).getByRole('radio', {
-			name: new RegExp(`^${longDate(seeded.today)}`)
-		});
+		// The date on the top line, then the week: seven days, today current and pressed.
+		await expect(page.getByTestId('today-date')).toHaveText(/^\w+day \d{1,2} \w+$/);
+		expect((await page.getByTestId('today-date').boundingBox())!.y).toBeLessThan(
+			(await dots(page).boundingBox())!.y
+		);
+		await expect(dots(page).getByRole('button')).toHaveCount(7);
+		const today = dot(page, seeded.today);
 		await expect(today).toHaveAttribute('aria-current', 'date');
-		await expect(today).toHaveAttribute('aria-checked', 'true');
+		await expect(today).toHaveAttribute('aria-pressed', 'true');
+		await expect(today).toHaveAccessibleName(new RegExp(`^${longDate(seeded.today)}, today`));
 		await expect(page.getByRole('list', { name: 'This week' })).toHaveCount(0);
 
-		// The date shows once, in the eyebrow: today's day is named for assistive tech only, with no
-		// Today chip and no second date.
-		const dayHeading = page.getByTestId('today-day').getByRole('heading', { level: 2 });
-		await expect(dayHeading).toHaveText('Today’s sessions');
-		await expect(dayHeading).toHaveClass(/visually-hidden/);
-		await expect(page.getByTestId('today-day')).not.toContainText(longDate(seeded.today));
-		await expect(page.getByTestId('today-day')).not.toContainText(/\bToday\b(?!’s sessions)/);
-		await expect(cards(page)).toHaveCount(2);
-		expect(await titles(cards(page))).toEqual(['Full body', 'Muay Thai class']);
-		// Only the next session leads with Start workout; the later one has a quiet trailing Start.
-		const starts = page.getByTestId('today-session').getByTestId('start-workout');
-		await expect(starts).toHaveText(['Start workout', 'Start']);
-		await expect(starts.nth(0)).toHaveAttribute('data-variant', 'primary');
-		await expect(starts.nth(1)).toHaveAttribute('data-variant', 'ghost');
-		await expect(starts.nth(1)).toHaveAccessibleName('Start Muay Thai class');
-		expect((await starts.nth(1).boundingBox())!.height).toBeGreaterThanOrEqual(44);
-		await expect(cards(page).first()).toContainText('Baseline');
-		// Nothing else is planned this week after today: Up next is next week's first three.
-		expect(await titles(upNext(page))).toEqual(
-			after(seeded)
-				.slice(0, 3)
-				.map((s) => s.title)
+		// The day: the first session to do, when, one sentence, one Start.
+		await expect(day(page)).toHaveAttribute('data-state', 'session');
+		await expect(title(page)).toHaveText('Full body');
+		await expect(page.getByTestId('today-when')).toBeVisible();
+		await expect(page.getByTestId('today-coach')).toBeVisible();
+		await expect(page.getByTestId('start-workout')).toHaveCount(1);
+		await expect(start(page)).toHaveText('Start');
+		await expect(start(page)).toHaveAttribute(
+			'href',
+			`/workout?start=${todays('Full body').lineage}`
 		);
-		const target = (await cards(page).first().boundingBox())!;
-		expect(target.height).toBeGreaterThanOrEqual(44);
+		const startBox = (await start(page).boundingBox())!;
+		expect(startBox.height).toBeGreaterThanOrEqual(44);
+		const tabBar = (await page.getByRole('navigation', { name: 'Primary' }).boundingBox())!;
+		expect(startBox.y + startBox.height, 'Start ends at or above the tab bar').toBeLessThanOrEqual(
+			tabBar.y
+		);
+		// No goal set yet: the one line asks for one. Up next and Ask the coach are gone.
+		const goal = lineOf(page, 'goal');
+		await expect(goal).toContainText('None set yet');
+		await expect(goal).toContainText('Add one');
+		await expect(goal).toHaveAttribute('href', '/profile/goals');
+		for (const gone of ['week-strip', 'up-next-card', 'today-up-next', 'ask-coach']) {
+			await expect(page.getByTestId(gone)).toHaveCount(0);
+		}
+		await expect(logLink(page)).toHaveCount(0);
 		await expectNoSideScroll(page);
 		await captureScreen(page, testInfo, 'today-session');
 		expect(await shifts(page), 'layout shifts no input explains').toEqual([]);
 
-		const strength = seeded.sessions.find(
-			(s) => s.date === seeded.today && s.title === 'Full body'
-		)!;
-		await cards(page).first().click();
-		await expect(page).toHaveURL(`/train/session/${strength.lineage}`);
-		await expect(page.getByRole('heading', { level: 1 })).toHaveText('Full body');
+		// Another day, tapped: its session (or its rest) with no Start, and the way back to today.
+		const earlier = seeded.sessions.find((s) => s.date < seeded.today);
+		const other = earlier?.date ?? addDays(seeded.today, 1);
+		await dot(page, other).click();
+		await expect(dot(page, other)).toHaveAttribute('aria-pressed', 'true');
+		await expect(today).toHaveAttribute('aria-pressed', 'false');
+		await expect(day(page)).toHaveAttribute('data-state', 'other-day');
+		await expect(page.getByTestId('start-workout')).toHaveCount(0);
+		if (earlier) {
+			await expect(title(page)).toHaveText(earlier.title);
+			await expect(page.getByTestId('open-session')).toHaveAttribute(
+				'href',
+				`/train/session/${earlier.lineage}`
+			);
+		} else {
+			await expect(title(page)).toHaveText('Rest day');
+		}
+		await captureScreen(page, testInfo, 'today-other-day');
+		await page.getByTestId('today-back').click();
+		await expect(title(page)).toHaveText('Full body');
+		await expect(today).toBeFocused();
 		expect(errors).toEqual([]);
 
 		await auditThemes(page);
+
+		// With a goal set, the one line is the next session: the class later today, which opens it.
+		await profileAction(request, '/profile/goals?/saveGoal', {
+			kind: 'general',
+			title: 'Stay strong',
+			disciplines: ['strength'],
+			focus: 'Stay strong',
+			measure: 'Train every planned week'
+		});
+		await gotoHydrated(page, '/today');
+		const later = lineOf(page, 'later');
+		await expect(later).toContainText('Later');
+		await expect(later).toContainText('Muay Thai class');
+		await later.click();
+		await expect(page).toHaveURL(`/train/session/${todays('Muay Thai class').lineage}`);
+		await expect(page.getByRole('heading', { level: 1 })).toHaveText('Muay Thai class');
 	});
 
-	test('skipping today’s session from its detail brings Today back with it Skipped, Up next unchanged', async ({
+	test('skipping today’s sessions from their page: the next one leads, then the day reads Skipped', async ({
 		page
 	}) => {
-		await gotoHydrated(page, '/today');
-		const next = await titles(upNext(page));
-		await cards(page).first().click();
-		await page.getByTestId('skip-session').click();
-		const sheet = page.getByRole('dialog', { name: 'Skip session' });
-		await expect(sheet.getByLabel(/^Reason/)).toBeVisible();
-		await sheet.getByTestId('edit-save').click();
-		await expect(toastWith(page, 'Skipped Full body · version 2')).toBeVisible();
-
+		await skipFromItsPage(page, todays('Full body').lineage, 'Skipped Full body · version 2');
 		await todayTab(page).click();
 		await expect(page).toHaveURL('/today');
-		await expect(cards(page).first()).toContainText('Skipped');
-		await expect(cards(page).nth(1)).not.toContainText('Skipped');
-		expect(await titles(upNext(page))).toEqual(next);
-		const day = strip(page).getByRole('radio', { name: new RegExp(`^${longDate(seeded.today)}`) });
-		await expect(day).toHaveAccessibleName(/1 skipped/);
+		await expect(title(page)).toHaveText('Muay Thai class');
+		await expect(dot(page, seeded.today)).toHaveAccessibleName(/1 skipped/);
+		await expect(dot(page, seeded.today)).toHaveAttribute('data-mark', 'today');
+
+		await skipFromItsPage(page, todays('Muay Thai class').lineage, 'Skipped Muay Thai class');
+		await todayTab(page).click();
+		await expect(page).toHaveURL('/today');
+		await expect(day(page)).toHaveAttribute('data-state', 'skipped');
+		await expect(title(page)).toHaveText('Skipped');
+		await expect(page.getByTestId('today-when')).toHaveText(
+			'Full body and Muay Thai class. The rest of the week stays as it is.'
+		);
+		await expect(page.getByTestId('start-workout')).toHaveCount(0);
+		await expect(logLink(page)).toHaveText('Log something anyway');
+		await expect(logLink(page)).toHaveAttribute('href', '/workout');
+		await expect(dot(page, seeded.today)).toHaveAttribute('data-mark', 'skipped');
+		await expect(dot(page, seeded.today)).toHaveAccessibleName(/2 skipped/);
 	});
 
 	test.describe('with the network in the test’s hands', () => {
@@ -189,7 +249,7 @@ test.describe('a program with sessions today', () => {
 		test.use({ serviceWorkers: 'block' });
 
 		// A failed client navigation is the (app) layout's error view, inside the shell; the plan's
-		// own designed error, for a server read that fails, is the streamed fail-soft payload
+		// own designed statement, for a server read that fails, is the streamed fail-soft payload
 		// (tests/integration/training/today-load.test.ts).
 		test('a client navigation whose data fails shows the designed error, whose Try again recovers', async ({
 			page
@@ -210,8 +270,8 @@ test.describe('a program with sessions today', () => {
 
 			await page.unrouteAll({ behavior: 'ignoreErrors' });
 			await error.getByRole('button', { name: 'Try again' }).click();
-			await expect(cards(page)).toHaveCount(2);
-			await expect(plan(page)).not.toHaveAttribute('aria-busy', 'true');
+			await expect(title(page)).toHaveText('Full body');
+			await expect(page.getByTestId('today-loading')).toHaveCount(0);
 		});
 
 		test('offline, going to Today shows the designed offline state, never a 500', async ({
@@ -230,80 +290,91 @@ test.describe('a program with sessions today', () => {
 	test.describe('in a desktop window', () => {
 		test.use(DESKTOP);
 
-		test('the plan sits in the wide column, and a session card has hover and focus states', async ({
+		test('the day sits in the readable column with a 260 px Start, which has hover and focus states', async ({
 			page
 		}, testInfo) => {
 			await gotoHydrated(page, '/today');
-			await expect(cards(page)).toHaveCount(2);
-			await expectMainCentred(page, await tokenPx(page, '--content-wide'));
+			await expect(title(page)).toHaveText('Full body');
+			await expectMainCentred(page, await tokenPx(page, '--content-readable'));
 			await expectNoSideScroll(page);
 			const main = (await page.locator('main#main').boundingBox())!;
-			const box = (await plan(page).boundingBox())!;
+			const box = (await day(page).boundingBox())!;
 			expect(box.x).toBeGreaterThanOrEqual(main.x - 1);
 			expect(box.x + box.width).toBeLessThanOrEqual(main.x + main.width + 1);
-			const card = cards(page).first();
-			const border = () => card.evaluate((el) => getComputedStyle(el).borderColor);
-			const resting = await border();
-			await card.hover();
-			await expect.poll(border).not.toBe(resting);
-			await card.focus();
-			await expect(card).toBeFocused();
+			expect(box.width, 'the day keeps to the 560 px column').toBeLessThanOrEqual(561);
+			await expect(page.getByTestId('today-side')).toHaveCount(0);
+			const go = start(page);
+			expect(Math.abs((await go.boundingBox())!.width - 260)).toBeLessThanOrEqual(1);
+			const fill = () => go.evaluate((el) => getComputedStyle(el).backgroundColor);
+			const resting = await fill();
+			await go.hover();
+			await expect.poll(fill).not.toBe(resting);
+			await page.mouse.move(0, 0);
+			await go.focus();
+			await expect(go).toBeFocused();
 			await captureScreen(page, testInfo, 'today-session-desktop');
 		});
 	});
 });
 
-test('a rest day says so and names the next session', async ({ page, request }, testInfo) => {
+test('a rest day says so, names the next session and offers to log something anyway', async ({
+	page,
+	request
+}, testInfo) => {
 	const seeded = await seed(request, 'today-rest', 'this_week');
 	await gotoHydrated(page, '/today');
-	await expect(cards(page)).toHaveCount(0);
-	const rest = page.getByTestId('today-rest');
-	await expect(rest).toContainText('Rest day');
+	await expect(day(page)).toHaveAttribute('data-state', 'rest');
+	await expect(title(page)).toHaveText('Rest day');
+	await expect(page.getByTestId('start-workout')).toHaveCount(0);
 	const next = after(seeded)[0]!;
-	await expect(rest).toContainText(`Next: ${next.title}`);
-	await expect(upNext(page).first()).toContainText(next.title);
+	await expect(lineOf(page, 'later')).toContainText(next.title);
+	await expect(lineOf(page, 'later')).toContainText(lineLabel(next.date, seeded.today));
+	await expect(logLink(page)).toHaveText('Log something anyway');
+	await expect(logLink(page)).toHaveAttribute('href', '/workout');
 	await captureScreen(page, testInfo, 'today-rest');
 	await auditThemes(page);
 });
 
-test('a program that starts next week says when, with week 1’s first session', async ({
+test('a program that starts next week names the day, with week 1’s first session', async ({
 	page,
 	request
 }, testInfo) => {
 	const seeded = await seed(request, 'hybrid', 'next_week');
 	const first = [...seeded.sessions].sort((a, b) => a.date.localeCompare(b.date))[0]!;
 	await gotoHydrated(page, '/today');
-	const starts = page.getByTestId('today-starts');
-	await expect(starts.getByRole('heading', { level: 2 })).toHaveText('Starts Monday');
-	await expect(starts).toContainText(`Week 1 begins ${longDate(seeded.weekStart)}`);
-	await expect(starts).toContainText(`First up: ${first.title}`);
-	// Week 1 is on the strip, from its first day, which shows its session.
-	await expect(strip(page)).toHaveAttribute('aria-label', 'Week 1');
-	await expect(page.getByTestId('today-day').getByRole('heading', { level: 2 })).toHaveText(
-		longDate(first.date)
-	);
-	expect(await titles(cards(page))).toEqual([first.title]);
-	await expect(upNext(page).first()).toContainText(first.title);
+	await expect(day(page)).toHaveAttribute('data-state', 'starts');
+	await expect(title(page)).toHaveText(startsTitle(seeded.weekStart, seeded.today));
+	await expect(page.getByTestId('today-when')).toHaveText(STARTS_LEAD);
+	const line = page.getByTestId('today-line');
+	await expect(line).toContainText(first.title);
+	await expect(line).toContainText(lineLabel(first.date, seeded.today));
+	await expect(logLink(page)).toHaveText('Log something anyway');
+	// No week to show before week 1.
+	await expect(dots(page)).toHaveCount(0);
 	await captureScreen(page, testInfo, 'today-starts');
 	await auditThemes(page);
 });
 
-test('a finished first block shows ‘Nothing planned yet’, an empty Up next and the way to Train', async ({
+test('a finished first block shows ‘Nothing yet’, the way back to every week, and Log something', async ({
 	page,
 	request
 }, testInfo) => {
 	await seed(request, 'one-week', 'last_week');
 	await gotoHydrated(page, '/today');
-	const complete = page.getByTestId('today-block-complete');
-	await expect(complete.getByRole('heading')).toHaveText('Nothing planned yet');
-	await expect(complete).toContainText('Your next block is planned from how this one went.');
-	await expect(upNext(page)).toHaveCount(0);
-	await expect(page.getByTestId('today-up-next-empty')).toBeVisible();
-	await expect(strip(page)).toHaveCount(0);
+	await expect(day(page)).toHaveAttribute('data-state', 'complete');
+	await expect(title(page)).toHaveText('Nothing yet');
+	await expect(page.getByTestId('today-when')).toContainText(
+		'I plan the next block from how this one went.'
+	);
+	await expect(dots(page)).toHaveCount(0);
+	await expect(logLink(page)).toContainText('Log something');
+	await expect(logLink(page)).toHaveAttribute('href', '/workout');
 	await captureScreen(page, testInfo, 'today-block-complete');
 	await auditThemes(page);
 
-	await page.getByTestId('today-train-link').click();
+	const back = page.getByTestId('today-train-link');
+	await expect(back).toContainText('Look back at every week');
+	await back.click();
 	await expect(page).toHaveURL('/train');
 	await expect(page.getByTestId('train-block-complete')).toBeVisible();
 });

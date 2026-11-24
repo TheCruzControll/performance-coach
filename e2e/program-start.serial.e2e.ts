@@ -10,6 +10,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { addDays, mondayOf } from '../src/lib/domain/calendar';
 import { localDay } from '../src/lib/domain/dates';
 import { longDate, shortDate } from '../src/lib/ui/program/words';
+import { startsTitle } from '../src/routes/(app)/today/day-words';
 import { DESKTOP, expectMainCentred, expectNoSideScroll } from './desktop';
 import { openMore } from './program-support';
 import {
@@ -150,9 +151,10 @@ async function moveAWeekLater(page: Page, request: APIRequestContext) {
 	await expect(page).toHaveURL('/train');
 	await expect(page.getByTestId('program-status')).toHaveText(`Starts ${longDate(moved)}`);
 
-	// Today shows the new first day.
+	// Today names the new first day.
 	await gotoHydrated(page, '/today');
-	await expect(page.getByTestId('today-starts')).toContainText(`Week 1 begins ${longDate(moved)}`);
+	await expect(page.getByTestId('today-day')).toHaveAttribute('data-state', 'starts');
+	await expect(page.getByTestId('today-title')).toHaveText(startsTitle(moved, today()));
 
 	// Changes lists the move as version 2, its summary on its line.
 	await gotoHydrated(page, '/train/history');
@@ -180,9 +182,10 @@ test('moving the start a week later updates Train, Today and History', async ({
 	const errors = trackConsoleErrors(page);
 	const { built } = await moveAWeekLater(page, request);
 
-	// Moving back undoes it, as version 3; Today offers the way there too.
-	await gotoHydrated(page, '/today');
-	await page.getByTestId('today-change-start').click();
+	// Moving back undoes it, as version 3, from Train's More (Today no longer offers it, v2/06b).
+	await gotoHydrated(page, '/train');
+	await openMore(page);
+	await page.getByTestId('open-start').click();
 	await expect(page).toHaveURL('/train/start');
 	expect(await audit(page)).toEqual([]);
 	await captureScreen(page, testInfo, 'train-start');

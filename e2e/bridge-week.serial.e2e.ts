@@ -5,7 +5,7 @@
  * days, and lists the run logged this week as a line of its own; its next step and the next
  * week's arrow open Build's first week; the whole plan names the bridge with its length, as its
  * current phase; History's change that made it says the week was not planned before it;
- * Today's panel names the next block's start with 'Log something else'. Axe is clean in both themes on a phone (393 × 659) and in a desktop window
+ * Today is a 'Free week' naming the next block's start, with 'Log something'. Axe is clean in both themes on a phone (393 × 659) and in a desktop window
  * (1440 × 900), where each screen is captured.
  *
  * Serial: the program is the one owner's, which every browser and worker shares.
@@ -40,8 +40,7 @@ test.afterAll(async () => {
 	await resetAnalytics();
 });
 
-const startsLine = () => `Your next block starts ${shortDate(seeded.nextBlock.startsOn)}`;
-/** Train's sentence: the next block by name, and its first day. */
+/** Train's sentence, and Today's: the next block by name, and its first day. */
 const trainStarts = () => `Build starts ${longDate(seeded.nextBlock.startsOn)}`;
 const bridgeCard = (page: Page) => page.getByTestId('train-bridge');
 
@@ -136,18 +135,23 @@ test('History’s change that made the bridge says the week was not planned befo
 	await auditBothThemes(page, 'History, the week before a bridge');
 });
 
-test('Today’s panel names the next block’s start, with Log something else', async ({
+test('Today is a free week naming the next block’s start, with Log something', async ({
 	page
 }, testInfo) => {
 	await gotoHydrated(page, '/today');
-	const bridge = page.getByTestId('today-plan').getByTestId('today-bridge');
-	await expect(bridge).toContainText('Between blocks');
-	await expect(bridge).toContainText(startsLine());
-	await expect(bridge.getByTestId('log-something-else')).toHaveAttribute('href', '/workout');
-	await expect(page.getByTestId('today-rest')).toHaveCount(0);
-	await expect(page.getByTestId('today-up-next').getByTestId('up-next-card').first()).toContainText(
+	const day = page.getByTestId('today-day');
+	await expect(day).toHaveAttribute('data-state', 'bridge');
+	await expect(page.getByTestId('today-title')).toHaveText('Free week');
+	await expect(page.getByTestId('today-when')).toContainText('Between blocks');
+	await expect(page.getByTestId('today-when')).toContainText(trainStarts());
+	// Never seven rest days: no week, and the next block's first session under the day.
+	await expect(page.getByTestId('week-dots')).toHaveCount(0);
+	await expect(page.locator('[data-testid="today-line"][data-kind="later"]')).toContainText(
 		'Strength A'
 	);
+	const log = page.getByTestId('log-something-else');
+	await expect(log).toHaveText('Log something');
+	await expect(log).toHaveAttribute('href', '/workout');
 	await auditBothThemes(page, 'Today, a bridge week');
 	await captureScreen(page, testInfo, 'bridge-week-today');
 });
@@ -183,7 +187,7 @@ test.describe('in a desktop window', () => {
 		await captureScreen(page, testInfo, 'bridge-week-history-desktop');
 
 		await gotoHydrated(page, '/today');
-		await expect(page.getByTestId('today-bridge')).toContainText(startsLine());
+		await expect(page.getByTestId('today-when')).toContainText(trainStarts());
 		await expectNoSideScroll(page);
 		await auditBothThemes(page, 'Today, a bridge week, desktop');
 		await captureScreen(page, testInfo, 'bridge-week-today-desktop');

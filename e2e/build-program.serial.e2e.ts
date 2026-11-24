@@ -374,7 +374,7 @@ test.describe('with the service worker blocked, so page.route sees every request
 		await gotoHydrated(page, '/today');
 		await cta(page).click();
 		const chunkError = page.getByTestId('today-panel-error');
-		await expect(chunkError).toContainText('Couldn’t load this part of Today');
+		await expect(chunkError).toContainText('Couldn’t load today');
 		failing = false;
 		await chunkError.getByRole('button', { name: 'Try again' }).click();
 		// WebKit fetches the module again in place; Chromium keeps the failed fetch and reloads

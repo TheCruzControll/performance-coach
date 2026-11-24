@@ -77,11 +77,21 @@ export function createHistoryRepository(db: Executor) {
 			return activeWorkouts(db, ownerId, limit);
 		},
 
-		/** Each lineage's newest completed workout, by client id; lineages without one are absent. */
-		async completedWorkoutsFor(ownerId: string, lineages: string[]): Promise<Map<string, string>> {
+		/**
+		 * Each lineage's newest completed workout, by client id, with its length in seconds (null
+		 * when not recorded); lineages without one are absent.
+		 */
+		async completedWorkoutsFor(
+			ownerId: string,
+			lineages: string[]
+		): Promise<Map<string, { id: string; seconds: number | null }>> {
 			if (!lineages.length) return new Map();
 			const rows = await completedWorkoutsFor(db, ownerId, lineages);
-			return new Map(rows.flatMap((row) => (row.lineage ? [[row.lineage, row.id] as const] : [])));
+			return new Map(
+				rows.flatMap((row) =>
+					row.lineage ? [[row.lineage, { id: row.id, seconds: row.seconds }] as const] : []
+				)
+			);
 		},
 
 		/** The owner's completed workouts, newest first, `limit` at a time after `before`. */

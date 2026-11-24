@@ -1,10 +1,10 @@
 /**
  * Today's state panels are code-split (src/routes/(app)/today/panels): the server sends the
  * state's panel as markup, which the browser keeps as sent while Today hydrates without its code,
- * and a client navigation shows Today at once with the panel's skeleton (here the Build card's,
- * the panel of an owner set up with no program). These specs prove that the panel's code
+ * and a client navigation shows Today at once with the panel's room, 'Getting today' (here the
+ * Build card's, the panel of an owner set up with no program). These specs prove that the panel's code
  * arriving late moves nothing, on either path, and that a panel whose code fails to load is a
- * designed notice with Retry, in place of the panel only, which recovers once the code can be
+ * designed statement with Try again, in place of the panel only, which recovers once the code can be
  * fetched: in place where the browser fetches a failed module again (WebKit), or through a
  * reload of Today where it does not (Chromium). Serial: each test sets up the one owner's
  * training profile, and the last one leaves it blank again.
@@ -86,9 +86,9 @@ async function routePanelChunk(
 
 /**
  * With onboarding incomplete, go from Profile to Today with the Setup chunk held: Today shows its
- * skeleton, and the setup card that replaces it moves nothing (the title and the week above it).
- * On a phone the card fills its skeleton’s room; on the wide layout nothing sits under it in its
- * column, so it takes its own height there, never more than the room.
+ * room, and the setup card that replaces it moves nothing (the date line above it). On a phone the
+ * card fills its room; at a desk nothing sits under it in its column, so it takes its own height
+ * there, never more than the room.
  */
 async function setupArrivesInPlace(page: Page, room: 'fills' | 'own' = 'fills') {
 	await resetTrainingProfile();
@@ -115,7 +115,7 @@ async function setupArrivesInPlace(page: Page, room: 'fills' | 'own' = 'fills') 
 	await page.waitForFunction(() => document.fonts.status === 'loaded');
 
 	await expectNoShift(page, {
-		boxes: [page.getByRole('heading', { level: 1, name: 'Today' }), week(page)],
+		boxes: [dateLine(page)],
 		action: async () => {
 			release();
 			await expect(page.getByTestId('today-setup-count')).toHaveText('0 of 10 steps done');
@@ -140,8 +140,8 @@ async function setupArrivesInPlace(page: Page, room: 'fills' | 'own' = 'fills') 
 }
 
 const notice = (page: Page) => page.getByTestId('today-panel-error');
-/** M2's week shape, above the state's panel until a program exists. */
-const week = (page: Page) => page.getByRole('list', { name: 'This week' });
+/** The date line above the state's panel (no week before a program, v2/06b). */
+const dateLine = (page: Page) => page.getByTestId('today-date');
 /** The Build card's live button, not its served copy (inert until the card's code arrives). */
 const buildCta = (page: Page) =>
 	page.locator('[data-testid="today-build-cta"]:not([data-served] *)');
@@ -203,16 +203,12 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		await page.waitForFunction(() => document.fonts.status === 'loaded');
 		await expect(buildCta(page)).toHaveCount(0);
 		// Today hydrates without the panel's code (its initial JS holds only what every state
-		// shares): today's date is marked on the week strip while the chunk is still held.
-		await expect(week(page).locator('[aria-current="date"]')).toHaveCount(1);
+		// shares): the device's date is on the top line while the chunk is still held.
+		await expect(dateLine(page)).toHaveText(/^\w+day \d{1,2} \w+$/);
 		await expect(buildCta(page)).toHaveCount(0);
 
 		await expectNoShift(page, {
-			boxes: [
-				page.getByTestId('today-build'),
-				week(page),
-				page.getByRole('heading', { level: 1, name: 'Today' })
-			],
+			boxes: [page.getByTestId('today-build'), dateLine(page)],
 			action: async () => {
 				release();
 				await expect(buildCta(page)).toBeVisible();
@@ -234,11 +230,12 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		});
 		await gotoHydrated(page, '/profile');
 		await page.getByRole('link', { name: 'Today' }).first().click();
-		// The held chunk does not hold the navigation: Today is there, its panel a skeleton.
+		// The held chunk does not hold the navigation: Today is there, its panel's room 'Getting today'.
 		await expect(page).toHaveURL(/\/today$/);
 		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
 		const skeleton = page.getByTestId('today-panel');
 		await expect(skeleton).toHaveAttribute('aria-busy', 'true');
+		await expect(skeleton).toContainText('Getting today');
 		await expect(page.getByTestId('today-build')).toHaveCount(0);
 		await expect.poll(() => requested, { message: 'the panel’s code is on its way' }).toBe(true);
 		const reserved = (await skeleton.boundingBox())!;
@@ -248,7 +245,7 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		await page.waitForFunction(() => document.fonts.status === 'loaded');
 
 		await expectNoShift(page, {
-			boxes: [page.getByRole('heading', { level: 1, name: 'Today' }), week(page)],
+			boxes: [dateLine(page)],
 			action: async () => {
 				release();
 				await expect(buildCta(page)).toBeVisible();
@@ -268,16 +265,18 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 		await setupArrivesInPlace(page);
 	});
 
-	test('a panel whose code fails is a designed notice with Retry, and Retry renders the panel', async ({
+	test('a panel whose code fails is a designed statement with Try again, which renders the panel', async ({
 		page
 	}, testInfo) => {
 		const letThrough = await arriveWithBuildFailing(page);
 		const failed = notice(page);
-		await expect(failed).toContainText('Couldn’t load this part of Today');
+		await expect(failed.getByRole('heading', { level: 2 })).toHaveText('Couldn’t load today');
+		await expect(failed).toContainText('Everything else here still works.');
 		await expect(page.getByTestId('today-build')).toHaveCount(0);
 		// Only the panel failed: the rest of Today is there and works.
-		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
-		await expect(week(page)).toBeVisible();
+		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeAttached();
+		await expect(dateLine(page)).toBeVisible();
+		await expect(page.getByTestId('today-avatar')).toBeVisible();
 		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
 		// It holds the panel's room: what is above it stays put once the panel arrives.
 		const panel = page.getByTestId('today-panel');
@@ -324,11 +323,11 @@ test.describe('with the service worker blocked, so page.route sees every chunk',
 			await setupArrivesInPlace(page, 'own');
 		});
 
-		test('the notice sits in the wide column, and Retry has a hover state', async ({
+		test('the statement sits in the readable column, and Try again has a hover state', async ({
 			page
 		}, testInfo) => {
 			await arriveWithBuildFailing(page);
-			await expectMainCentred(page, await tokenPx(page, '--content-wide'));
+			await expectMainCentred(page, await tokenPx(page, '--content-readable'));
 			await expectNoSideScroll(page);
 			const main = (await page.locator('main#main').boundingBox())!;
 			const box = (await notice(page).boundingBox())!;

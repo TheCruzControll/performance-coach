@@ -1,7 +1,7 @@
 /**
  * Ask the coach (src/lib/ui/ask-link.ts): from a workout (the exercise's Options sheet,
- * ExerciseActionsSheet), from an exercise's history (ExerciseHistorySheet, opened from the
- * workout) and from Today (its plan's panel). Each opens Coach on a new conversation with its
+ * ExerciseActionsSheet) and from an exercise's history (ExerciseHistorySheet, opened from the
+ * workout); Today no longer has one, Coach is a tab (v2/06b). Each opens Coach on a new conversation with its
  * question in the composer under its context chip; a workout's question names the workout, and
  * the turn it starts reads that workout. Offline, the link is Coach's designed offline state,
  * which loads the question once back online. The history sheet a coach answer opens (by exercise
@@ -10,12 +10,12 @@
  * Serial: the program, the workout and the coach rows are the one owner's (e2e/coach-support.ts).
  */
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import type { StrengthKit } from '../src/lib/domain/workout';
 import { lastRun, openThread, query, resetCoach, seedCoach } from './coach-support';
 import { DESKTOP, expectMainCentred, expectNoSideScroll } from './desktop';
-import { PROGRAM_TZ, seedProgram } from './program-support';
-import { captureScreen, gotoHydrated, trackConsoleErrors } from './support';
+import { PROGRAM_TZ } from './program-support';
+import { captureScreen, trackConsoleErrors } from './support';
 import { startFromKit } from './workout-start-support';
 
 test.use({ timezoneId: PROGRAM_TZ });
@@ -29,19 +29,12 @@ test.afterAll(async ({ request }) => {
 });
 
 const WORKOUT_QUESTION = 'Can we change today’s workout?';
-const TODAY_QUESTION = 'What should I focus on next week?';
 
 const composer = (page: Page) => page.getByRole('form', { name: 'Message your coach' });
 const message = (page: Page) => composer(page).getByRole('textbox', { name: 'Message' });
 const card = (page: Page) => page.getByTestId('workout-main').getByTestId('exercise');
 const actionsSheet = (page: Page) => page.getByTestId('exercise-actions-sheet');
 const historySheet = (page: Page) => page.getByTestId('exercise-history-sheet');
-
-/** Today's workout-day program, with onboarding complete so Today shows the plan. */
-async function seedOnboarded(request: APIRequestContext) {
-	await seedProgram(request, { fixture: 'workout-day', start: 'this_week' });
-	await query('update athlete_profiles set onboarding_completed_at = now()');
-}
 
 /** The card's Options sheet, open. */
 async function openActions(page: Page) {
@@ -150,18 +143,6 @@ test('from an exercise’s history on the workout: how that exercise has progres
 	});
 });
 
-test('from Today: what to focus on next week', async ({ page, request }, testInfo) => {
-	await seedOnboarded(request);
-	await gotoHydrated(page, '/today');
-	const ask = page.getByTestId('today-plan').getByTestId('ask-coach');
-	await expect(ask).toContainText(TODAY_QUESTION);
-	await captureScreen(page, testInfo, 'coach-entry-today');
-
-	await ask.click();
-	await expectEntry(page, { question: TODAY_QUESTION, chip: 'From Today', ref: null });
-	await expect(page.getByTestId('owner-message')).toHaveCount(0);
-});
-
 test('the history sheet a coach answer opens has no Ask the coach link', async ({
 	page,
 	request
@@ -213,29 +194,6 @@ test.describe('offline', () => {
 
 test.describe('desktop', () => {
 	test.use(DESKTOP);
-
-	test('Today’s link sits in the plan’s column, works by keyboard, and Coach opens centred', async ({
-		page,
-		request
-	}, testInfo) => {
-		await seedOnboarded(request);
-		await gotoHydrated(page, '/today');
-		const ask = page.getByTestId('today-plan').getByTestId('ask-coach');
-		await expect(ask).toBeVisible();
-		const link = await ask.boundingBox();
-		const upNext = await page.getByTestId('today-up-next').boundingBox();
-		expect(Math.abs(link!.x - upNext!.x), 'in the plan’s column').toBeLessThanOrEqual(1);
-		expect(Math.abs(link!.width - upNext!.width), 'as wide as Up next').toBeLessThanOrEqual(1);
-		await expectNoSideScroll(page);
-		await captureScreen(page, testInfo, 'coach-entry-today-desktop');
-
-		await ask.focus();
-		await expect(ask).toBeFocused();
-		await page.keyboard.press('Enter');
-		await expectEntry(page, { question: TODAY_QUESTION, chip: 'From Today', ref: null });
-		await expectMainCentred(page);
-		await expectNoSideScroll(page);
-	});
 
 	test('the workout’s Options dialog offers it, and Coach opens with the workout’s question', async ({
 		page,
