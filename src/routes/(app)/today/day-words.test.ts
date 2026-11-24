@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	blockEndWords,
 	bridgeLead,
 	coachLine,
 	completeLead,
@@ -179,6 +180,21 @@ describe('the lines and the states', () => {
 		expect(completeLead(1, '2026-10-26', '2026-11-01')).toMatch(
 			/^One week trained · You trained 26 October to 1 November\./
 		);
+	});
+
+	it('says a block’s end: its weeks and name, then the block after it', () => {
+		expect(blockEndWords({ weeks: 6, name: 'Build', next: 'Peak' })).toEqual({
+			title: 'Done',
+			when: 'Six weeks of Build',
+			coach: 'Let’s look at what it built, then I’ll set up Peak with you.'
+		});
+		const counted = blockEndWords({ weeks: 6, name: 'Build', done: 33, planned: 36, next: null });
+		expect(counted.when).toBe('Six weeks of Build · 33 of 36 sessions');
+		expect(counted.coach).toBe(
+			'Let’s look at what it built, then I’ll plan what comes next with you.'
+		);
+		expect(blockEndWords({ weeks: 1, name: 'Base', next: null }).when).toBe('One week of Base');
+		expect(blockEndWords({ weeks: 14, name: 'Base', next: null }).when).toBe('14 weeks of Base');
 	});
 
 	it('counts the weeks to the top goal’s date', () => {

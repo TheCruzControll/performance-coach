@@ -5,14 +5,18 @@
  *    set and back-offs with weight, reps and RPE → the rest timer → the plate calculator from a
  *    set → the leg press swapped as machine unavailable (no preference, no new version) → the
  *    A1/A2 superset → a refresh that restores the exercise, every set, the rest (within 1 s) and
- *    the stopwatch exactly → the resume bar → Finish → History, its detail and Back squat's
- *    exercise history → Today reads Done.
+ *    the stopwatch exactly → Minimise, and Today's day is the workout in progress with Resume (it
+ *    claims it from the resume line) → Finish → History, its detail and Back squat's exercise
+ *    history → Today reads Done.
  * 5. 'This hurts' offers Stop and gentler options and never push-through copy; 'I don't like this
  *    exercise' on the Romanian deadlift persists (SQL and Profile → Exercises), and next week's
  *    session no longer prescribes it.
  * Then a week 1 the real generator built (no fixture): a blank-1RM hybrid profile, Today → Build
  * my program → This week → Start week 1, and its first strength session started from
  * /workout?start=<lineage>: the RPE instruction, no invented weight, and one set in Postgres.
+ * And a workout in progress on another device (GET /api/workouts/active answered here): Today's
+ * day is that workout with Continue here, the resume line draws nothing, and a Continue here that
+ * cannot reach the server says so in red with Try again; on the phone and at 1440 × 900.
  *
  * Every /api/coach request is aborted and no agent run is recorded: core logging never needs the
  * AI. Every state is captured to test-results/screens/<project>/, the desktop window's under
@@ -106,6 +110,12 @@ async function withoutCoach(page: Page) {
 async function expectNoCoachRuns() {
 	expect(await query('select id from agent_runs')).toEqual([]);
 }
+
+/** The resume line has looked on Today (it loads on idle after hydration): what it found is settled. */
+const looked = (page: Page) =>
+	expect(page.locator('[data-testid="resume-slot"][data-looked="/today"]')).toBeAttached({
+		timeout: 10_000
+	});
 
 /** Today, once it has read the device and saved today's kits (on idle). */
 async function openToday(page: Page) {
@@ -398,14 +408,23 @@ async function strengthJourney(page: Page, request: APIRequestContext, testInfo:
 		}
 	});
 
-	await test.step('the resume bar: Minimise to Today, then Resume returns to the workout', async () => {
+	await test.step('Minimise to Today: the day is the workout in progress, and Resume returns to it', async () => {
 		await page.getByRole('link', { name: 'Minimise' }).click();
 		await landed(page, /\/today$/);
-		const bar = page.getByTestId('resume-bar');
-		await expect(bar).toBeVisible({ timeout: 10_000 });
-		await expect(page.getByTestId('resume-title')).toHaveText(STRENGTH);
-		await shoot(page, testInfo, 'resume-bar');
-		await page.getByTestId('resume-link').click();
+		// The resume line has looked (on idle), and Today has claimed what it found.
+		await looked(page);
+		await expect(todayDay(page)).toHaveAttribute('data-state', 'in-progress');
+		await expect(page.getByTestId('today-title')).toHaveText(STRENGTH);
+		await expect(page.getByTestId('today-when')).toHaveText('In progress on this device');
+		const resume = todayDay(page).getByTestId('resume-workout');
+		await expect(resume).toHaveText('Resume');
+		await expect(resume).toHaveAttribute('href', '/workout');
+		await expect(page.getByTestId('start-workout')).toHaveCount(0);
+		// The line keeps only changes waiting to sync on Today: none here.
+		await expect(page.getByTestId('resume-link')).toHaveCount(0);
+		await expect(page.getByTestId('resume-bar')).toHaveCount(0);
+		await shoot(page, testInfo, 'today-in-progress');
+		await resume.click();
 		await expect(page).toHaveURL(/\/workout$/);
 		await expect(heading(page)).toHaveText('Back squat');
 	});
@@ -589,6 +608,84 @@ test(J5, async ({ page, request }, testInfo) => {
 	await preferenceJourney(page, request, testInfo);
 });
 
+// ---- A workout in progress on another device -------------------------------------------------
+
+const REMOTE =
+	'a workout in progress on another device is Today’s day: Continue here, no resume line, and a failed Continue here in red with Try again';
+
+/**
+ * Today with a workout in progress on another device: GET /api/workouts/active answers with one
+ * (as the server does for a workout started elsewhere), and Continue here's read of it fails as
+ * an unreachable server does.
+ */
+async function remoteJourney(page: Page, request: APIRequestContext, testInfo: TestInfo) {
+	await withoutCoach(page);
+	await seedWorkoutDay(request);
+	const id = crypto.randomUUID();
+	const startedAt = new Date(Date.now() - 23 * 60_000).toISOString();
+	await page.route('**/api/workouts/active', (route) =>
+		route.fulfill({
+			contentType: 'application/json',
+			body: JSON.stringify({
+				v: 1,
+				workouts: [
+					{
+						id,
+						kind: 'strength',
+						title: STRENGTH,
+						sessionType: 'strength',
+						discipline: null,
+						plannedSessionId: null,
+						plannedLineage: null,
+						programId: null,
+						startedAt
+					}
+				]
+			})
+		})
+	);
+	await page.route(`**/api/workouts/${id}`, (route) => route.abort('internetdisconnected'));
+
+	await gotoHydrated(page, '/today');
+	await looked(page);
+	await expect(todayDay(page)).toHaveAttribute('data-state', 'remote');
+	await expect(page.getByTestId('today-title')).toHaveText(STRENGTH);
+	await expect(page.getByTestId('today-when')).toHaveText('In progress on another device');
+	await expect(page.getByTestId('today-coach')).toHaveText(
+		/^Started on another device at \d{1,2}:\d\d [ap]m\. Every set you logged is here too\.$/
+	);
+	const button = todayDay(page).getByTestId('continue-here');
+	await expect(button).toHaveText('Continue here');
+	await expect(page.getByTestId('start-workout')).toHaveCount(0);
+	// Today draws it: the line offers nothing of its own here.
+	await expect(page.getByTestId('resume-bar')).toHaveCount(0);
+	await expect(page.locator('[data-testid="continue-here"]')).toHaveCount(1);
+	const box = (await button.boundingBox())!;
+	if (isDesktopPage(page)) {
+		expect(Math.abs(box.width - 260), 'Continue here, 260 px').toBeLessThanOrEqual(1);
+	} else {
+		const tabBar = (await page.getByRole('navigation', { name: 'Primary' }).boundingBox())!;
+		expect(box.y + box.height, 'Continue here above the tab bar').toBeLessThanOrEqual(tabBar.y);
+	}
+	await shoot(page, testInfo, 'today-remote');
+
+	// The server cannot be reached: the one red line on Today, and the button tries again.
+	await button.click();
+	await expect(page.getByTestId('today-coach')).toHaveText(
+		'Couldn’t bring it over. Check your connection, then try again.'
+	);
+	await expect(page.getByTestId('today-coach')).toHaveAttribute('data-danger', 'true');
+	await expect(button).toHaveText('Try again');
+	await expect(page).toHaveURL(/\/today$/);
+	await expect(page.getByTestId('resume-bar')).toHaveCount(0);
+	await shoot(page, testInfo, 'today-remote-failed');
+	await expectNoCoachRuns();
+}
+
+test(REMOTE, async ({ page, request }, testInfo) => {
+	await remoteJourney(page, request, testInfo);
+});
+
 // ---- A week 1 the generator built -------------------------------------------------------------
 
 const general = (title: string, disciplines: string[]) => ({
@@ -736,5 +833,9 @@ test.describe('in a desktop window', () => {
 
 	test(J5, async ({ page, request }, testInfo) => {
 		await preferenceJourney(page, request, testInfo);
+	});
+
+	test(REMOTE, async ({ page, request }, testInfo) => {
+		await remoteJourney(page, request, testInfo);
 	});
 });

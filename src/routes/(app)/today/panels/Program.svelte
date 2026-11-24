@@ -6,29 +6,45 @@
   progress), then one line under it (the next session, or a goal) or the quiet link to log
   something. A tap on a dot shows that day, composed on the server with the rest, with no
   request: its session, Open the session and Back to today. Rest, done, skipped, before week 1,
-  between blocks and nothing yet are each a day of their own. A week or a block to review keeps
-  its prompt above the day (ReviewPrompt) until v2/06b2, and the resume line keeps the workout in
-  progress. The plan is streamed: 'Getting today' at the foot until it arrives, and a failed read
-  is one statement with Try again. Once the plan shows and the browser is idle, Today saves the
+  between blocks and nothing yet are each a day of their own. A block to review is the day, its
+  button the review's create form (as ReviewPrompt's: pending, not ready yet, failed with Try
+  again, offline); a week to review is the one line under the day, to Progress → Reviews.
+  While the plan shows, Today claims the workout in progress from the resume line
+  (resume-state.svelte.ts) and draws it as today's day: Resume on this device, Continue here
+  from another (resume.ts continueHereFlow), so the line keeps only changes waiting to sync here.
+  The plan is streamed: 'Getting today' at the foot until it arrives, and a failed read is one
+  statement with Try again. Once the plan shows and the browser is idle, Today saves the
   kits of the sessions still to do today and in the next two days, so they start in a gym with no
   signal (coming-kits.ts). Code-split behind PanelLoader.
 -->
 <script lang="ts">
-	import { tick } from 'svelte';
-	import { invalidateAll } from '$app/navigation';
+	import { onMount, tick } from 'svelte';
+	import { applyAction, enhance, type SubmitFunction } from '$app/forms';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { deviceWorkout } from '#lib/client/workout/device-workout.svelte.ts';
+	import { workoutPath } from '#lib/client/workout/kinds.ts';
 	import type { IsoDate } from '#lib/domain/calendar.ts';
-	import ReviewPrompt from '#lib/ui/analytics/ReviewPrompt.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import { resumeLink } from '#lib/ui/program/start-link.ts';
+	import { continueHereFlow, NOTHING } from '../../resume.ts';
+	import { resumeState } from '../../resume-state.svelte.ts';
 	import type { PageData } from '../$types';
 
 	type TodayPlanView = Awaited<NonNullable<PageData['plan']>>;
 	type Ready = Extract<TodayPlanView, { failed: false }>;
 	type Day = Ready['day'];
 	type Line = Day['lines'][number];
+	type Review = NonNullable<Day['review']>;
+	/** The day as drawn: the plan's, or the workout in progress Today claimed (3.7). */
+	type Shown = Omit<Day, 'state'> & {
+		state: Day['state'] | 'in-progress' | 'remote';
+		/** The coach's sentence is the screen's one red line (a failure). */
+		danger?: boolean;
+		/** Under a claimed workout, the plan's own day's state: its lines keep their styling. */
+		planState?: Day['state'];
+	};
 
 	interface Props {
 		/** Settled when Today was server-rendered; a promise after a client navigation. */
@@ -46,8 +62,136 @@
 	});
 
 	const pick = (date: IsoDate, today: IsoDate) => (picked = date === today ? null : date);
-	const shown = (view: Ready): Day =>
-		(picked && view.others.find((d) => d.date === picked)) || view.day;
+
+	// ---- The workout in progress, claimed from the resume line -----------------------------------
+
+	/** Today's path, as the shell passes it to the resume line. */
+	const TODAY = resolve('/(app)/today');
+	/** The plan shows (not failed): only then does Today claim the workout in progress (D13). */
+	let showing = $state(false);
+	$effect(() => {
+		let live = true;
+		void Promise.resolve(plan).then(
+			(view) => live && (showing = !view.failed),
+			() => {}
+		);
+		return () => (live = false);
+	});
+	$effect(() => {
+		if (!showing) return;
+		resumeState.claimed = TODAY;
+		return () => {
+			if (resumeState.claimed === TODAY) resumeState.claimed = null;
+		};
+	});
+	/** What the resume line last found: the workout in progress, here or on another device. */
+	const found = $derived(resumeState.found);
+
+	/** A start time as the device's clock reads it: '9:12 am'. */
+	function clock(at: string): string {
+		const time = new Date(at);
+		const h = time.getHours();
+		return `${h % 12 || 12}:${String(time.getMinutes()).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`;
+	}
+
+	/** The workout in progress as today's day, under the plan's own day's lines; null with none. */
+	function claimedDay(day: Day): Shown | null {
+		const as = {
+			...day,
+			planState: day.state,
+			coach: null,
+			lead: null,
+			review: null,
+			rows: [],
+			log: null
+		};
+		if (found.type === 'active')
+			return {
+				...as,
+				state: 'in-progress',
+				title: found.workout.title,
+				when: 'In progress on this device',
+				coach: 'Every set you log is saved on this device.'
+			};
+		if (found.type !== 'remote') return null;
+		return {
+			...as,
+			state: 'remote',
+			title: found.workout.title,
+			when: 'In progress on another device',
+			coach: resumeState.failed
+				? 'Couldn’t bring it over. Check your connection, then try again.'
+				: `Started on another device at ${clock(found.workout.startedAt)}. Every set you logged is here too.`,
+			danger: resumeState.failed
+		};
+	}
+
+	/** Continue here: builds the other device's workout here, then opens its page. */
+	async function adopt() {
+		if (found.type !== 'remote') return;
+		const { id, kind } = found.workout;
+		const outcome = await continueHereFlow(id, resolve(workoutPath(kind)), {
+			goto,
+			flags: resumeState
+		});
+		// Finished or abandoned meanwhile: the plan's day comes back.
+		if (outcome === 'gone') resumeState.found = NOTHING;
+	}
+
+	// ---- A block to review: its create form, as ReviewPrompt's ----------------------------------
+
+	/** navigator.onLine and its events, as the review list reads them (ReviewList.svelte). */
+	let online = $state(true);
+	onMount(() => (online = navigator.onLine));
+	let reviewing = $state<'pending' | 'failed' | { ready?: string }>();
+	const submit: SubmitFunction = ({ cancel }) => {
+		if (reviewing === 'pending' || !online) return cancel();
+		reviewing = 'pending';
+		return async ({ result }) => {
+			if (result.type === 'failure' && result.data?.reason === 'not_reviewable')
+				reviewing = { ready: result.data.ready };
+			else if (result.type === 'redirect') {
+				await applyAction(result);
+				reviewing = undefined;
+			} else reviewing = 'failed';
+		};
+	};
+
+	/** A block's end: the coach's sentence says when it cannot be created yet, or here now. */
+	function blockEnd(day: Day): Shown {
+		if (!online)
+			return { ...day, coach: 'You’re offline. Review the block once you’re back online.' };
+		if (reviewing === 'failed')
+			return {
+				...day,
+				coach: 'Couldn’t create this review. Your training is safe: try again.',
+				danger: true
+			};
+		if (typeof reviewing === 'object' && day.review) {
+			const ready = reviewing.ready ? ` · ${reviewing.ready}` : '';
+			return { ...day, coach: `${day.review.notReady}${ready}` };
+		}
+		return day;
+	}
+
+	/**
+	 * The day drawn: a day tapped in the week; else the workout in progress Today claimed; else
+	 * today's, a done day saying its sets are safe here while they wait to sync (D9).
+	 */
+	function shown(view: Ready): Shown {
+		const other = picked && view.others.find((d) => d.date === picked);
+		if (other) return other;
+		const claimed = claimedDay(view.day);
+		if (claimed) return claimed;
+		const { day } = view;
+		if (day.state === 'block-end') return blockEnd(day);
+		if (day.state === 'done' && found.type === 'waiting')
+			return {
+				...day,
+				coach: 'Everything you logged is safe on this device. It goes up when you’re back online.'
+			};
+		return day;
+	}
 
 	/** Back to today from another day: today's dot takes the focus. */
 	async function backToToday() {
@@ -151,8 +295,48 @@
 	{/if}
 {/snippet}
 
-{#snippet action(day: Day)}
-	{#if day.lead}
+{#snippet reviewForm(review: Review)}
+	{#if review.create}
+		<form class="go" method="POST" action={review.create.action} use:enhance={submit}>
+			{#each Object.entries(review.create.fields) as [name, value] (name)}
+				<input type="hidden" {name} {value} />
+			{/each}
+			<Button
+				type="submit"
+				size="lg"
+				block
+				loading={reviewing === 'pending'}
+				disabled={!online}
+				data-testid="review-block"
+				>{reviewing === 'failed' ? 'Try again' : 'Review the block'}</Button
+			>
+		</form>
+	{/if}
+{/snippet}
+
+{#snippet action(day: Shown)}
+	{#if day.state === 'in-progress' && found.type === 'active'}
+		<div class="go">
+			<Button
+				size="lg"
+				block
+				href={resolve(workoutPath(found.workout.kind))}
+				data-testid="resume-workout">Resume</Button
+			>
+		</div>
+	{:else if day.state === 'remote'}
+		<div class="go">
+			<Button
+				size="lg"
+				block
+				loading={resumeState.continuing}
+				onclick={adopt}
+				data-testid="continue-here">{resumeState.failed ? 'Try again' : 'Continue here'}</Button
+			>
+		</div>
+	{:else if day.review}
+		{@render reviewForm(day.review)}
+	{:else if day.lead}
 		{@const link = resumeLink(day.lead.lineage, day.lead.link, deviceWorkout.active)!}
 		<div class="go">
 			<Button size="lg" block href={link.href} data-testid={link.id}>
@@ -162,15 +346,27 @@
 	{/if}
 {/snippet}
 
-{#snippet theDay(day: Day)}
+{#snippet theDay(day: Shown)}
 	<section class="day" data-state={day.state} data-testid="today-day" aria-labelledby="today-title">
 		<h2 id="today-title" class="title" data-testid="today-title">{day.title}</h2>
 		{#if day.when}<p class="when" data-testid="today-when">{day.when}</p>{/if}
-		{#if day.coach}<p class="coach" data-testid="today-coach">{day.coach}</p>{/if}
+		{#if day.coach}
+			<p
+				class="coach"
+				data-danger={day.danger || undefined}
+				role="status"
+				data-testid="today-coach"
+			>
+				{day.coach}
+			</p>
+		{/if}
 		{@render action(day)}
 	</section>
 	{#if day.lines.length}
-		<ul class="lines" data-many={(day.lines.length > 1 && day.state === 'done') || undefined}>
+		<ul
+			class="lines"
+			data-many={(day.lines.length > 1 && (day.planState ?? day.state) === 'done') || undefined}
+		>
 			{#each day.lines as line, i (i)}
 				<li data-testid={line.kind === 'done' ? 'today-done' : undefined}>
 					{@render dayLine(line)}
@@ -208,6 +404,8 @@
 	{/if}
 {/snippet}
 
+<svelte:window ononline={() => (online = true)} onoffline={() => (online = false)} />
+
 <div class="plan" data-testid="today-plan" data-kits={kits}>
 	{#await plan}
 		<p class="getting" aria-busy="true" data-testid="today-loading">Getting today</p>
@@ -227,10 +425,6 @@
 			</section>
 		{:else}
 			{#if view.dots}{@render dots(view)}{/if}
-			{#if view.review}
-				<!-- A week or a block to review, above the day until v2/06b2 draws it as the day. -->
-				<div class="prompt"><ReviewPrompt review={view.review} /></div>
-			{/if}
 			{@render theDay(shown(view))}
 		{/if}
 	{/await}
@@ -337,10 +531,6 @@
 		font-weight: var(--weight-regular);
 	}
 
-	.prompt {
-		margin-top: var(--space-7);
-	}
-
 	/* The day stands at the foot, the empty room above it. */
 	.day {
 		margin-top: auto;
@@ -365,6 +555,11 @@
 		padding-top: var(--space-7);
 		font: var(--type-body);
 		color: var(--color-text);
+	}
+
+	/* Couldn't bring it over, or couldn't create the review: the one red on Today. */
+	.coach[data-danger] {
+		color: var(--color-danger);
 	}
 
 	/* 28 above Start, with a coach sentence or without. */

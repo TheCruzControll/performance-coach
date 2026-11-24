@@ -10,6 +10,9 @@
  * offline (the service worker's offline screen for /today) shows the bar, and it restores the
  * workout exactly. The bar never shifts the layout, is axe-clean in both themes, and in a desktop
  * window sits in the content column beside the rail, above the last element of every tab.
+ * Onboarding is left incomplete here, so Today shows setup, which keeps the line's Resume and
+ * Continue here (D13); once a plan shows, Today draws the workout in progress as its own day
+ * instead (journey-strength.serial.e2e.ts).
  *
  * Serial: the tests start workouts of the one owner and store a program (resetTrainingProfile
  * empties the workouts first). A test that holds or fails a request with page.route blocks the

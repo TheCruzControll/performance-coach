@@ -257,6 +257,7 @@ milestones.md.
   know, and Add a lift is a sheet to pick from; 'I don't know my numbers' makes Strength one
   statement; a discipline is a row with its level, its sheet holding the level, years and
   sessions. In Profile and in onboarding. The e2e run is CI's to prove.
+- **Instrument v2 Today, in progress and reviews (`v2/06b2`):** the workout in progress and a block's review are the day; a week's review is its line.
 - **Instrument v2 at a desk (`v2/03c`), which completes the Instrument v2 shell (`v2/03`).** The
   rail is the canvas with a hairline, the four tabs 28 px apart and the avatar at its foot, with
   no brand mark. A readable screen is 616 px (560 of text) centred right of the rail but at most

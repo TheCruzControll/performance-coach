@@ -32,6 +32,7 @@ describe('Program', () => {
 		when: 'This morning · strength · about 60 min',
 		coach: 'Baseline week. Finish every set with two reps still in you.',
 		lead: null,
+		review: null,
 		lines: [],
 		rows: [],
 		log: null,
@@ -44,7 +45,6 @@ describe('Program', () => {
 		day: day(),
 		others: [],
 		coming: [],
-		review: null,
 		...over
 	});
 	const start = (lineage: string) => ({
@@ -177,22 +177,72 @@ describe('Program', () => {
 		expect(complete).toMatch(/href="\/workout" data-testid="log-something-else"/);
 	});
 
-	it('keeps a review to do above the day, until v2/06b2 draws it as the day', async () => {
+	it('a block to review is the day, its button the review’s create form, with no prompt', async () => {
 		const html = await served(
 			ready({
-				review: {
-					kind: 'weekly',
-					state: 'due',
-					title: 'Your week in review is ready',
-					summary: 'Mon 26 Oct – Sun 1 Nov.',
-					href: null,
-					create: { action: '/progress/reviews?/create', fields: { weekStartsOn: '2026-10-26' } },
-					notReady: 'Not yet.'
-				}
+				day: day({
+					state: 'block-end',
+					title: 'Done',
+					when: 'Four weeks of Base',
+					coach: 'Let’s look at what it built, then I’ll set up Accumulation with you.',
+					review: {
+						kind: 'cycle',
+						state: 'due',
+						title: 'Block complete — review it and plan the next',
+						summary: 'Base · Mon 5 Oct – Sun 1 Nov: what it built.',
+						href: null,
+						create: {
+							action: '/progress/reviews?/createCycle',
+							fields: { programId: 'p1', blockLineage: 'b1' }
+						},
+						notReady: 'Not yet.'
+					},
+					lines: [{ ...later, label: 'Today' }]
+				})
 			})
 		);
-		expect(html.indexOf('data-testid="review-prompt"')).toBeGreaterThan(-1);
-		expect(html.indexOf('data-testid="review-prompt"')).toBeLessThan(
+		expect(html).toContain('data-state="block-end"');
+		expect(html).toMatch(/data-testid="today-title">Done<\/h2>/);
+		expect(html).toContain('data-testid="today-when">Four weeks of Base');
+		expect(html).toMatch(
+			/<form class="go[^"]*" method="POST" action="\/progress\/reviews\?\/createCycle"/
+		);
+		expect(html).toMatch(/<input type="hidden" name="blockLineage" value="b1"/);
+		expect(html).toMatch(/type="submit"[^>]*data-testid="review-block"[\s\S]*?Review the block/);
+		expect(html).not.toContain('data-testid="start-workout"');
+		expect(html).not.toContain('data-testid="review-prompt"');
+		// Today's session waits under it, as its line.
+		expect(html).toMatch(/aria-label="Today, Intervals, 45 min"[^>]*data-testid="today-line"/);
+	});
+
+	it('a week to review is the one line under the day, to Progress → Reviews', async () => {
+		const html = await served(
+			ready({
+				day: day({
+					lead: { lineage: 'a0', link: start('a0') },
+					lines: [
+						{
+							kind: 'review',
+							label: 'Last week',
+							title: 'Review ready',
+							end: null,
+							tick: false,
+							quiet: false,
+							href: '/progress/reviews',
+							chevron: true
+						}
+					]
+				})
+			})
+		);
+		expect(count(html, 'data-testid="start-workout"')).toBe(1);
+		expect(html).toMatch(
+			/<a class="line[^"]*" href="\/progress\/reviews" data-kind="review"[^>]*aria-label="Last week, Review ready"[^>]*data-testid="today-line"/
+		);
+		expect(html).toContain('chevron');
+		expect(html).not.toContain('data-testid="review-prompt"');
+		// The line stands under the day, not over it.
+		expect(html.indexOf('data-kind="review"')).toBeGreaterThan(
 			html.indexOf('data-testid="today-day"')
 		);
 	});

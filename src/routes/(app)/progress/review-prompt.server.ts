@@ -1,7 +1,7 @@
 /**
- * The review prompt Today's Program panel and Progress's Overview put at the top when a week or
- * a block completes (m6 review-entry-points): one tap from creating its review, or from reading
- * it once it exists. Words are composed here, with the data they describe, so the prompt ships
+ * The review prompt Progress's Overview puts at the top when a week or a block completes (m6
+ * review-entry-points): one tap from creating its review, or from reading it once it exists.
+ * Today reads it too: a block's is its day, with the create form, and a week's its one line. Words are composed here, with the data they describe, so the prompt ships
  * none of the vocabulary. Kept out of the loads so a test runs it with the services faked.
  *
  * One prompt at most, read one query at a time, in this order:

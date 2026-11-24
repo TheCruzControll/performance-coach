@@ -1,7 +1,7 @@
 /**
  * Today's day in words (Instrument v2, v2/06b): when a session is, what kind and how long, the
- * coach's one sentence, a rest, skipped or done day's sentence, the label of the one line under
- * the day, and each dot's mark in the week. Pure, read from calendar strings and the plan's own
+ * coach's one sentence, a rest, skipped, done or block's-end day's sentence, the label of the one
+ * line under the day, and each dot's mark in the week. Pure, read from calendar strings and the plan's own
  * words, and imported by plan.server.ts only, so none of it ships to the browser.
  */
 import { daysBetween, weekdayOf, type IsoDate } from '#lib/domain/calendar.ts';
@@ -187,6 +187,26 @@ export const bridgeLead = (next: string | null, startsOn: IsoDate) =>
  * I plan the next block from how this one went.' A single week reads 'One week trained'. */
 export const completeLead = (weeks: number, first: IsoDate, last: IsoDate) =>
 	`${weeks === 1 ? 'One week' : `All ${inWords(weeks)} weeks`} trained · You trained ${dayMonth(first)} to ${dayMonth(last)}. I plan the next block from how this one went.`;
+
+/** A block's end, while its review is due (D10): 'Done', 'Six weeks of Build', and the coach's
+ * sentence naming the block that comes next. The session count is added only when it is known. */
+export function blockEndWords(b: {
+	weeks: number;
+	name: string;
+	done?: number;
+	planned?: number;
+	next: string | null;
+}) {
+	const count = b.done !== undefined && b.planned ? ` · ${b.done} of ${b.planned} sessions` : '';
+	const weeks = b.weeks === 1 ? 'One week' : `${capital(inWords(b.weeks))} weeks`;
+	return {
+		title: 'Done',
+		when: `${weeks} of ${b.name}${count}`,
+		coach: b.next
+			? `Let’s look at what it built, then I’ll set up ${b.next} with you.`
+			: 'Let’s look at what it built, then I’ll plan what comes next with you.'
+	};
+}
 
 /** The top goal's line: null when it has no date or the date has passed (D11). */
 export function goalEnd(date: IsoDate | null, today: IsoDate): string | null {
