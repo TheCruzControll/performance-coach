@@ -239,7 +239,7 @@ section has no whole-section `save`.
   done, and the review's Start coaching needs an open goal and a schedule. Loads have no side
   effects: resuming means the furthest step advanced.
 - Today (`/(app)/today`) shows a "finish setting up" card until onboarding is complete, then
-  the open goals by rank and the shape of the week.
+  the shape of the week and the program's state; the goals and schedule are Profile's (v2/06a).
 
 Why it is built this way (docs/performance.md, measured): every route node and param matcher
 costs every route initial JS, because the app entry lists every node, so there is one dynamic
@@ -619,7 +619,7 @@ guards and the coach indexes.
 
 ## Analytics (M6)
 
-Every number on Progress, in the reviews, on Today's 'This week' and in the coach's analytics
+Every number on Progress (its 'This week' too), in the reviews and in the coach's analytics
 tools comes from one engine, so a screen and an answer never give one figure two values or two
 verdicts (PRD §10). The trend method is [ADR 0015](adr/0015-trend-classification.md) and the
 charts are [ADR 0016](adr/0016-hand-built-charts.md). `src/lib/domain/README.md` documents each

@@ -20,11 +20,9 @@ export type PanelImport<P extends Record<string, any> = any> = () => Promise<{
 export const PANELS = {
 	/** Onboarding is incomplete: the setup card. */
 	setup: () => import('./Setup.svelte'),
-	/** Onboarding is complete: the goals by rank and the shape of the week. */
-	summary: () => import('./Summary.svelte'),
-	/** Onboarding is complete and there is no program: the Build card, over the summary. */
+	/** Onboarding is complete and there is no program: the Build card. */
 	build: () => import('./Build.svelte'),
-	/** A program exists: the week, today's sessions and what's next, over the summary. */
+	/** A program exists: the week, today's sessions and what's next. */
 	program: () => import('./Program.svelte'),
 	/**
 	 * Build my program, once the Build card is tapped: week 1 previewed, then started. Browser

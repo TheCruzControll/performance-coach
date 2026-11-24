@@ -1,11 +1,14 @@
 /**
- * The week in progress at a glance, as Today's 'This week' shows it: sessions, training load
- * (sRPE: minutes × session RPE) and running distance from Monday through today, each against
- * the same days of last week. Every figure is the dashboards' own rule (series.ts's soFar over
- * the facts loader's counted workouts and runs, workload.ts's sessionLoads, running.ts's
- * wholeRun), read over those two half-weeks only, so Today and Progress never disagree.
+ * The week in progress at a glance, as the top of Progress's 'This week' shows it: sessions,
+ * training load (sRPE: minutes × session RPE) and running distance from Monday through today,
+ * each against the same days of last week. Every figure is the dashboards' own rule (series.ts's
+ * soFar over the facts loader's counted workouts and runs, workload.ts's sessionLoads,
+ * running.ts's wholeRun), read over those two half-weeks only, so the tiles and the dashboards
+ * below them never disagree.
  * - `logged`: whether anything has ever been logged, so a screen shows 0 for an empty week once
  *   there is a history, and 'no data yet' only before the first session.
+ * - `profile`: the owner's profile when the caller has already read it (to work out today), so
+ *   it is not read twice; read here otherwise.
  * - Reads run one at a time (the facts loader's queue), so `db` may be a transaction.
  */
 import { METRICS } from '../../../domain/analytics/metrics';
@@ -18,6 +21,7 @@ import { wholeRun } from '../../../domain/analytics/running';
 import { soFar, type SoFar } from '../../../domain/analytics/series';
 import { sessionLoads } from '../../../domain/analytics/workload';
 import { daysBetween, mondayOf, type IsoDate } from '../../../domain/calendar';
+import type { AthleteProfile } from '../../../domain/profile/types';
 import { getAthleteProfile } from '../profile/index';
 import { resolveDeps, type TrainingDeps } from '../training/shared';
 import { factsSource, type DashboardDeps } from './facts';
@@ -40,11 +44,11 @@ export interface WeekSoFar {
 
 export async function getWeekSoFar(
 	ownerId: string,
-	{ today }: { today: IsoDate },
+	{ today, profile: read }: { today: IsoDate; profile?: AthleteProfile },
 	deps: Pick<TrainingDeps, 'db'> & DashboardDeps = {}
 ): Promise<WeekSoFar> {
 	const { db } = resolveDeps(deps);
-	const profile = await getAthleteProfile(ownerId, { db });
+	const profile = read ?? (await getAthleteProfile(ownerId, { db }));
 	const { timeZone } = profile;
 	const weekStart = mondayOf(today);
 	const week = { weekStart, through: today, days: daysBetween(weekStart, today) + 1 };

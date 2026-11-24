@@ -2,12 +2,12 @@
  * Today until onboarding is complete: a setup card with how many of the steps that apply are
  * done and Continue to the step to resume at, which is how the owner gets into onboarding after
  * first sign-in and back into it after a reload. The card is server-rendered and fails soft: a
- * read that fails is a designed error with Retry, never a 500. Once it is complete, Today
- * summarises the open goals by rank (weeks to go counted from the device's date) and the shape of
- * the week, with the commitments marked on the week strip, then This week: sessions, training load
- * and distance from Monday to today against the same days last week (no data yet before the first
- * session, 0 for an empty week after it, a designed error with Retry when the read fails).
- * Serial (one test at a time, after the functional suites): every test starts from a blank
+ * read that fails is a designed error with Retry, never a 500. Once it is complete, Today offers
+ * to build the program, with the commitments marked on the week strip; the goals and schedule
+ * live in Profile. This week (v2/06a: moved from Today to the top of Progress) is sessions,
+ * training load and distance from Monday to today against the same days last week (no data yet
+ * before the first session, 0 for an empty week after it, a designed error with Retry when the
+ * read fails). Serial (one test at a time, after the functional suites): every test starts from a blank
  * training profile, which every browser and worker shares, and the last one leaves it blank again.
  */
 import AxeBuilder from '@axe-core/playwright';
@@ -100,9 +100,10 @@ async function setUp(request: APIRequestContext) {
 	expect(await finish.json()).toMatchObject({ type: 'redirect', location: '/today' });
 }
 
-const goals = (page: Page) => page.getByTestId('today-goal');
-const thisWeek = (page: Page) => page.getByTestId('today-week');
-const tiles = (page: Page) => thisWeek(page).getByTestId('today-stat');
+/** This week, on Progress. */
+const thisWeek = (page: Page) => page.getByTestId('week-so-far');
+const tiles = (page: Page) => thisWeek(page).getByTestId('week-stat');
+const views = (page: Page) => page.getByRole('navigation', { name: 'Progress views' });
 
 async function audit(page: Page) {
 	await page.waitForFunction(() => document.fonts.status === 'loaded');
@@ -213,7 +214,7 @@ test('once onboarding is complete, Today has no setup card: it offers to build t
 	await expect(card(page)).toHaveCount(0);
 });
 
-test('once set up, Today lists the goals by rank with weeks to go, and the shape of the week', async ({
+test('once set up, Today offers the Build card with the week’s shape; This week leads Progress', async ({
 	page,
 	request
 }, testInfo) => {
@@ -222,37 +223,11 @@ test('once set up, Today lists the goals by rank with weeks to go, and the shape
 	await gotoHydrated(page, '/today');
 	await expect(card(page)).toHaveCount(0);
 
-	// The Build card sits above the summary, which is unchanged below it.
-	const build = (await page.getByTestId('today-build').boundingBox())!;
-	expect(build.y + build.height).toBeLessThanOrEqual(
-		(await page.getByTestId('today-goals').boundingBox())!.y
-	);
-	await expect(goals(page)).toHaveCount(3);
-	await expect(goals(page).getByRole('heading', { level: 3 })).toHaveText([
-		'First Muay Thai fight',
-		'Valencia marathon',
-		'Keep my strength'
-	]);
-	await expect(goals(page).nth(0)).toContainText('Top priority');
-	await expect(page.getByText('Top priority')).toHaveCount(1);
-	await expect(goals(page).nth(0).getByRole('listitem')).toHaveText(['Muay Thai']);
-	await expect(goals(page).nth(1).getByRole('listitem')).toHaveText([
-		'Half / marathon',
-		'Hill repeats'
-	]);
-	// Counted from the device's date once hydrated; a goal with no date has no countdown.
-	await expect(goals(page).nth(0).getByTestId('today-goal-countdown')).toHaveText('10 weeks to go');
-	await expect(goals(page).nth(1).getByTestId('today-goal-countdown')).toHaveText('3 weeks to go');
-	await expect(goals(page).nth(2).getByTestId('today-goal-countdown')).toHaveCount(0);
-
-	const schedule = page.getByTestId('today-schedule');
-	await expect(page.getByTestId('today-schedule-summary')).toHaveText(
-		'4 days a week · 60 min sessions'
-	);
-	await expect(schedule).toContainText('Free to train Mon, Tue, Thu, Sat');
-	await expect(page.getByTestId('today-commitment')).toHaveText(
-		/Muay Thai class\s*Tue, Thu · evening · 90 min · hard/
-	);
+	// The Build card alone: the goals and schedule are in Profile, This week on Progress.
+	await expect(page.getByTestId('today-build')).toBeVisible();
+	for (const gone of ['today-goals', 'today-schedule', 'today-side', 'today-week']) {
+		await expect(page.getByTestId(gone)).toHaveCount(0);
+	}
 	// The class is marked on Tuesday and Thursday of the week strip, and named for screen readers.
 	const days = page.getByRole('list', { name: 'This week' }).locator('> li');
 	await expect(days).toHaveCount(7);
@@ -261,68 +236,63 @@ test('once set up, Today lists the goals by rank with weeks to go, and the shape
 		if (booked) await expect(days.nth(i)).toContainText('Muay Thai class');
 		else await expect(days.nth(i)).not.toContainText('Muay Thai class');
 	}
+	await expect(page.getByRole('link', { name: /Plate calculator/ })).toHaveCount(0);
 
-	// Goals come first, then This week: nothing logged yet, so no data yet, and no plate row.
-	const goalsBox = (await page.getByTestId('today-goals').boundingBox())!;
-	expect(goalsBox.y + goalsBox.height).toBeLessThanOrEqual((await thisWeek(page).boundingBox())!.y);
+	// On Progress, This week sits above the views: nothing logged yet, so no data yet.
+	await gotoHydrated(page, '/progress');
+	const week = (await thisWeek(page).boundingBox())!;
+	expect(week.y + week.height).toBeLessThanOrEqual((await views(page).boundingBox())!.y);
 	await expect(tiles(page)).toHaveText([
 		/^Sessions\s*—\s*No data yet\s*$/,
 		/^Training load\s*—\s*No data yet\s*$/,
 		/^Distance\s*—\s*No data yet\s*$/
 	]);
-	await expect(thisWeek(page)).toContainText('Your week fills in as you log sessions.');
+	await expect(thisWeek(page).getByTestId('week-context')).toHaveText(
+		'Your week fills in as you log sessions.'
+	);
 	// The tiles carry no caption: no repeated 'this week', no 'AU'.
 	expect((await tiles(page).allTextContents()).join(' ')).not.toMatch(/this week|\bAU\b/i);
-	await expect(page.getByRole('link', { name: /Plate calculator/ })).toHaveCount(0);
 
 	expect(await audit(page), 'dark').toEqual([]);
-	await captureScreen(page, testInfo, 'today-ready');
+	await captureScreen(page, testInfo, 'progress-this-week-empty');
 	await page.evaluate(() =>
 		localStorage.setItem('pc:prefs:v1', JSON.stringify({ theme: 'light' }))
 	);
-	await gotoHydrated(page, '/today');
+	await gotoHydrated(page, '/progress');
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-	await expect(goals(page)).toHaveCount(3);
+	await expect(tiles(page)).toHaveCount(3);
 	expect(await audit(page), 'light').toEqual([]);
 	expect(errors).toEqual([]);
 });
 
-test('once set up, the goals and schedule are server-rendered, so nothing moves after hydration', async ({
-	page,
-	request
+test('This week is server-rendered on Progress, so nothing moves after hydration', async ({
+	page
 }) => {
-	await setUp(request);
-	// What the server-rendered page holds before any script runs, and where This week sits under
-	// the goals: once hydrated, the same goals and tiles are there and This week has not moved.
+	// What the server-rendered page holds before any script runs, and where This week sits: once
+	// hydrated, the same tiles are there and This week has not moved.
 	await page.addInitScript(() => {
 		const weekTop = () =>
-			document.querySelector('[data-testid="today-week"]')!.getBoundingClientRect().top;
+			document.querySelector('[data-testid="week-so-far"]')!.getBoundingClientRect().top;
 		document.addEventListener('DOMContentLoaded', () =>
 			Object.assign(window, {
 				__painted: {
 					weekTop: weekTop(),
-					goals: document.querySelectorAll('[data-testid="today-goal"]').length,
-					schedule: !!document.querySelector('[data-testid="today-schedule"]'),
-					tiles: document.querySelectorAll('[data-testid="today-stat"]').length
+					tiles: document.querySelectorAll('[data-testid="week-stat"]').length
 				}
 			})
 		);
 		Object.assign(window, { __weekTop: weekTop });
 	});
-	await gotoHydrated(page, '/today');
-	await expect(goals(page)).toHaveCount(3);
+	await gotoHydrated(page, '/progress');
+	await expect(tiles(page)).toHaveCount(3);
 	type Measured = {
-		__painted: { weekTop: number; goals: number; schedule: boolean; tiles: number };
+		__painted: { weekTop: number; tiles: number };
 		__weekTop: () => number;
 	};
 	const painted = await page.evaluate(() => (window as unknown as Measured).__painted);
-	expect(painted.goals, 'goals in the server-rendered page').toBe(3);
-	expect(painted.schedule, 'schedule in the server-rendered page').toBe(true);
 	expect(painted.tiles, 'This week in the server-rendered page').toBe(3);
 	const now = await page.evaluate(() => (window as unknown as Measured).__weekTop());
 	expect(Math.abs(now - painted.weekTop), 'This week does not move').toBeLessThanOrEqual(1);
-	const goalsBox = (await page.getByTestId('today-goals').boundingBox())!;
-	expect(painted.weekTop).toBeGreaterThan(goalsBox.y + goalsBox.height);
 });
 
 test('once sessions are logged, This week shows real numbers for Monday to today, and explains training load', async ({
@@ -331,7 +301,6 @@ test('once sessions are logged, This week shows real numbers for Monday to today
 }, testInfo) => {
 	const errors = trackConsoleErrors(page);
 	const seeded = await seedAnalytics(request, 'twelve-weeks');
-	await query('update athlete_profiles set onboarding_completed_at = now()');
 	// The oracle: completed, undeleted workouts on the owner's days Monday to today, by SQL.
 	const [week] = await query<{ sessions: number; load: number | null }>(
 		`select count(*)::int as sessions,
@@ -344,14 +313,14 @@ test('once sessions are logged, This week shows real numbers for Monday to today
 		    and (w.started_at at time zone $1)::date between $2::date and $3::date`,
 		[seeded.timeZone, seeded.weekStart, seeded.today]
 	);
-	await gotoHydrated(page, '/today');
+	await gotoHydrated(page, '/progress');
 	await expect(tiles(page)).toHaveCount(3);
 	const load = Math.round(week!.load ?? 0).toLocaleString('en-US');
 	await expect(tiles(page).nth(0)).toHaveText(new RegExp(`^Sessions\\s*${week!.sessions}\\s*$`));
 	await expect(tiles(page).nth(1)).toHaveText(new RegExp(`^Training load\\s*${load}\\s*$`));
 	await expect(tiles(page).nth(2)).toHaveText(/^Distance\s*[\d,]+(\.\d)?\s*km\s*$/);
 	await expect(thisWeek(page)).not.toContainText('No data yet');
-	await expect(thisWeek(page).getByTestId('context-line')).toHaveText(
+	await expect(thisWeek(page).getByTestId('week-context')).toHaveText(
 		/^(By \w+day last week: \d+ sessions?, (training load [\d,]+, )?[\d.,]+ km\.|Nothing logged by \w+day last week\.)$/
 	);
 
@@ -361,39 +330,37 @@ test('once sessions are logged, This week shows real numbers for Monday to today
 	await how.click();
 	await expect(thisWeek(page)).toContainText('minutes × its session RPE');
 	expect(await audit(page), 'dark').toEqual([]);
-	await captureScreen(page, testInfo, 'today-this-week');
+	await captureScreen(page, testInfo, 'progress-this-week');
 	await page.evaluate(() => (document.documentElement.dataset.theme = 'light'));
 	expect(await audit(page), 'light').toEqual([]);
 	expect(errors).toEqual([]);
 });
 
 test('a This week read that fails is a designed error with Retry, and Retry recovers', async ({
-	page,
-	request
+	page
 }, testInfo) => {
-	await setUp(request);
 	// The table This week reads runs from is out of reach while the screen loads.
 	await query('alter table run_records rename to run_records_away');
 	try {
-		await gotoHydrated(page, '/today');
-		const failed = page.getByTestId('today-week-error');
+		await gotoHydrated(page, '/progress');
+		const failed = page.getByTestId('week-so-far-error');
 		await expect(failed).toContainText('Couldn’t load this week’s numbers.');
-		await expect(goals(page)).toHaveCount(3);
+		await expect(tiles(page)).toHaveCount(3);
 		const retry = failed.getByRole('button', { name: 'Try again' });
 		expect((await retry.boundingBox())!.height).toBeGreaterThanOrEqual(44);
 		expect(await audit(page), 'dark').toEqual([]);
-		await captureScreen(page, testInfo, 'today-this-week-error');
+		await captureScreen(page, testInfo, 'progress-this-week-error');
 	} finally {
 		await query('alter table run_records_away rename to run_records');
 	}
-	await page.getByTestId('today-week-error').getByRole('button', { name: 'Try again' }).click();
-	await expect(page.getByTestId('today-week-error')).toHaveCount(0);
-	await expect(thisWeek(page).getByTestId('context-line')).toHaveText(
+	await page.getByTestId('week-so-far-error').getByRole('button', { name: 'Try again' }).click();
+	await expect(page.getByTestId('week-so-far-error')).toHaveCount(0);
+	await expect(thisWeek(page).getByTestId('week-context')).toHaveText(
 		'Your week fills in as you log sessions.'
 	);
 });
 
-test('reordering goals in Profile changes the order on Today', async ({ page, request }) => {
+test('reordering goals in Profile saves the new order', async ({ page, request }) => {
 	await setUp(request);
 	await gotoHydrated(page, '/profile/goals');
 	await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
@@ -408,29 +375,6 @@ test('reordering goals in Profile changes the order on Today', async ({ page, re
 			{ title: 'First Muay Thai fight' },
 			{ title: 'Keep my strength' }
 		]);
-
-	await page.getByRole('link', { name: 'Today' }).first().click();
-	await expect(page).toHaveURL('/today');
-	await expect(goals(page).getByRole('heading', { level: 3 })).toHaveText([
-		'Valencia marathon',
-		'First Muay Thai fight',
-		'Keep my strength'
-	]);
-	await expect(goals(page).nth(0)).toContainText('Top priority');
-	await expect(goals(page).nth(1)).not.toContainText('Top priority');
-});
-
-test('with no open goal left, Today says so and links to Goals', async ({ page, request }) => {
-	await setUp(request);
-	await query(`update training_goals set status = 'achieved', priority = null, closed_at = now()`);
-	await gotoHydrated(page, '/today');
-	const empty = page.getByTestId('today-goals-empty');
-	await expect(empty).toContainText('No open goals');
-	await expect(goals(page)).toHaveCount(0);
-	await expect(empty.getByRole('link', { name: 'Add a goal' })).toHaveAttribute(
-		'href',
-		'/profile/goals'
-	);
 });
 
 test('a setup read that fails is a designed error with Retry inside the shell, and Retry recovers', async ({
@@ -451,9 +395,6 @@ test('a setup read that fails is a designed error with Retry inside the shell, a
 		await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
 		await expect(page.locator('body')).not.toContainText(/500|internal error/i);
 		await expect(card(page)).toHaveCount(0);
-		// This week was not read either: it says so, never that the week is empty.
-		await expect(page.getByTestId('today-week-error')).toBeVisible();
-		await expect(thisWeek(page)).not.toContainText('Your week fills in as you log sessions.');
 		const retry = failed.getByRole('button', { name: 'Try again' });
 		const target = (await retry.boundingBox())!;
 		expect(target.height).toBeGreaterThanOrEqual(44);
@@ -490,31 +431,5 @@ test.describe('in a desktop window', () => {
 		await cta(page).hover();
 		await expect.poll(background).not.toBe(resting);
 		await captureScreen(page, testInfo, 'today-setup-desktop');
-	});
-
-	test('once set up, goals and schedule sit in the wide column, and Edit has a hover state', async ({
-		page,
-		request
-	}, testInfo) => {
-		await setUp(request);
-		await gotoHydrated(page, '/today');
-		await expect(goals(page)).toHaveCount(3);
-		await expectMainCentred(page, await tokenPx(page, '--content-wide'));
-		await expectNoSideScroll(page);
-		const main = (await page.locator('main#main').boundingBox())!;
-		for (const id of ['today-goals', 'today-schedule']) {
-			const box = (await page.getByTestId(id).boundingBox())!;
-			expect(box.x).toBeGreaterThanOrEqual(main.x - 1);
-			expect(box.x + box.width).toBeLessThanOrEqual(main.x + main.width + 1);
-		}
-		const edit = page
-			.getByTestId('today-goals')
-			.getByRole('link', { name: 'Edit goals', exact: true });
-		// A ghost has no fill: its hover brightens the text.
-		const colour = () => edit.evaluate((el) => getComputedStyle(el).color);
-		const resting = await colour();
-		await edit.hover();
-		await expect.poll(colour).not.toBe(resting);
-		await captureScreen(page, testInfo, 'today-ready-desktop');
 	});
 });

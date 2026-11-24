@@ -292,6 +292,59 @@ test.describe('twelve weeks', () => {
 		});
 	});
 
+	test('This week keeps its figures through a switch, and the views row stays put', async ({
+		page
+	}) => {
+		await gotoHydrated(page, '/progress');
+		const week = page.getByTestId('week-so-far');
+		await expect(week.getByTestId('week-context')).toBeVisible();
+		await expect(week.getByTestId('week-stat').first()).not.toContainText('—');
+		// Every change to the page until the switch lands: what the tiles say, whether they are busy,
+		// and where the views row starts.
+		const before = await page.evaluate(() => {
+			type Sample = { tiles: string; busy: boolean; top: number };
+			const sample = (): Sample => ({
+				tiles: [...document.querySelectorAll('[data-testid="week-stat"]')]
+					.map((tile) => tile.textContent ?? '')
+					.join(' | '),
+				busy: document.querySelector('[data-testid="week-so-far"] [aria-busy="true"]') !== null,
+				top: document.querySelector('nav[aria-label="Progress views"]')!.getBoundingClientRect().top
+			});
+			const samples: Sample[] = [];
+			new MutationObserver(() => samples.push(sample())).observe(document.body, {
+				subtree: true,
+				childList: true,
+				characterData: true,
+				attributes: true
+			});
+			Object.assign(window, { __weekSamples: samples });
+			return sample();
+		});
+		expect(before.tiles).not.toContain('—');
+
+		await page
+			.getByRole('navigation', { name: 'Progress views' })
+			.getByRole('link', { name: 'Strength' })
+			.click();
+		await expect(page).toHaveURL(/view=strength/);
+		await expect(content(page)).toHaveAttribute('aria-busy', 'false');
+		await periodLink(page, 'Last 4 weeks').click();
+		await expect(page).toHaveURL(/period=4w/);
+		await expect(content(page)).toHaveAttribute('aria-busy', 'false');
+		await expect(week.getByTestId('week-context')).toBeVisible();
+
+		type Sample = { tiles: string; busy: boolean; top: number };
+		const samples = await page.evaluate(
+			() => (window as unknown as { __weekSamples: Sample[] }).__weekSamples
+		);
+		expect(samples.length, 'the switches changed the page').toBeGreaterThan(0);
+		for (const s of samples) {
+			expect(s.tiles, 'the tiles keep their figures').toBe(before.tiles);
+			expect(s.busy, 'the tiles never go busy').toBe(false);
+			expect(Math.abs(s.top - before.top), 'the views row does not move').toBeLessThanOrEqual(1);
+		}
+	});
+
 	test.describe('the trends load after the verdicts', () => {
 		// page.route sees requests from a page the service worker controls only when it is blocked.
 		test.use({ serviceWorkers: 'block' });

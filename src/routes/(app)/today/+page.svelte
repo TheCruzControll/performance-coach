@@ -8,12 +8,9 @@
 	import EmptyState from '#lib/ui/components/EmptyState.svelte';
 	import Icon from '#lib/ui/components/Icon.svelte';
 	import PageHeader from '#lib/ui/components/PageHeader.svelte';
-	import Section from '#lib/ui/components/Section.svelte';
-	import Stat from '#lib/ui/components/Stat.svelte';
 	import { isStale } from './freshness';
 	import { PANELS } from './panels';
 	import PanelLoader from './panels/PanelLoader.svelte';
-	import { EMPTY_TILES, LOAD_METHOD, NOTHING_YET, type WeekTile } from './week-words';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -39,7 +36,6 @@
 	 * sits under it in its column, so it takes its own height there, with no empty room inside.
 	 */
 	const SETUP_HEIGHT = '24rem';
-	const SUMMARY_HEIGHT = '24rem';
 	const BUILD_HEIGHT = '17rem';
 	/** The plan's room: the week strip, a day of two sessions and three up next. */
 	const PROGRAM_HEIGHT = '34rem';
@@ -121,20 +117,6 @@
 	});
 </script>
 
-{#snippet weekTiles(tiles: readonly WeekTile[], busy = false)}
-	<div class="stats" aria-busy={busy || undefined}>
-		{#each tiles as tile (tile.id)}
-			<Stat
-				label={tile.label}
-				value={tile.value}
-				unit={tile.unit}
-				caption={tile.caption}
-				data-testid="today-stat"
-			/>
-		{/each}
-	</div>
-{/snippet}
-
 <svelte:head>
 	<title>Today · Performance Coach</title>
 </svelte:head>
@@ -181,8 +163,8 @@
 	<PanelLoader load={PANELS.preview} height={PREVIEW_HEIGHT} props={{ onclose: closeBuild }} />
 {/if}
 
-<!-- Wide from 1024 px (docs/design-system.md, Responsive layout → Screens): the state's panel in
-     the main column, the summary (goals first) and This week in the side column. -->
+<!-- From 1024 px (docs/design-system.md, Responsive layout → Screens): the state's panel in one
+     readable column; This week is on Progress, the goals and schedule in Profile (v2/06a). -->
 <div class="stack" class:active data-layout="wide" hidden={building}>
 	<!-- The state's panel is code-split (panels/index.ts): the server sends it as markup, kept as
 	     sent until its code arrives, and a client navigation shows its skeleton until then. -->
@@ -228,48 +210,6 @@
 			</EmptyState>
 		</Card>
 	{/if}
-
-	<!-- The side column from 1024 px; below it, its items are the stack's own (display: contents). -->
-	<div class="side" data-testid="today-side">
-		<!-- Once set up: the goals by rank and the shape of the week. -->
-		{#if setup?.complete}
-			<PanelLoader
-				load={PANELS.summary}
-				height={SUMMARY_HEIGHT}
-				props={{ setup, showWeek: !active }}
-				served={data.served.summary}
-			/>
-		{/if}
-
-		<!-- Monday to today against the same days last week (week.server.ts), streamed: the server's
-		     render waits for it, a client navigation shows the tiles empty and busy until it lands.
-		     How training load is worked out is always there, so the section keeps its height. -->
-		<Section title="This week" data-testid="today-week">
-			{#await data.week}
-				{@render weekTiles(EMPTY_TILES, true)}
-				<p class="line">Counting this week…</p>
-			{:then view}
-				<!-- No figures once set up (or with the setup unread): the week was not read, not empty. -->
-				{#if view?.failed || (!view && setup?.complete !== false)}
-					{@render weekTiles(EMPTY_TILES)}
-					<div class="error" data-testid="today-week-error">
-						<p class="line" role="status">Couldn’t load this week’s numbers.</p>
-						<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}>
-							Try again
-						</Button>
-					</div>
-				{:else}
-					{@render weekTiles(view?.tiles ?? EMPTY_TILES)}
-					<p class="line" data-testid="context-line">{view?.against ?? NOTHING_YET}</p>
-				{/if}
-			{/await}
-			<details class="how">
-				<summary><Icon name="chevron-right" size={16} strokeWidth={2} />How it’s worked out</summary
-				>
-				<p>{LOAD_METHOD}</p>
-			</details>
-		</Section>
-	</div>
 </div>
 
 <style>
@@ -346,10 +286,6 @@
 		display: none;
 	}
 
-	.side {
-		display: contents;
-	}
-
 	.setup-room {
 		display: grid;
 		min-height: var(--room);
@@ -360,91 +296,22 @@
 		box-shadow: inset 0 0 0 1px var(--color-text-tertiary);
 	}
 
-	.stats {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: var(--space-2);
-	}
-
-	/* This week's line and its disclosure, as the dashboards' metric context reads. */
-	.line,
-	.how p {
-		font-size: var(--text-xs);
-		line-height: var(--leading-normal);
-		color: var(--color-text-secondary);
-	}
-
-	.error {
-		display: grid;
-		justify-items: start;
-		gap: var(--space-2);
-	}
-
-	.how summary {
-		display: flex;
-		align-items: center;
-		gap: var(--space-1-5);
-		min-height: var(--touch-target);
-		width: fit-content;
-		padding: 0 var(--space-2);
-		margin-inline: calc(var(--space-2) * -1);
-		border-radius: var(--radius-sm);
-		color: var(--color-text-secondary);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		cursor: pointer;
-		list-style: none;
-	}
-
-	.how summary::-webkit-details-marker {
-		display: none;
-	}
-
-	.how[open] summary :global(.icon) {
-		transform: rotate(90deg);
-	}
-
-	.how summary:active {
-		background: var(--color-surface-2);
-	}
-
-	@media (hover: hover) and (pointer: fine) {
-		.how summary:hover {
-			background: var(--color-surface-2);
-			color: var(--color-text);
-		}
-	}
-
-	.how p {
-		font-size: var(--text-sm);
-	}
-
 	/*
-	 * Desktop (wide): the week across the top, then two columns. The state's panel (the setup card,
-	 * the Build card, the plan, or their skeleton or Retry) takes the main column, at most the
-	 * readable width, as Train's sessions do; This week, the tools and the summary take the side
-	 * column, at least --content-list. DOM order is reading order: main column, then side column.
+	 * Desktop (wide until v2/06b): the week across the top, then one column at most the readable
+	 * width, as Train's sessions: the state's panel (the setup card, the Build card, the plan, or
+	 * their skeleton or Retry). This week is on Progress and the goals and schedule in Profile, so
+	 * nothing sits beside it.
 	 *
-	 * With a program, the plan's week strip spans both columns in the first row (Program.svelte
-	 * lays the plan out on these tracks with subgrid) and the side column starts under it. The row
-	 * holds STRIP_ROOM from the start, so the side column sits where it will stay while the plan's
-	 * code or data loads. A plan with no strip (its first block complete, or a failed read) gives
-	 * the side column the top row back.
+	 * With a program, the plan lies on these rows with subgrid (Program.svelte): the first holds
+	 * STRIP_ROOM from the start, so the day sits where it will stay while the plan's code or data
+	 * loads.
 	 */
 	@media (width >= 64rem) {
 		.stack {
 			/* STRIP_ROOM: WeekStrip's tile from 56rem is 6.03rem + 6 px; a little more holds any zoom. */
 			--today-strip-room: 6.5rem;
-			grid-template-columns: minmax(0, var(--content-readable)) minmax(var(--content-list), 1fr);
-			column-gap: var(--space-8);
+			grid-template-columns: minmax(0, var(--content-readable));
 			align-items: start;
-		}
-
-		.side {
-			display: grid;
-			gap: var(--space-6);
-			grid-column: 2;
-			grid-row: 1;
 		}
 
 		/* The setup card has its column to itself: as tall as what it says, no empty band inside. */
@@ -454,17 +321,6 @@
 
 		.stack.active {
 			grid-template-rows: minmax(var(--today-strip-room), auto) repeat(3, auto) 1fr;
-		}
-
-		.stack.active > .side {
-			grid-row: 2 / -1;
-		}
-
-		.stack.active:has(
-				:global([data-testid='today-block-complete'], [data-testid='today-plan-error'])
-			)
-			> .side {
-			grid-row: 1 / -1;
 		}
 
 		/* The plan's code loading, or its Retry: in the main column, from the top. */

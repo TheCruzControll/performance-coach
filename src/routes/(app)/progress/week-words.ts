@@ -1,5 +1,5 @@
 /**
- * Today's 'This week' tiles in words (week.server.ts composes them on the server, so the page
+ * Progress's 'This week' tiles in words (week.server.ts composes them on the server, so the page
  * ships only the empty tiles and the method's words): sessions, training load and distance from
  * Monday through today, and one line setting them against the same days of last week. Once
  * anything has been logged an empty week reads 0, never 'no data yet'; before the first session
@@ -33,7 +33,7 @@ export interface WeekTile {
 	caption?: string;
 }
 
-export type TodayWeekView =
+export type WeekSoFarView =
 	| { failed: true }
 	| {
 			failed: false;
@@ -65,7 +65,7 @@ export const EMPTY_TILES: readonly WeekTile[] = [
 	{ id: 'distance', label: 'Distance', value: null }
 ];
 
-export function weekView(figures: WeekFigures): Extract<TodayWeekView, { failed: false }> {
+export function weekView(figures: WeekFigures): Extract<WeekSoFarView, { failed: false }> {
 	if (!figures.logged) return { failed: false, tiles: [...EMPTY_TILES], against: NOTHING_YET };
 	const unit = figures.units.distance;
 	const sessions = (n: number | null) => number(n ?? 0, 0);

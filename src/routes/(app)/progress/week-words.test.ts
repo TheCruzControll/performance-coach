@@ -17,7 +17,7 @@ const figures = (over: Partial<WeekFigures> = {}): WeekFigures => ({
 const values = (view: ReturnType<typeof weekView>) =>
 	view.tiles.map((t) => [t.label, t.value, t.unit ?? null]);
 
-describe('Today’s This week in words', () => {
+describe('Progress’s This week in words', () => {
 	it('shows each figure of the week so far, and the same days of last week in one line', () => {
 		const view = weekView(figures());
 		expect(values(view)).toEqual([

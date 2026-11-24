@@ -6,7 +6,7 @@ import { logWhenSettled } from '#lib/server/observability/timing.ts';
 import type { Actions, PageServerLoad } from './$types';
 import { loadToday } from './load.server';
 
-/** Today: the setup card, the program state, and the streamed plan and week (load.server.ts). */
+/** Today: the setup card, the program state, and the streamed plan (load.server.ts). */
 export const load: PageServerLoad = async ({ locals, request, route, url }) => {
 	const data = await loadToday(ownerId(locals), {
 		now: new Date(),
@@ -18,7 +18,7 @@ export const load: PageServerLoad = async ({ locals, request, route, url }) => {
 			appVersion: version
 		}
 	});
-	const streamed = [data.plan, data.week].filter((p) => p !== undefined);
+	const streamed = [data.plan].filter((p) => p !== undefined);
 	if (streamed.length) logWhenSettled(route.id, streamed);
 	return data;
 };

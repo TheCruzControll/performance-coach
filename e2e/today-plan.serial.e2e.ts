@@ -114,7 +114,7 @@ test.describe('a program with sessions today', () => {
 		await watchShifts(page);
 		await gotoHydrated(page, '/today');
 
-		// The program's week replaces M2's week shape; the goals stay, the schedule steps aside.
+		// The program's week replaces M2's week shape; the goals and schedule are in Profile.
 		await expect(strip(page)).toHaveAttribute('aria-label', 'Week 1');
 		const today = strip(page).getByRole('radio', {
 			name: new RegExp(`^${longDate(seeded.today)}`)
@@ -122,8 +122,6 @@ test.describe('a program with sessions today', () => {
 		await expect(today).toHaveAttribute('aria-current', 'date');
 		await expect(today).toHaveAttribute('aria-checked', 'true');
 		await expect(page.getByRole('list', { name: 'This week' })).toHaveCount(0);
-		await expect(page.getByTestId('today-goals')).toBeVisible();
-		await expect(page.getByTestId('today-schedule')).toHaveCount(0);
 
 		// The date shows once, in the eyebrow: today's day is named for assistive tech only, with no
 		// Today chip and no second date.

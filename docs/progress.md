@@ -222,8 +222,13 @@ milestones.md.
   June, Ongoing, Paused), with no rank numeral, badge or chips, under a lede; Add a goal is a text
   link, and Past goals is its own screen (`/profile/goals/past`), one row away, where a goal opens
   the same sheet. With no goal, Profile offers an event or a general goal; onboarding keeps several
-  at once until `v2/05`. The arrows and handle stay until `v2/22`, and Today still lists the goals
-  until `v2/06`. The e2e run is CI's to prove.
+  at once until `v2/05`. The arrows and handle stay until `v2/22`; Today's goals went with
+  `v2/06a`. The e2e run is CI's to prove.
+- **Instrument v2 Today, this week to Progress (`v2/06a`).** This week (sessions, training load
+  and distance against the same days last week, How it's worked out, Retry) moved unchanged from
+  Today to the top of Progress, in every view, until `v2/14`; Today's goals and schedule went, as
+  both live in Profile, so Today shows its state's panel alone until `v2/06b`. The e2e run and the
+  budgets are CI's to prove.
 - **Instrument v2 at a desk (`v2/03c`), which completes the Instrument v2 shell (`v2/03`).** The
   rail is the canvas with a hairline, the four tabs 28 px apart and the avatar at its foot, with
   no brand mark. A readable screen is 616 px (560 of text) centred right of the rail but at most

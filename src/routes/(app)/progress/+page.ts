@@ -14,6 +14,7 @@ import {
 	servedTrends,
 	SERVED_IN_PLACE
 } from './trends';
+import type { WeekSoFarView } from './week-words';
 
 /**
  * Each view as a string-literal relative import, awaited on the server and in the browser alike
@@ -34,14 +35,21 @@ const AWAITED_TRENDS = {
 	general: preloadGeneralTrends
 } as const satisfies Record<Exclude<ProgressView, 'overview'>, () => Promise<void>>;
 
+/**
+ * This week's figures (week.server.ts): settled on the server and while hydrating, the streamed
+ * promise after a client navigation, so Progress shows at once with the tiles busy.
+ */
+type Week = WeekSoFarView | Promise<WeekSoFarView>;
+
 /** Each loaded view's data with its own component, so the page passes it the props it takes. */
 type WithView<D> = D extends { failed: false; view: infer V extends ProgressView }
-	? D & {
+	? Omit<D, 'week'> & {
 			View: Awaited<ReturnType<(typeof VIEWS)[V]>>['default'];
 			served: string | undefined;
 			prompt: string | undefined;
+			week: Week;
 		}
-	: D & { View: null; served: undefined; prompt: undefined };
+	: Omit<D, 'week'> & { View: null; served: undefined; prompt: undefined; week: Week };
 
 /**
  * Whether the next load hydrates the server's HTML: only the first one in a document opened on
@@ -55,8 +63,17 @@ let hydrating = browser && location.pathname === resolve('/(app)/progress');
 export const load: PageLoad = async ({ data }) => {
 	const kept = hydrating;
 	hydrating = false;
+	// The server's render and the hydrating load wait for the week, at their return so it overlaps
+	// the view's import and the trends' render; a client navigation passes it on.
+	const streamed = browser && !kept;
 	if (data.failed)
-		return { ...data, View: null, served: undefined, prompt: undefined } as WithView<typeof data>;
+		return {
+			...data,
+			week: streamed ? data.week : await data.week,
+			View: null,
+			served: undefined,
+			prompt: undefined
+		} as WithView<typeof data>;
 	// Strength's, Running's and General's trends, and Overview's review prompt when it has one,
 	// start with the view's own import: any load but the hydrating one waits for both, as it does
 	// for the view, so the view arrives whole (trends.ts).
@@ -70,7 +87,13 @@ export const load: PageLoad = async ({ data }) => {
 		// Started, never awaited: a failed import shows Retry in place of Overview's trends.
 		if (data.view === 'overview') void preloadTrends();
 		const served = kept ? SERVED_IN_PLACE : undefined;
-		return { ...data, View, served, prompt: prompt ? served : undefined } as WithView<typeof data>;
+		return {
+			...data,
+			week: streamed ? data.week : await data.week,
+			View,
+			served,
+			prompt: prompt ? served : undefined
+		} as WithView<typeof data>;
 	}
 	const served =
 		data.view === 'strength'
@@ -81,5 +104,11 @@ export const load: PageLoad = async ({ data }) => {
 					? await servedGeneralTrends({ general: data.general })
 					: await servedTrends({ overview: data.overview });
 	const promptMarkup = prompt ? await reviewPrompt.served({ review: prompt }) : undefined;
-	return { ...data, View, served, prompt: promptMarkup } as WithView<typeof data>;
+	return {
+		...data,
+		week: streamed ? data.week : await data.week,
+		View,
+		served,
+		prompt: promptMarkup
+	} as WithView<typeof data>;
 };

@@ -18,12 +18,12 @@
  *   small, so their plans are recorded (narrativeMessages is not: no review here has a write-up,
  *   so it would plan on empty input).
  * - Then the page loads the owner waits for, on two years of data (page-load.ts): /progress for
- *   each view at 'all' and 12 weeks, the weekly review page, the cycle review (its service, which
- *   runs the next block generator for each start on offer, until cycle-review-screen gives the
- *   reviews page a cycle view) and the exercise page of the most-logged lift at 'all'. Each is
- *   timed with devalue's serialisation after WARM_UPS untimed runs; the median against
- *   PAGE_TARGET_MS is reported, and a median over PAGE_LIMIT_MS or page data over
- *   PAGE_DATA_LIMIT_BYTES gzip fails the run.
+ *   each view at 'all' and 12 weeks, its This week (loadWeekSoFar, streamed beside each view), the
+ *   weekly review page, the cycle review (its service, which runs the next block generator for
+ *   each start on offer, until cycle-review-screen gives the reviews page a cycle view) and the
+ *   exercise page of the most-logged lift at 'all'. Each is timed with devalue's serialisation
+ *   after WARM_UPS untimed runs; the median against PAGE_TARGET_MS is reported, and a median over
+ *   PAGE_LIMIT_MS or page data over PAGE_DATA_LIMIT_BYTES gzip fails the run.
  * - The strength week rollups (services/analytics/strength-weeks.ts): their two reads are
  *   explained with the rest. The heavy loads are timed first with every week summed from the
  *   facts (recorded, not gated: the gated loads are the same pages read from the rollups), then
@@ -67,6 +67,7 @@ import {
 	loadReviews,
 	weeklyKey
 } from '../../src/routes/(app)/progress/reviews/[[key]]/load';
+import { loadWeekSoFar } from '../../src/routes/(app)/progress/week.server';
 import {
 	generateAnalyticsDataset,
 	generateReviewHistory,
@@ -355,6 +356,18 @@ export function analyticsExplain({ client, db, owner, readCatalog, render }: Har
 				() => loadProgress(owner, { view, period, origin: ORIGIN }, NOW, deps)
 			])
 		),
+		[
+			'/progress This week (loadWeekSoFar)',
+			async () => {
+				const w = await loadWeekSoFar(
+					owner,
+					{ today: TODAY, origin: ORIGIN },
+					{ db, errorsDb: db }
+				);
+				if (w.failed) throw new Error('This week failed to load');
+				return w;
+			}
+		],
 		[
 			`/progress/reviews/${weeklyKey(week)}`,
 			() => loadReviews(owner, { key: weeklyKey(week), origin: ORIGIN }, NOW, deps)

@@ -1,9 +1,9 @@
 /**
- * Today's 'This week' (src/lib/server/services/analytics/week.ts, and the route's fail-soft
+ * Progress's 'This week' (src/lib/server/services/analytics/week.ts, and the route's fail-soft
  * week.server.ts) on the M6 dataset: sessions, training load and distance from Monday through
  * today against the same days of last week, as independent SQL over completed, undeleted
  * workouts counts them, and exactly as the General and Running views' 'this week so far' lines
- * do, so Today and Progress never disagree. An owner with nothing logged reads logged: false; an
+ * do, so This week and the views never disagree. An owner with nothing logged reads logged: false; an
  * unreachable database resolves to {failed: true} with the failure recorded.
  */
 import { sql } from 'drizzle-orm';
@@ -14,7 +14,7 @@ import { findErrorsByRequestId } from '../../../src/lib/server/services/errors';
 import { getGeneralDashboard } from '../../../src/lib/server/services/analytics/general';
 import { getRunningDashboard } from '../../../src/lib/server/services/analytics/running';
 import { getWeekSoFar } from '../../../src/lib/server/services/analytics/week';
-import { loadTodayWeek } from '../../../src/routes/(app)/today/week.server';
+import { loadWeekSoFar } from '../../../src/routes/(app)/progress/week.server';
 import { unreachableDb, withRollback } from '../helpers';
 import { makeOwner } from '../profile/fixtures';
 import { seedDataset, TODAY, TZ, weekOf } from './fixtures/dataset';
@@ -39,8 +39,8 @@ async function counted(db: Executor, owner: string, from: string, to: string) {
 const origin = (requestId = crypto.randomUUID()) => ({
 	requestId,
 	method: 'GET',
-	path: '/today',
-	routeId: '/(app)/today',
+	path: '/progress',
+	routeId: '/(app)/progress',
 	appVersion: '0.1.0+test'
 });
 
@@ -96,10 +96,10 @@ describe('the week so far', () => {
 		});
 	});
 
-	it('Today’s load composes the tiles in words, and never rejects', async () => {
+	it('Progress’s load composes the tiles in words, and never rejects', async () => {
 		await withRollback(async (db) => {
 			const data = await seedDataset(db);
-			const view = await loadTodayWeek(
+			const view = await loadWeekSoFar(
 				data.owner,
 				{ today: TODAY, origin: origin() },
 				{ db, errorsDb: db }
@@ -120,7 +120,7 @@ describe('the week so far', () => {
 		try {
 			await withRollback(async (tx) => {
 				const request = origin();
-				const view = await loadTodayWeek(
+				const view = await loadWeekSoFar(
 					crypto.randomUUID(),
 					{ today: TODAY, origin: request },
 					{ db: broken.db, errorsDb: tx }
@@ -128,7 +128,7 @@ describe('the week so far', () => {
 				expect(view).toEqual({ failed: true });
 				const recorded = await findErrorsByRequestId(request.requestId, { db: tx });
 				expect(recorded).toHaveLength(1);
-				expect(recorded[0]).toMatchObject({ kind: 'streamed', context: { load: 'todayWeek' } });
+				expect(recorded[0]).toMatchObject({ kind: 'streamed', context: { load: 'weekSoFar' } });
 			});
 		} finally {
 			await broken.close();

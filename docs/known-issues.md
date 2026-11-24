@@ -73,6 +73,10 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
 - **Profile has no 'What the coach knows' or 'About this app' row yet (Paper draws both).** The
   coach's knowledge opens from Coach (`v2/20`), and About this app's contents stay on Profile, as
   a group of status rows, until `v2/22`. Found building `v2/21a`.
+- **Progress's This week is Today's old section, moved as it was (`v2/06a`).** Its heading,
+  stat tiles and disclosure are the legacy `Section` and `Stat`, above the view nav in every view,
+  not anything Paper draws on Progress. Closes when `v2/14` redraws Progress's home
+  (`src/routes/(app)/progress/WeekSoFar.svelte`).
 - **Goals keeps the reorder arrows and the drag handle at each row's end, and the goal sheet is the
   pre-v2 form.** Paper draws neither at rest and reorders by long press; the owner kept the arrows
   (the keyboard's and VoiceOver's way) and the full form. With two or more goals each row is as
@@ -117,6 +121,11 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
 ## Verification gaps
 
 - The Add session sheet has no e2e or verify-coach coverage yet.
+
+- **Progress's budgets after `v2/06a` are unmeasured.** This week moved its tiles, line and
+  disclosure (and their CSS) from Today to Progress, whose route CSS was 13.5 KB of 14.5 KB; the
+  `/(app)/today` and `/(app)/progress` rows in docs/performance.md wait for CI's `pnpm budgets`.
+  Closes when CI's numbers are recorded.
 
 - **The coach's weigh-in Undo card has no e2e test.** The mock provider has no script that logs a
   weigh-in, so no e2e turn can reach the card. Integration tests cover the event, the Undo answers

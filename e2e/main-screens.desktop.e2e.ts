@@ -1,7 +1,7 @@
 /**
  * The screens on main that M2 and M3 are not rewriting, in a desktop window
- * (docs/design-system.md, Responsive layout → Screens): Progress is wide, its view nav and period
- * picker in one row over the view (whose own layout e2e/progress.serial.e2e.ts checks); Coach and Security keep the readable column, Coach's suggestions in two
+ * (docs/design-system.md, Responsive layout → Screens): Progress is wide, This week over its view
+ * nav and period picker, which share one row over the view (whose own layout e2e/progress.serial.e2e.ts checks); Coach and Security keep the readable column, Coach's suggestions in two
  * columns; the design gallery widens with its groups side by side; error and offline states stay
  * centred, inside the shell and outside it.
  */
@@ -76,6 +76,17 @@ test.describe('Progress', () => {
 		const views = await boxOf(page.getByRole('navigation', { name: 'Progress views' }));
 		const periods = await boxOf(page.getByRole('navigation', { name: 'Period' }));
 		const content = await boxOf(page.getByTestId('period-content'));
+		// This week (v2/06a, moved from Today) sits over them, its disclosure with a hover state.
+		const week = page.getByTestId('week-so-far');
+		const weekBox = await boxOf(week);
+		expect(weekBox.y + weekBox.height, 'This week sits over the views').toBeLessThanOrEqual(
+			views.y
+		);
+		const how = week.locator('summary');
+		const tint = () => how.evaluate((el) => getComputedStyle(el).backgroundColor);
+		const resting = await tint();
+		await how.hover();
+		await expect.poll(tint).not.toBe(resting);
 		expect(Math.abs(views.y + views.height / 2 - (periods.y + periods.height / 2))).toBeLessThan(4);
 		expect(periods.x, 'the period picker sits right of the view nav').toBeGreaterThan(
 			views.x + views.width
