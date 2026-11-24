@@ -123,11 +123,9 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
 - The Add session sheet has no e2e or verify-coach coverage yet.
 
 - **Progress's budgets after `v2/06a` are unmeasured.** This week moved its tiles, line and
-  disclosure (and their CSS) from Today to Progress, whose route CSS was 14.0 KB of 14.5 KB; the
+  disclosure (and their CSS) from Today to Progress, whose route CSS was 13.5 KB of 14.5 KB; the
   `/(app)/today` and `/(app)/progress` rows in docs/performance.md wait for CI's `pnpm budgets`.
-  db:explain no longer times This week's read: it ran inside Today's case
-  (`scripts/explain/screens.cases.ts`), and Progress's cases time `loadProgress`, which does not
-  include it. Closes when CI's numbers are recorded and a Progress case waits for the week.
+  Closes when CI's numbers are recorded.
 
 - **The coach's weigh-in Undo card has no e2e test.** The mock provider has no script that logs a
   weigh-in, so no e2e turn can reach the card. Integration tests cover the event, the Undo answers

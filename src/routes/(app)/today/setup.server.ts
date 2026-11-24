@@ -5,10 +5,10 @@
  *
  * - `done` counts the finished (completed or skipped) steps among those that apply now, and
  *   `total` is every step that applies, review included, as onboarding's own progress counts.
- * - Once it is complete, what Today summarises instead: the open goals by rank, and the shape of
- *   the week (how many days and how long, which days, the commitments already in it). Words are
- *   built here so the page ships none of the catalogue; only the countdown to each goal's date is
- *   left to the page, which counts from the device's date after hydration.
+ * - Once it is complete: the open goals by rank, and the shape of the week (how many days and how
+ *   long, which days, the commitments already in it), whose days mark Today's week strip. Words
+ *   are built here so the page ships none of the catalogue.
+ * - `goals` is unused since Today's goals moved to Profile (v2/06a), until v2/06c removes it.
  * - It fails soft: a read that fails is recorded as a server error (kind 'load') and the card
  *   shows its designed error with Retry, inside the shell, instead of the 500 page.
  */

@@ -48,6 +48,17 @@ describe("Progress's This week, streamed", () => {
 		expect((await run(browser, failed(failing)))['week']).toBe(failing);
 	});
 
+	it('on the server, the trends render while the week is still on its way', async () => {
+		const server = await loadModule({ browser: false });
+		const { servedTrends } = await import('./trends.ts');
+		let settle!: (week: typeof view) => void;
+		const week = new Promise<typeof view>((resolve) => (settle = resolve));
+		const loading = run(server, overview(week));
+		await vi.waitFor(() => expect(servedTrends).toHaveBeenCalled());
+		settle(view);
+		expect(await loading).toMatchObject({ week: view });
+	});
+
 	it('a failed load hydrating still waits for the week', async () => {
 		const browser = await loadModule({ browser: true, pathname: '/progress' });
 		expect(await run(browser, failed(Promise.resolve(view)))).toMatchObject({ week: view });

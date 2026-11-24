@@ -1,4 +1,5 @@
 import { version } from '$app/env';
+import { localDay } from '#lib/domain/dates.ts';
 import { testRoutesEnabled } from '#lib/server/env.ts';
 import { ownerId } from '#lib/server/forms/read.ts';
 import {
@@ -10,8 +11,8 @@ import {
 	setGoalAction,
 	setPhaseAction
 } from '#lib/server/forms/weight.ts';
-import { ownerToday } from '#lib/server/local-date.ts';
 import { logWhenSettled } from '#lib/server/observability/timing.ts';
+import { getAthleteProfile } from '#lib/server/services/profile/index.ts';
 import type { Actions, PageServerLoad } from './$types';
 import { loadProgress, type ProgressDeps } from './load';
 import { progressParams } from './params';
@@ -42,9 +43,13 @@ export const load: PageServerLoad = async ({ cookies, locals, request, route, ur
 		routeId: route.id,
 		appVersion: version
 	};
-	const week = ownerToday(owner, new Date())
-		.then((today) => loadWeekSoFar(owner, { today, origin }))
-		// ownerToday's own failure: the tiles' Retry.
+	// Today from the owner's profile (as ownerToday works it out), which the week then reads from
+	// rather than reading it again.
+	const week = getAthleteProfile(owner)
+		.then((profile) =>
+			loadWeekSoFar(owner, { today: localDay(new Date(), profile.timeZone), profile, origin })
+		)
+		// The profile read's own failure: the tiles' Retry.
 		.catch(() => ({ failed: true }) as const);
 	const data = await loadProgress(
 		owner,

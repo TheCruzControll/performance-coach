@@ -8,18 +8,23 @@
  * to {failed: true}, which the tiles show as a designed error with Retry.
  */
 import type { IsoDate } from '#lib/domain/calendar.ts';
+import type { AthleteProfile } from '#lib/domain/profile/types.ts';
 import { getWeekSoFar } from '#lib/server/services/analytics/week.ts';
 import { recordServerError } from '#lib/server/services/errors.ts';
 import type { ProgressDeps, ProgressRequest } from './load';
 import { weekView, type WeekSoFarView } from './week-words';
 
-/** Never rejects. */
+/** Never rejects. `profile`: the one the route read to work out today, so it is not read again. */
 export function loadWeekSoFar(
 	ownerId: string,
-	{ today, origin }: { today: IsoDate; origin: ProgressRequest['origin'] },
+	{
+		today,
+		profile,
+		origin
+	}: { today: IsoDate; profile?: AthleteProfile; origin: ProgressRequest['origin'] },
 	{ db, errorsDb }: Pick<ProgressDeps, 'db' | 'errorsDb'> = {}
 ): Promise<WeekSoFarView> {
-	return getWeekSoFar(ownerId, { today }, { db })
+	return getWeekSoFar(ownerId, { today, profile }, { db })
 		.then(weekView)
 		.catch(async (error: unknown) => {
 			await recordServerError(
