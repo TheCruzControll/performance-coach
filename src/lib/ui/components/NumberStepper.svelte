@@ -4,7 +4,9 @@
   (accelerating), tap the value to type (Enter commits, Escape cancels the edit without closing
   an enclosing sheet), ArrowUp/ArrowDown/PageUp/PageDown/Home/End on the keyboard. Exposed to
   assistive tech as a spinbutton; an error marks it invalid and is announced in place of the hint.
-  `format` and `parse` show and read the value another way (seconds as m:ss).
+  `format` and `parse` show and read the value another way (seconds as m:ss). `size="md"` is
+  Paper's 52 px stepper (the plate calculator's), and `hideLabel` keeps the label for assistive
+  tech only, where a sheet's title already says it.
 -->
 <script lang="ts">
 	import IconButton from './IconButton.svelte';
@@ -32,6 +34,14 @@
 		onchange?: (value: number) => void;
 		/** What is being typed, read as it would commit, before Enter or blur; null when unreadable. */
 		ondraft?: (value: number | null) => void;
+		/**
+		 * `lg` (default): 60 px ± and the 64 px numeral. `md`: 52 px ± and the 56 px numeral (Paper's
+		 * plate and duration steppers), stepping down to 40 px in a stepper under 19 rem wide (a
+		 * container query) so 102.5 kg fits at 320.
+		 */
+		size?: 'md' | 'lg';
+		/** Keep the label for assistive tech only: the sheet's title already says it. */
+		hideLabel?: boolean;
 		'data-testid'?: string;
 	}
 
@@ -51,6 +61,8 @@
 		parse,
 		onchange,
 		ondraft,
+		size = 'lg',
+		hideLabel = false,
 		'data-testid': testId
 	}: Props = $props();
 
@@ -178,8 +190,8 @@
 	}
 </script>
 
-<div class="stepper" class:invalid={Boolean(error)} data-testid={testId}>
-	<label class="label" for={id}>{label}</label>
+<div class="stepper" class:invalid={Boolean(error)} data-size={size} data-testid={testId}>
+	<label class="label" class:visually-hidden={hideLabel} for={id}>{label}</label>
 	<div class="row">
 		<IconButton
 			icon="minus"
@@ -296,6 +308,41 @@
 		line-height: 1.2632;
 		font-weight: var(--weight-regular);
 		color: var(--color-text-tertiary);
+	}
+
+	/* Paper's 52 px stepper (plates per side): 52 px ±, the 56/60 numeral in 600, the unit 17/26
+	   6 px from it. */
+	.stepper[data-size='md'] .row :global(.icon-btn) {
+		--size: 3.25rem;
+	}
+
+	.stepper[data-size='md'] .value-wrap {
+		gap: var(--space-1-5);
+	}
+
+	/* A md stepper measures its own width, and its numeral steps down in one where it is narrow. */
+	.stepper[data-size='md'] {
+		container-type: inline-size;
+	}
+
+	.stepper[data-size='md'] .value {
+		font: var(--type-numeral-m);
+		font-weight: var(--weight-semibold);
+		line-height: 1.0714;
+		letter-spacing: var(--tracking-display-lg);
+		font-variant-numeric: lining-nums tabular-nums;
+	}
+
+	.stepper[data-size='md'] .unit {
+		font: var(--type-body);
+	}
+
+	/* A 320 px phone: '102.5 kg' and the two 52 px controls share 264 px, so the stepper, not the
+	   window, decides: under 19 rem the md numeral steps down to 40 px. */
+	@container (width < 19rem) {
+		.stepper[data-size='md'] .value {
+			font-size: var(--text-4xl);
+		}
 	}
 
 	.hint {

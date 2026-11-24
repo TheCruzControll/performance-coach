@@ -1,13 +1,14 @@
 /**
  * The plate calculator from a set row on /workout (PRD §8): a set of a barbell or plate-loaded
- * exercise opens M1's calculator at that set's weight and unit, and the device's bar and plates,
- * edited inside it, are what the solver loads: kept per device and per unit, and shared with
- * Train's calculator. From the shared kit fixture seeded in IndexedDB; sync is held ('hold'),
+ * exercise opens M1's calculator, 'Plates per side', at that set's weight and unit, and the
+ * device's bar and plates, edited in Bar and plates (a sheet over it), are what the solver loads:
+ * kept per device and per unit, and shared with Train's calculator. Bar, Units and each plate are
+ * rows that open pick-one sheets (PickRow). From the shared kit fixture seeded in IndexedDB; sync is held ('hold'),
  * so nothing here writes Postgres. The desktop dialog and the keyboard are
  * workout-plates.desktop.e2e.ts.
  */
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { PLATES_KEY } from '../src/lib/client/plates';
 import { DB_NAME, STORES } from '../src/lib/client/workout/names';
 import type { StrengthKit } from '../src/lib/domain/workout';
@@ -82,22 +83,42 @@ async function open(page: Page): Promise<string> {
 const card = (page: Page) => page.getByTestId('workout-main').getByTestId('exercise');
 const rows = (page: Page) => page.getByTestId('workout-main').getByTestId('set');
 const platesOf = (page: Page, index: number) => rows(page).nth(index).getByTestId('set-plates');
-const dialog = (page: Page) => page.getByRole('dialog', { name: 'Plate calculator' });
+const dialog = (page: Page) => page.getByRole('dialog', { name: 'Plates per side' });
 const result = (page: Page) => dialog(page).getByTestId('plates-result');
+const caption = (page: Page) => dialog(page).getByTestId('plates-caption');
 const target = (page: Page) => dialog(page).getByRole('spinbutton', { name: 'Target weight' });
-const bar = (page: Page, name: string) =>
-	dialog(page).getByRole('radiogroup', { name: 'Bar' }).getByRole('radio', { name });
-/** The inventory editor's choice for one plate: 'None', '1', '2', '3' or 'Any'. */
-const plate = (page: Page, weight: string, choice: string) =>
-	dialog(page)
-		.getByRole('radiogroup', { name: `${weight} plates`, exact: true })
-		.getByRole('radio', { name: choice, exact: true });
+/** The Bar row: its value is the bar ('20 kg'). */
+const barRow = (page: Page) => dialog(page).getByTestId('plates-bar-row');
+const inventory = (page: Page) => page.getByTestId('plates-inventory');
+/** A plate's row in Bar and plates, by its weight ('25'): its value is None, its pairs or Any. */
+const plateRow = (page: Page, weight: string) => inventory(page).getByTestId(`plate-${weight}`);
 
+/** A pick-one row's sheet (PickRow), titled by the row: a pick closes it. */
+async function pickIn(page: Page, row: Locator, title: string, choice: string) {
+	await row.click();
+	const sheet = page.getByRole('dialog', { name: title, exact: true });
+	await sheet.getByRole('radio', { name: choice, exact: true }).click();
+	await expect(sheet).toBeHidden();
+}
+
+const pickBar = (page: Page, name: string) => pickIn(page, barRow(page), 'Bar', name);
+const pickUnits = (page: Page, name: string) =>
+	pickIn(page, dialog(page).getByTestId('plates-units-row'), 'Units', name);
+/** A plate's pairs in Bar and plates: 'None', '1 pair', '2 pairs', '3 pairs' or 'Any'. */
+const pickPlate = (page: Page, weight: string, unit: string, choice: string) =>
+	pickIn(page, plateRow(page, weight), `${weight} ${unit}`, choice);
+
+/** Bar and plates, its own sheet over the calculator's. */
 async function openInventory(page: Page) {
-	const toggle = dialog(page).getByRole('button', { name: 'Bar and plates' });
-	await toggle.click();
-	await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-	await expect(dialog(page).getByTestId('plates-inventory')).toBeVisible();
+	await dialog(page).getByTestId('plates-inventory-toggle').click();
+	await expect(inventory(page)).toBeVisible();
+}
+
+/** Escape closes Bar and plates, back to the calculator. */
+async function closeInventory(page: Page) {
+	await page.keyboard.press('Escape');
+	await expect(inventory(page)).toBeHidden();
+	await expect(dialog(page)).toBeVisible();
 }
 
 const stored = (page: Page) =>
@@ -128,24 +149,30 @@ test.describe('the plate calculator from a set (IndexedDB only)', () => {
 		await expect(dialog(page)).toBeVisible();
 		await expect(dialog(page)).toContainText('Set 1 · Back squat');
 		await expect(target(page)).toHaveAttribute('aria-valuenow', '102.5');
-		await expect(bar(page, '20 kg bar')).toHaveAttribute('aria-checked', 'true');
-		await expect(result(page)).toHaveText(/^25 · 15 · 1\.25\s*kg per side$/);
-		await expect(
-			dialog(page).getByRole('img', { name: 'Per side: 25, 15, 1.25 kg' })
-		).toBeVisible();
+		await expect(barRow(page)).toContainText('20 kg');
+		await expect(result(page)).toHaveText('25 · 15 · 1.25');
+		await expect(caption(page)).toHaveText('kg on each side, heaviest first');
 		await captureScreen(page, testInfo, 'workout-plates');
 
 		// No 25s, and the 15 kg bar: recalculated from what is left.
 		await openInventory(page);
-		await plate(page, '25 kg', 'None').click();
-		await expect(plate(page, '25 kg', 'None')).toHaveAttribute('aria-checked', 'true');
-		await bar(page, '15 kg bar').click();
-		await expect(result(page)).toHaveText(/^20 · 20 · 2\.5 · 1\.25\s*kg per side$/);
+		await pickPlate(page, '25', 'kg', 'None');
+		await expect(plateRow(page, '25')).toContainText('None');
 		await captureScreen(page, testInfo, 'workout-plates-inventory');
+		await closeInventory(page);
+		await expect(dialog(page).getByTestId('plates-inventory-toggle')).toContainText(
+			'No 25 kg plates'
+		);
+		await pickBar(page, '15 kg bar');
+		await expect(barRow(page)).toContainText('15 kg');
+		await expect(result(page)).toHaveText('20 · 20 · 2.5 · 1.25');
 
 		// One pair of 20s forces another loading, still exact.
-		await plate(page, '20 kg', '1').click();
-		await expect(result(page)).toHaveText(/^20 · 15 · 5 · 2\.5 · 1\.25\s*kg per side$/);
+		await openInventory(page);
+		await pickPlate(page, '20', 'kg', '1 pair');
+		await expect(plateRow(page, '20')).toContainText('1 pair');
+		await closeInventory(page);
+		await expect(result(page)).toHaveText('20 · 15 · 5 · 2.5 · 1.25');
 		await expect(dialog(page).getByTestId('plates-warning')).toHaveCount(0);
 
 		await dialog(page).getByRole('button', { name: 'Close' }).click();
@@ -164,8 +191,8 @@ test.describe('the plate calculator from a set (IndexedDB only)', () => {
 		await platesOf(page, 1).click();
 		await expect(dialog(page)).toContainText('Set 2 · Back squat');
 		await expect(target(page)).toHaveAttribute('aria-valuenow', '97.5');
-		await expect(bar(page, '15 kg bar')).toHaveAttribute('aria-checked', 'true');
-		await expect(result(page)).toHaveText(/^20 · 15 · 5 · 1\.25\s*kg per side$/);
+		await expect(barRow(page)).toContainText('15 kg');
+		await expect(result(page)).toHaveText('20 · 15 · 5 · 1.25');
 		await page.keyboard.press('Escape');
 		await expect(dialog(page)).toBeHidden();
 		await expect(platesOf(page, 1)).toBeFocused();
@@ -177,27 +204,35 @@ test.describe('the plate calculator from a set (IndexedDB only)', () => {
 		await expect(page.locator('[data-testid="resume-slot"][data-looked="/train"]')).toBeAttached();
 		await openMore(page);
 		await page.getByTestId('open-plates').click();
-		await expect(bar(page, '15 kg bar')).toHaveAttribute('aria-checked', 'true');
-		await expect(result(page)).toHaveText(/^20 · 15 · 5 · 2\.5\s*kg per side$/);
+		await expect(barRow(page)).toContainText('15 kg');
+		await expect(result(page)).toHaveText('20 · 15 · 5 · 2.5');
 	});
 
 	test('pounds keep their own inventory, on the 45 lb bar', async ({ page }) => {
 		await open(page);
 		await platesOf(page, 1).click();
-		await dialog(page).getByRole('radio', { name: 'Pounds' }).click();
+		await pickUnits(page, 'Pounds');
+		await expect(dialog(page).getByTestId('plates-units-row')).toContainText('Pounds');
 		await expect(target(page)).toHaveAttribute('aria-valuenow', '215');
-		await expect(bar(page, '45 lb bar')).toHaveAttribute('aria-checked', 'true');
-		await expect(result(page)).toHaveText(/^45 · 35 · 5\s*lb per side$/);
+		await expect(barRow(page)).toContainText('45 lb');
+		await expect(result(page)).toHaveText('45 · 35 · 5');
+		await expect(caption(page)).toHaveText('lb on each side, heaviest first');
 
 		await openInventory(page);
-		await plate(page, '45 lb', 'None').click();
-		await expect(result(page)).toHaveText(/^35 · 25 · 25\s*lb per side$/);
+		await pickPlate(page, '45', 'lb', 'None');
+		await closeInventory(page);
+		await expect(result(page)).toHaveText('35 · 25 · 25');
 
 		// Kilograms are as they were: the 20 kg bar and every plate.
-		await dialog(page).getByRole('radio', { name: 'Kilograms' }).click();
-		await expect(bar(page, '20 kg bar')).toHaveAttribute('aria-checked', 'true');
-		await expect(plate(page, '25 kg', 'Any')).toHaveAttribute('aria-checked', 'true');
-		await expect(result(page)).toHaveText(/^25 · 10 · 2\.5 · 1\.25\s*kg per side$/);
+		await pickUnits(page, 'Kilograms');
+		await expect(barRow(page)).toContainText('20 kg');
+		await expect(dialog(page).getByTestId('plates-inventory-toggle')).toContainText(
+			'What this gym has'
+		);
+		await openInventory(page);
+		await expect(plateRow(page, '25')).toContainText('Any');
+		await closeInventory(page);
+		await expect(result(page)).toHaveText('25 · 10 · 2.5 · 1.25');
 		const saved = await stored(page);
 		expect(saved.kg).toBeUndefined();
 		expect(saved.lb.bar).toBe(45);
@@ -206,8 +241,8 @@ test.describe('the plate calculator from a set (IndexedDB only)', () => {
 		await page.reload();
 		await expect(page.locator('main#main[data-store]')).toBeAttached();
 		await platesOf(page, 1).click();
-		await dialog(page).getByRole('radio', { name: 'Pounds' }).click();
-		await expect(result(page)).toHaveText(/^35 · 25 · 25\s*lb per side$/);
+		await pickUnits(page, 'Pounds');
+		await expect(result(page)).toHaveText('35 · 25 · 25');
 	});
 
 	test('the plank and the pull-up rows have no plate button; the leg press has one per set', async ({
@@ -228,7 +263,7 @@ test.describe('the plate calculator from a set (IndexedDB only)', () => {
 	});
 
 	for (const theme of ['dark', 'light'] as const) {
-		test(`the calculator and its inventory have no WCAG A/AA violations (${theme} theme)`, async ({
+		test(`the calculator, Bar and plates and a pick sheet have no WCAG A/AA violations (${theme} theme)`, async ({
 			page
 		}) => {
 			await page.addInitScript(
@@ -239,11 +274,17 @@ test.describe('the plate calculator from a set (IndexedDB only)', () => {
 			expect(await audit(page), 'the rows').toEqual([]);
 			await platesOf(page, 0).click();
 			await expect(result(page)).toBeVisible();
-			await openInventory(page);
 			await page.waitForTimeout(500); // let the sheet's entrance settle before measuring contrast
 			if (theme === 'light')
 				await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 			expect(await audit(page), 'the calculator').toEqual([]);
+			await openInventory(page);
+			await page.waitForTimeout(500);
+			expect(await audit(page), 'Bar and plates').toEqual([]);
+			await plateRow(page, '25').click();
+			await expect(page.getByRole('dialog', { name: '25 kg', exact: true })).toBeVisible();
+			await page.waitForTimeout(500);
+			expect(await audit(page), 'a plate’s pick sheet').toEqual([]);
 		});
 	}
 });

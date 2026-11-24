@@ -3,8 +3,10 @@
  * the workout menu, over it: the rest per exercise type when a prescription names none, whether
  * a completed set starts the rest, the tone, the vibration and keep-awake, each hidden where the
  * browser lacks it. Every change is kept on this device (localStorage pc:workout:v1) and the
- * workout reads it at its next set. Train → Tools → Rest timer runs the same timer on timestamps
- * this device keeps (pc:rest:v1): it survives a reload and opens no workout.
+ * workout reads it at its next set. Train → More → Start a rest timer runs the same timer on
+ * timestamps this device keeps, with which rest it is (pc:rest:v1): "Rest for" and four rows, then
+ * the rest titled by its class, and one line on Train with the sheet closed. It survives a reload
+ * and opens no workout.
  *
  * The workout comes from the shared kit fixture seeded in IndexedDB; sync is held ('hold'), so
  * nothing here writes Postgres. Time is Playwright's clock, paused once the page is ready, so
@@ -258,16 +260,26 @@ test.describe("Train's rest timer", () => {
 		await row(page).click();
 		await expect(sheet(page)).toBeVisible();
 		await expect(workoutLinks(sheet(page)), 'no link in the sheet opens a workout').toHaveCount(0);
-		await expect(sheet(page).getByTestId('start-isolation-rest')).toHaveText('Isolation · 1:30');
-		await sheet(page).getByTestId('start-isolation-rest').click();
+		await expect(page.getByRole('dialog', { name: 'Rest for' })).toBeVisible();
+		const isolation = sheet(page).getByTestId('start-isolation-rest');
+		await expect(isolation).toContainText('Isolation');
+		await expect(isolation).toContainText('1:30');
+		await isolation.click();
+		// Resting, the sheet is titled by the rest.
+		await expect(page.getByRole('dialog', { name: 'Isolation' })).toBeVisible();
 		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:30');
 		await advance(page, 20_000);
 		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:10');
-		expect(await stored(page, 'pc:rest:v1')).toMatchObject({ durationMs: 90_000, pausedAt: null });
+		expect(await stored(page, 'pc:rest:v1')).toMatchObject({
+			durationMs: 90_000,
+			pausedAt: null,
+			restClass: 'isolation'
+		});
 
-		// Closed, it runs on Train, below More (whose sheet stays open over it until closed).
+		// Closed, it is one line on Train, below More (whose sheet stays open over it until closed).
 		await page.keyboard.press('Escape');
 		await expect(sheet(page)).toBeHidden();
+		await expect(inline(page)).toContainText('Resting');
 		await expect(inline(page).getByTestId('rest-time')).toHaveText('1:10');
 		await expect(workoutLinks(inline(page)), 'no link under the row opens a workout').toHaveCount(
 			0
@@ -288,13 +300,23 @@ test.describe("Train's rest timer", () => {
 		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:10');
 		await advance(page, 10_000);
 		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:00');
+		// Its rows: 30 seconds more, and a pause that holds the time until Resume.
+		await sheet(page).getByTestId('rest-add').click();
+		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:30');
+		await sheet(page).getByTestId('rest-pause').click();
+		await expect(sheet(page).getByTestId('rest-timer')).toHaveAttribute('data-phase', 'paused');
+		await advance(page, 10_000);
+		await expect(sheet(page).getByTestId('rest-time')).toHaveText('1:30');
+		await expect(sheet(page).getByTestId('rest-pause')).toHaveText('Resume');
+		await sheet(page).getByTestId('rest-pause').click();
+		await expect(sheet(page).getByTestId('rest-timer')).toHaveAttribute('data-phase', 'running');
 		await page.keyboard.press('Escape');
 		await expect(sheet(page)).toBeHidden();
-		await expect(inline(page).getByTestId('rest-time')).toHaveText('1:00');
+		await expect(inline(page).getByTestId('rest-time')).toHaveText('1:30');
 		expect(new URL(page.url()).pathname).toBe('/train');
 
-		// More, which the timer opened over, closes too; then Skip on Train hands the focus to
-		// More, whose sheet holds the timer's row.
+		// More, which the timer opened over, closes too; then the line on Train opens the sheet, and
+		// Done resting forgets the rest and hands the focus to More, whose sheet holds the timer's row.
 		await page.keyboard.press('Escape');
 		await expect(moreSheet(page)).toBeHidden();
 		// Chromium closes More itself on this second Escape (no activation since the first, so its
@@ -304,7 +326,10 @@ test.describe("Train's rest timer", () => {
 				message: 'the page scrolls again'
 			})
 			.toBe('');
-		await inline(page).getByRole('button', { name: 'Skip' }).click();
+		await inline(page).click();
+		await expect(page.getByRole('dialog', { name: 'Isolation' })).toBeVisible();
+		await sheet(page).getByTestId('rest-done').click();
+		await expect(sheet(page)).toBeHidden();
 		await expect(inline(page)).toHaveCount(0);
 		await expect(page.getByTestId('open-more')).toBeFocused();
 		expect(await stored(page, 'pc:rest:v1')).toBeNull();
@@ -330,8 +355,12 @@ test.describe("Train's rest timer", () => {
 		);
 		await openTrain(page);
 		await row(page).click();
-		await expect(sheet(page).getByTestId('start-timed-rest')).toHaveText('Timed · 0:45');
-		await expect(sheet(page).getByTestId('start-main-rest')).toHaveText('Main lifts · 3:00');
+		const timed = sheet(page).getByTestId('start-timed-rest');
+		await expect(timed).toContainText('Timed holds');
+		await expect(timed).toContainText('0:45');
+		const main = sheet(page).getByTestId('start-main-rest');
+		await expect(main).toContainText('Main lifts');
+		await expect(main).toContainText('3:00');
 	});
 
 	for (const theme of THEMES) {

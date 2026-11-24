@@ -8,7 +8,15 @@ import {
 	startRest
 } from '#lib/domain/workout/timers.ts';
 import { msToBoundary } from './clock';
-import { readRest, REST_CLASS_WORDS, restAnchor, restBar } from './rest-words';
+import {
+	readRest,
+	REST_CLASS_WORDS,
+	restAnchor,
+	restBar,
+	restCaption,
+	restLineLabel,
+	restTitle
+} from './rest-words';
 
 const T0 = 1_000_000;
 const REST = startRest(T0, 120_000);
@@ -136,7 +144,34 @@ describe('REST_CLASS_WORDS', () => {
 			'Main lifts',
 			'Other compounds',
 			'Isolation',
-			'Timed'
+			'Timed holds'
 		]);
+	});
+});
+
+describe("Train's resting words", () => {
+	const run = startRest(0, 180_000);
+	const running = readRest(run, 46_000);
+	const paused = readRest(pauseRest(run, 46_000), 100_000);
+	const over = readRest(run, 222_000);
+
+	it('reads the rest the words are about', () => {
+		expect([running.time, paused.time, over.time]).toEqual(['2:14', '2:14', '0:42']);
+	});
+
+	it('says under the time how long the rest is, and that it keeps time', () => {
+		expect(restCaption(running)).toBe('of 3:00. It keeps time on this phone, even if you leave.');
+		expect(restCaption(paused)).toBe('Paused, of 3:00.');
+		expect(restCaption(over)).toBe('since it ended, after 3:00.');
+	});
+
+	it('starts the line on Train with what the rest is doing', () => {
+		expect([running, paused, over].map(restLineLabel)).toEqual(['Resting', 'Paused', 'Rest over']);
+	});
+
+	it('titles the sheet by the rest’s class, or Rest for one stored without it', () => {
+		expect(restTitle('main')).toBe('Main lifts');
+		expect(restTitle('timed')).toBe('Timed holds');
+		expect(restTitle(undefined)).toBe('Rest');
 	});
 });

@@ -83,7 +83,7 @@ const option = (page: Page, name: string) =>
 		.filter({ has: page.getByText(name, { exact: true }) });
 const painSheet = (page: Page) => page.getByTestId('pain-sheet');
 const finishSheet = (page: Page) => page.getByTestId('finish-sheet');
-const plates = (page: Page) => page.getByRole('dialog', { name: 'Plate calculator' });
+const plates = (page: Page) => page.getByRole('dialog', { name: 'Plates per side' });
 
 /**
  * Every state is captured: the iPhone projects' under their own name, a desktop window's under
@@ -311,7 +311,10 @@ async function strengthJourney(page: Page, request: APIRequestContext, testInfo:
 			'aria-valuenow',
 			'100'
 		);
-		await expect(plates(page).getByTestId('plates-result')).toHaveText(/^25 · 15\s*kg per side$/);
+		await expect(plates(page).getByTestId('plates-result')).toHaveText('25 · 15');
+		await expect(plates(page).getByTestId('plates-caption')).toHaveText(
+			'kg on each side, heaviest first'
+		);
 		await shoot(page, testInfo, 'plates');
 		await plates(page).getByRole('button', { name: 'Close' }).click();
 		await expect(plates(page)).toBeHidden();

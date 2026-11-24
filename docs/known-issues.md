@@ -57,6 +57,11 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
 - **Some screens still offer two actions in one `EmptyState`.** `SpecificsEditor.svelte:265`,
   `ReviewPrompt.svelte:58`, `KnowsSheet.svelte:68`, `StartFlow.svelte:128`,
   `EmptyWorkout.svelte:18`. Each closes with its screen row (v2/22, v2/14, v2/20, v2/10).
+- **The workout's rest is still the v1 pill (`src/lib/ui/workout/RestTimer.svelte`).** Train's
+  rest follows Instrument v2 (`v2/09a`); the workout's resting screen is v2/10's. Closes with v2/10.
+- **Paper's desktop plate words differ from the phone's** ('What goes on the bar', 'Plates at this
+  gym'); the app uses the phone's ('Plates per side', 'Bar and plates'), at every width. Closes
+  when Paper agrees, or with v2/25.
 - **Cards, stat tiles, chips and segmented controls remain on screens until their v2 screen rows.**
   `v2/02d` flattened them and the tabs and badges too: no fill, pill, tint or amber, with their
   padding, borders and line boxes held, so no screen moves. v2 draws none of them, so each screen row

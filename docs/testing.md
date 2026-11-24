@@ -240,14 +240,15 @@ Specs:
   64 px wide; a canvas bar with no blur; four tabs, current in text colour and 600; no console
   errors on any screen; plate calculator sheet (stepper; Escape while typing cancels the edit
   without closing the sheet; a target below the bar is explained and the stepper's minimum is the
-  bar; the kg/lb switch stays local to the calculator; Close returns focus); Profile is one list
-  (You, Training, Security) with each row's answer, 60 px rows, About this app with Backups first,
-  no account card; phone and desktop; theme applied before first paint and persisted (under the
-  CSP), and Auto following an OS appearance change while
+  bar; Bar and Units are pick sheets and the unit stays local; Close returns focus); Profile is
+  one list (You, Training, Security) with each row's answer, 60 px rows, About this app with
+  Backups first, no account card; phone and desktop; theme applied before first paint and
+  persisted (under the CSP), and Auto following an OS appearance change while
   open (theme-color included); no screen scrolls sideways; nothing
   sits under fixed chrome at rest (landing CTAs, Coach composer); compact segmented controls keep
-  a 44 px hit area. The root error page, loaded on demand: a server-rendered 404 hydrates
-  without the view rendering again, an error offline right after hydration shows the designed
+  a 44 px hit area (`/design`'s Inputs "Range", the compact size's one use). The root error page,
+  loaded on demand: a server-rendered 404 hydrates without the view rendering again, an error
+  offline right after hydration shows the designed
   offline state, a held chunk shows the error once it arrives, and an aborted chunk shows the
   fallback with a 44 px "Try again" link.
 - `plate-calculator.e2e.ts` — Train's lazy plate-calculator sheet (no service worker, chunks
@@ -308,8 +309,9 @@ Specs:
   prompt in both themes.
 - `a11y-dark.e2e.ts` and `a11y-light.e2e.ts` (one theme each, the same tests from
   `a11y-suite.ts`) — axe-core (`@axe-core/playwright`, WCAG 2.1 A/AA) on every screen (Security
-  included; the signed-out sign-in and recovery screens too), the plate-calculator sheet and each
-  `/design` component group, in the **dark and light** themes (Lighthouse only audits dark). The
+  included; the signed-out sign-in and recovery screens too), the plate-calculator sheet and its
+  Bar and plates, and each `/design` component group, in the **dark and light** themes
+  (Lighthouse only audits dark). The
   setup, recovery-codes, new-passkey and sign-in-error states are audited in both themes where
   they occur (`auth.setup.ts`, `auth.e2e.ts`). Zero violations required.
 - `perf.e2e.ts` (Chromium, `perf` project) — the page-load budget on the app's screens. The

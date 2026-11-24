@@ -229,6 +229,11 @@ milestones.md.
   Today to the top of Progress, in every view, until `v2/14`; Today's goals and schedule went, as
   both live in Profile, so Today shows its state's panel alone until `v2/06b`. The e2e run and the
   budgets are CI's to prove.
+- **Instrument v2 Train tools (`v2/09a`).** The plate calculator, on Train and from a set, is a
+  52 px stepper, the plates as one line with a note when short, then Bar, Units and Bar and
+  plates as rows (`PickRow`s, and a sheet with Bar weight and a row per plate); the rest timer is
+  "Rest for" and four rows, then the rest by its class with Done resting, one line on Train while
+  it runs. The e2e run and the budgets are CI's to prove.
 - **Instrument v2 Profile section frame (`v2/22a`).** A section is a 40/44 title and an optional
   lede over its fields and rows; a pick-one answer is a row that opens a sheet (`PickRow`), a short
   entry a sheet of fields (`SheetRow`), and a section can open sub-screens of its own. Name and

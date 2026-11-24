@@ -136,7 +136,8 @@ async function expectAtTop(page: Page, state: Locator) {
 /** The sheet's visible panel is centred in the window, at most 32rem wide. */
 async function expectCentredDialog(page: Page, dialog: Locator) {
 	await expect(dialog).toBeVisible();
-	const panel = dialog.locator('.sheet');
+	// Its own panel, the first: a pick-one row's sheet nests inside its body (PickRow).
+	const panel = dialog.locator('.sheet').first();
 	await expect
 		.poll(() => panel.evaluate((el) => el.getAnimations().length), { message: 'opened' })
 		.toBe(0);
@@ -146,7 +147,7 @@ async function expectCentredDialog(page: Page, dialog: Locator) {
 		1.5
 	);
 	expect(box.width, 'at most 32rem wide').toBeLessThanOrEqual(32 * 16 + 1);
-	await expect(dialog.locator('.handle')).toBeHidden();
+	await expect(dialog.locator('.handle').first()).toBeHidden();
 }
 
 test.describe('a program this week', () => {
@@ -452,8 +453,8 @@ test.describe('the lazy sheets’ chunks failing', () => {
 	test('the plate calculator’s Retry notice sits under its row in More; Retry opens a centred dialog', async ({
 		page
 	}, testInfo) => {
-		// Only the plate sheet's chunk carries this line (plate-calculator.e2e.ts).
-		const SHEET_MARKUP = 'Per side, heaviest plate first.';
+		// Only the plate sheet's chunk carries this title (plate-calculator.e2e.ts).
+		const SHEET_MARKUP = 'Plates per side';
 		let failing = false;
 		await page.route('**/_app/immutable/**/*.js', async (route) => {
 			const response = await route.fetch().catch(() => null);
@@ -480,7 +481,7 @@ test.describe('the lazy sheets’ chunks failing', () => {
 		// opens More too), a centred dialog over More's panel.
 		failing = false;
 		await notice.getByRole('button', { name: 'Try again' }).click();
-		await expectCentredDialog(page, page.getByRole('dialog', { name: 'Plate calculator' }));
+		await expectCentredDialog(page, page.getByRole('dialog', { name: 'Plates per side' }));
 		await expect(moreSheet(page)).toBeVisible();
 	});
 });
