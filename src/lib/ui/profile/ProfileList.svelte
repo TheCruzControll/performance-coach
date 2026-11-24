@@ -1,10 +1,11 @@
 <!--
   @component
   Profile's whole list (Paper, 9 · Profile): the training-profile sections in two groups, You and
-  Training, then App's Appearance and Security's Passkeys and recovery. Each is a `ListRow` link
-  with its answer at its end ("kg, km", "Dark", "2 passkeys"), streamed from the Profile layout's
-  load (./answers.ts), or this device's theme once the page has mounted; until then a row shows its
-  title alone. From 1024 px (Paper, 14 · "Profile, goals") the list is up to 400 px of 44 px rows with no
+  Training, then App's Appearance and About this app, and Security's Passkeys and recovery. Each is
+  a `ListRow` link with its answer at its end ("kg, km", "Dark", "2 passkeys"), streamed from the
+  Profile layout's load (./answers.ts), or this device's theme once the page has mounted; until
+  then a row shows its title alone. About this app's answer ("All working") is given on Profile
+  and About only, whose loads run the checks it reads; elsewhere that row is its title. From 1024 px (Paper, 14 · "Profile, goals") the list is up to 400 px of 44 px rows with no
   chevrons, no visible group headings and its answers in tertiary, beside the open screen, the open
   row `aria-current`. Words only (./sections.ts), never the editor registry, so no route carries
   an editor in its initial JavaScript.
@@ -20,11 +21,15 @@
 		answers?: ProfileAnswers | null;
 		/** Appearance's answer: this device's theme in words, once the page has mounted. */
 		theme?: string;
+		/** About this app's answer (./answers.ts, aboutAnswer), on Profile and About only. */
+		about?: string;
+		/** `warning` when the answer is something to look at ("Check backups"). */
+		aboutTone?: 'warning';
 		/** The row open beside the list, if any. */
-		current?: SectionKey | 'appearance' | 'security';
+		current?: SectionKey | 'appearance' | 'about' | 'security';
 	}
 
-	let { answers = null, theme, current }: Props = $props();
+	let { answers = null, theme, about, aboutTone, current }: Props = $props();
 	const id = $props.id();
 	const here = (key: Props['current']) => (key === current ? 'page' : undefined);
 </script>
@@ -52,6 +57,14 @@
 			href={resolve('/(app)/profile/appearance')}
 			aria-current={here('appearance')}
 			data-testid="appearance-link"
+		/>
+		<ListRow
+			title="About this app"
+			value={about}
+			valueTone={aboutTone}
+			href={resolve('/(app)/profile/about')}
+			aria-current={here('about')}
+			data-testid="about-link"
 		/>
 	</section>
 	<section class="group" aria-labelledby="{id}-security">
@@ -115,6 +128,11 @@
 
 		.profile-list :global(.row .value) {
 			color: var(--color-text-tertiary);
+		}
+
+		/* A warning stays one ("Check backups"): the tertiary is for answers, not for news. */
+		.profile-list :global(.row .value[data-tone='warning']) {
+			color: var(--color-warning);
 		}
 	}
 </style>

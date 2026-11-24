@@ -146,8 +146,8 @@ test.describe('in a desktop window', () => {
 		const current = list(page).getByRole('link', { name: /Equipment/ });
 		await expect(current).toHaveAttribute('aria-current', 'page');
 		await expect(list(page).locator('[aria-current]')).toHaveCount(1);
-		// Every section, Appearance, and Passkeys and recovery.
-		await expect(list(page).getByRole('link')).toHaveCount(SECTIONS.length + 2);
+		// Every section, Appearance, About this app, and Passkeys and recovery.
+		await expect(list(page).getByRole('link')).toHaveCount(SECTIONS.length + 3);
 		const [nav, editorColumn] = [await boxOf(list(page)), await boxOf(column(page))];
 		expect(editorColumn.x).toBeGreaterThanOrEqual(nav.x + nav.width);
 		// 576 px, its hairline and 56 px inside it (Profile's measure, layout.css).

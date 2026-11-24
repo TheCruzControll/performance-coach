@@ -346,8 +346,8 @@ test('stopped at schedule: a new browser context picks up there, from /onboardin
 		// Profile links to the same step, above its list, while setup is unfinished.
 		await gotoHydrated(again, '/profile');
 		const row = again.getByTestId('continue-setup');
-		await expect(row).toContainText('Continue setting up');
-		await expect(row).toContainText('You stopped at Schedule');
+		await expect(row).toContainText('Finish setting up');
+		await expect(row).toContainText('Stopped at Schedule');
 		await expect(row).toHaveAttribute('href', '/onboarding/schedule');
 		await row.click();
 		await expect(again).toHaveURL('/onboarding/schedule');
@@ -361,7 +361,7 @@ test('stopped at schedule: a new browser context picks up there, from /onboardin
 test('a profile never set up: Profile’s row starts at the welcome', async ({ page }) => {
 	await gotoHydrated(page, '/profile');
 	const row = page.getByTestId('continue-setup');
-	await expect(row).toContainText('Continue setting up');
+	await expect(row).toHaveText('Finish setting up');
 	await expect(row).toHaveAttribute('href', '/onboarding');
 	await row.click();
 	await expect(page).toHaveURL('/onboarding');

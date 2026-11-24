@@ -55,8 +55,8 @@ test.describe('platform: health, PWA, observability', () => {
 		expect(res.headers()['server-timing']).toMatch(/db;dur=[\d.]+/);
 		expect(res.headers()['cache-control']).toBe('no-store');
 
-		await page.goto('/profile');
-		await expect(page.getByTestId('db-status')).toContainText(/connected · \d+ ms/i);
+		await page.goto('/profile/about');
+		await expect(page.getByTestId('db-status')).toContainText('Connected');
 	});
 
 	test('pages carry Server-Timing, a request id and security headers', async ({ page }) => {
@@ -72,7 +72,7 @@ test.describe('platform: health, PWA, observability', () => {
 	});
 
 	test('a Content-Security-Policy is sent and enforced', async ({ page }) => {
-		const response = await page.goto('/profile'); // streams data: needs the nonce
+		const response = await page.goto('/profile/about'); // streams data: needs the nonce
 		const csp = response!.headers()['content-security-policy'];
 		expect(csp).toContain("default-src 'self'");
 		expect(csp).toContain("frame-ancestors 'none'");

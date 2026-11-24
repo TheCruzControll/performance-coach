@@ -1,6 +1,6 @@
 /**
  * Health use-case: proves the app can reach Postgres with a real round-trip.
- * Used by GET /api/health and by the Profile screen's "System" panel.
+ * Used by GET /api/health and by About this app (`/profile/about`).
  */
 import { createSystemRepository, getDb, type Executor } from '../db';
 import { logger } from '../observability/logger';

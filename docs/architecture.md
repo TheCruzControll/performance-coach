@@ -170,7 +170,7 @@ services, not CHECKed, so a new key needs no migration.
   finished row never changes, and a row is deleted only once it is older than 400 days
   (`drizzle/0038_backup_runs_guards.sql`). It is excluded from the backups it describes
   (`src/lib/server/db/backup/tables.ts`). Every backup run writes it
-  (`src/lib/server/services/backups/run.ts`), and Profile's Backups row reads it
+  (`src/lib/server/services/backups/run.ts`), and About this app's Backups row reads it
   (`src/lib/server/services/backups/status.ts`).
 - `training_goals`: event or general goals with their disciplines. `priority` ranks the open
   (active or paused) goals, unique and contiguous from 1, and is null once a goal is achieved or
@@ -904,7 +904,7 @@ flowchart TD
 | Request timing   | `Server-Timing` header (`db`, `total`)                         |
 | Server errors    | JSON log + `app_errors` row with request id and stack          |
 | Browser errors   | beacon → `POST /api/client-errors` → `app_errors` (`client`)   |
-| Real-user vitals | `web_vitals` table (LCP, INP, CLS, TTFB, FCP; p75 on Profile)  |
+| Real-user vitals | `web_vitals` table (LCP, INP, CLS, TTFB, FCP; p75 on Speed)    |
 | Health           | `GET /api/health` → `{ ok, db, version, dbLatencyMs }`         |
 | Auth audit       | `auth_events` (sign-ins, passkeys, recovery, sessions, limits) |
 

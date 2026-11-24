@@ -88,9 +88,8 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   hard 400s with a slow jog between each one') need a coach-written note on the plan.
 - **Today shows no clock time for a class ('7:00 pm').** Sessions store a time of day, not a clock
   time, so the day and its line say 'This evening' and the length only.
-- **Profile has no 'What the coach knows' or 'About this app' row yet (Paper draws both).** The
-  coach's knowledge opens from Coach (`v2/20`), and About this app's contents stay on Profile, as
-  a group of status rows, until `v2/22`. Found building `v2/21a`.
+- **Profile has no 'What the coach knows' row yet (Paper draws one).** The coach's knowledge
+  opens from Coach (`v2/20`). Found building `v2/21a`.
 - **Progress's This week is Today's old section, moved as it was (`v2/06a`).** Its heading,
   stat tiles and disclosure are the legacy `Section` and `Stat`, above the view nav in every view,
   not anything Paper draws on Progress. Closes when `v2/14` redraws Progress's home
@@ -256,7 +255,7 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   chart chunks, so no chart's gzip size is recorded. Closes when the budget output or
   docs/performance.md lists each chart body's size.
 
-- **Profile's Backups row is unverified in a browser.** Its pending state's height (no layout
+- **About this app's Backups row is unverified in a browser.** Its pending state's height (no layout
   shift), its warning colour's contrast in both themes and its 320 px fit are reasoned, not
   measured: m9/52 added no e2e (owner's CI-cost rule). The e2e server has backups configured
   (`e2e/global-setup.ts`), so the row there reads the run log's state, not `Not set up`.

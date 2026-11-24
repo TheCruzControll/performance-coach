@@ -140,9 +140,18 @@ test.describe('offline behaviour (service worker)', () => {
 		await openProfile(page);
 		await expect(page.getByTestId('offline-state')).toBeVisible();
 		await context.setOffline(false);
-		await expect(page.getByTestId('db-status')).toContainText(/connected · \d+ ms/i, {
-			timeout: 15_000
-		});
+		// Back online, Profile's checks answer again. On a phone About's side is not drawn (db-status
+		// is hidden), so the About row's answer stands in for it.
+		if (isDesktopPage(page)) {
+			await expect(page.getByTestId('db-status')).toContainText('Connected', {
+				timeout: 15_000
+			});
+		} else {
+			await expect(page.getByTestId('about-link')).toContainText(
+				/All working|Data unavailable|Check backups/,
+				{ timeout: 15_000 }
+			);
+		}
 	});
 
 	test('server unreachable while the device is online: honest copy, recovers by itself', async ({
@@ -168,9 +177,17 @@ test.describe('offline behaviour (service worker)', () => {
 		// The server comes back: with no `online` event to wait for, the screen's own retry
 		// (backoff probe of /api/health) brings live data back without a tap.
 		await context.unrouteAll({ behavior: 'ignoreErrors' });
-		await expect(page.getByTestId('db-status')).toContainText(/connected · \d+ ms/i, {
-			timeout: 20_000
-		});
+		// On a phone About's side is not drawn (db-status is hidden): the About row's answer instead.
+		if (isDesktopPage(page)) {
+			await expect(page.getByTestId('db-status')).toContainText('Connected', {
+				timeout: 20_000
+			});
+		} else {
+			// Recovered: the data answers, so the row is no longer "Data unavailable".
+			await expect(page.getByTestId('about-link')).toContainText(/All working|Check backups/, {
+				timeout: 20_000
+			});
+		}
 	});
 
 	test('on lie-fi, a client-side data load gives up and shows the offline state', async ({
@@ -211,8 +228,8 @@ test.describe('offline behaviour (service worker)', () => {
 		).toBe(true);
 
 		// A controlled load of a server-rendered page gets its live data (the preload's answer).
-		await page.goto('/profile');
-		await expect(page.getByTestId('db-status')).toContainText(/connected · \d+ ms/i, {
+		await page.goto('/profile/about');
+		await expect(page.getByTestId('db-status')).toContainText('Connected', {
 			timeout: 15_000
 		});
 		await expect(page.getByTestId('offline-state')).toHaveCount(0);

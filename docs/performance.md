@@ -1263,8 +1263,10 @@ dropping routes.
   metrics (TTFB, FCP, LCP) to the landing page. Per-screen p75 (e.g. the M4 workout screen's INP)
   therefore groups by `route_id` (indexed). Covered by unit tests and an e2e test that navigates
   client-side and checks where INP lands.
-- The Profile screen shows p75 per metric for the last 7 days. Field data begins when the owner
-  starts using the deployed app.
+- Profile → About this app → Speed answers three questions from the p75 of the last 7 days:
+  opening the app (LCP, on the start route when there were launches), answering a tap (INP) and
+  things staying put (CLS). TTFB and FCP are recorded and not shown. Field data begins when the
+  owner starts using the deployed app.
 
 ## Server timing
 

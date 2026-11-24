@@ -246,6 +246,11 @@ milestones.md.
   and any notes, then It's better now and Remove this injury, in Profile and in onboarding. Saved
   with the section, as before. The e2e run is CI's to prove.
 - **Instrument v2 Today, the day (`v2/06b1`):** one day at the foot, one Start, the week as dots.
+- **Instrument v2 About this app (`v2/22f`).** About this app is its own screen (Backups, Your
+  data, Speed on your devices, Version, Design system; Environment is cut), Speed answers three
+  plain questions in place of the five vitals tiles, Profile's list says "All working" or what
+  needs a look, "Finish setting up" leads the list until onboarding is done, and at a desk Profile
+  opens About beside the list. The e2e run and the budgets are CI's to prove.
 - **Instrument v2 at a desk (`v2/03c`), which completes the Instrument v2 shell (`v2/03`).** The
   rail is the canvas with a hairline, the four tabs 28 px apart and the avatar at its foot, with
   no brand mark. A readable screen is 616 px (560 of text) centred right of the rail but at most
