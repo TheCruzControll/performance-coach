@@ -1,14 +1,16 @@
 /**
- * Profile → Strength: optional 1RMs, each measured or estimated, or "I don't know my 1RMs".
+ * Profile → Strength: optional 1RMs, each measured or estimated, or "I don't know my numbers".
+ * A lift is a row with its value, opening a sheet of its fields.
  * Serial (one test at a time, after the functional suites): every test starts from a blank
  * training profile, which every browser and worker shares.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { estimateOneRepMax } from '../src/lib/domain/e1rm';
 import { roundEstimate } from '../src/lib/domain/units';
 import {
 	captureScreen,
 	gotoHydrated,
+	openSheet,
 	profileAction,
 	query,
 	resetTrainingProfile,
@@ -21,9 +23,35 @@ async function editorReady(page: Page) {
 	await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
 }
 
-const unknownSwitch = (page: Page) => page.getByRole('switch', { name: 'I don’t know my 1RMs' });
-const addButton = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
-const lift = (page: Page, name: string) => page.getByRole('region', { name, exact: true });
+/** A lift's row, by its name: its accessible name is the name, then what is known of it. */
+const liftRow = (page: Page, name: string) =>
+	page.getByTestId('baseline-lift').filter({ hasText: name });
+
+/** "Add a lift": pick it from the sheet, which closes, and the lift's own sheet opens. */
+async function addLift(page: Page, name: string): Promise<Locator> {
+	await page.getByTestId('add-lift').click();
+	const adding = page.getByRole('dialog', { name: 'Add a lift' });
+	await adding.getByRole('radio', { name, exact: true }).click();
+	await expect(adding).toBeHidden();
+	const sheet = page.getByRole('dialog', { name, exact: true });
+	await expect(sheet).toBeVisible();
+	return sheet;
+}
+
+/** Close a lift's sheet with Escape: what was typed stays, and its row says it. */
+async function closeSheet(page: Page, sheet: Locator) {
+	await page.keyboard.press('Escape');
+	await expect(sheet).toBeHidden();
+}
+
+/** Every field stays inside its sheet: a date input is never squeezed past a phone's edge. */
+async function fieldsInside(sheet: Locator) {
+	const { x, width } = (await sheet.locator('.sheet').boundingBox())!;
+	for (const field of await sheet.locator('input:not([type=radio])').all()) {
+		const box = (await field.boundingBox())!;
+		expect(box.x + box.width, await field.evaluate((el) => el.id)).toBeLessThanOrEqual(x + width);
+	}
+}
 
 /** The owner's current (not superseded) baselines, as stored. */
 const currentLifts = () =>
@@ -38,7 +66,7 @@ test.beforeEach(async () => {
 	await resetTrainingProfile();
 });
 
-test('“I don’t know my 1RMs” shows the week-one explainer and stores no lifts', async ({
+test('“I don’t know my numbers” makes the section one statement and stores no lifts', async ({
 	page
 }, testInfo) => {
 	const errors = trackConsoleErrors(page);
@@ -49,18 +77,24 @@ test('“I don’t know my 1RMs” shows the week-one explainer and stores no li
 	await expect(page).toHaveURL('/profile/strength');
 	await expect(page.getByRole('heading', { level: 1, name: 'Strength' })).toBeVisible();
 	await editorReady(page);
+	// Paper, 9 · "Strength": the lede, no lifts yet, Add a lift, and the way out of knowing.
+	await expect(page.getByText('Your best lifts. Add only what you know.')).toBeVisible();
+	await expect(page.getByTestId('baseline-lift')).toHaveCount(0);
+	await expect(page.getByTestId('add-lift')).toHaveText('Add a lift');
 
 	const explainer = page.getByTestId('baselines-explainer');
-	await expect(unknownSwitch(page)).not.toBeChecked();
+	const unknown = page.getByTestId('baselines-unknown');
+	await expect(unknown).toHaveAccessibleName('I don’t know my numbers');
 	await expect(explainer).toHaveCount(0);
-	await unknownSwitch(page).check();
+	await unknown.click();
 	await expect(
-		explainer.getByRole('heading', { name: 'Week one finds your numbers' })
+		explainer.getByRole('heading', { level: 2, name: 'Week one finds your numbers' })
 	).toBeVisible();
-	await expect(explainer).toContainText('no maxing out');
-	await expect(explainer).toContainText('how hard each set felt (RPE');
-	// "I don't know" is the whole answer: there is nothing to add.
-	await expect(addButton(page, 'Back squat')).toHaveCount(0);
+	await expect(explainer).toContainText('No maxing out');
+	await expect(explainer).toContainText('how hard it felt');
+	// "I don't know" is the whole answer: nothing to add, and one row to turn it round, focused.
+	await expect(page.getByTestId('add-lift')).toHaveCount(0);
+	await expect(page.getByTestId('baselines-known')).toBeFocused();
 	await captureScreen(page, testInfo, 'profile-strength-unknown');
 
 	await page.getByTestId('save-section').click();
@@ -72,8 +106,8 @@ test('“I don’t know my 1RMs” shows the week-one explainer and stores no li
 
 	await page.reload();
 	await editorReady(page);
-	await expect(unknownSwitch(page)).toBeChecked();
 	await expect(explainer).toBeVisible();
+	await expect(page.getByTestId('baselines-known')).toBeVisible();
 	const { scrollWidth, innerWidth } = await page.evaluate(() => ({
 		scrollWidth: document.documentElement.scrollWidth,
 		innerWidth: window.innerWidth
@@ -85,24 +119,31 @@ test('“I don’t know my 1RMs” shows the week-one explainer and stores no li
 test('a tested squat is stored as measured and a bench from a set as estimated, apart after a reload', async ({
 	page
 }, testInfo) => {
-	await page.goto('/profile/strength');
+	await gotoHydrated(page, '/profile/strength');
 	await editorReady(page);
-	await addButton(page, 'Back squat').click();
-	const squat = lift(page, 'Back squat');
-	// The new lift takes focus, and leaves the add row; it has no kind until its source is set.
-	await expect(squat.getByRole('heading', { name: 'Back squat' })).toBeFocused();
-	await expect(addButton(page, 'Back squat')).toHaveCount(0);
-	await expect(squat.getByTestId('baseline-kind')).toHaveCount(0);
+	const squat = await addLift(page, 'Back squat');
+	// How you know it comes first: the number's field comes with the answer.
+	await expect(squat.getByRole('textbox', { name: '1RM' })).toHaveCount(0);
 	await squat.getByRole('radio', { name: 'Tested max' }).check();
-	await expect(squat.getByTestId('baseline-kind')).toHaveText('Measured');
 	await squat.getByRole('textbox', { name: '1RM' }).fill('140');
 	await squat.getByLabel('When').fill('2026-10-12');
+	await closeSheet(page, squat);
+	// The sheet hands the focus back to its new row, which says what was typed.
+	await expect(liftRow(page, 'Back squat')).toBeFocused();
+	await expect(liftRow(page, 'Back squat')).toHaveAccessibleName(/^Back squat\s*140 kg/);
+	// Added, it leaves the list of lifts to add.
+	await page.getByTestId('add-lift').click();
+	const adding = page.getByRole('dialog', { name: 'Add a lift' });
+	await expect(adding.getByRole('radio', { name: 'Back squat', exact: true })).toHaveCount(0);
+	await closeSheet(page, adding);
 
-	await addButton(page, 'Bench press').click();
-	const bench = lift(page, 'Bench press');
+	const bench = await addLift(page, 'Bench press');
 	await bench.getByRole('radio', { name: 'From a recent set' }).check();
-	await expect(bench.getByTestId('baseline-kind')).toHaveText('Estimated');
 	await expect(bench.getByRole('textbox', { name: '1RM' })).toHaveCount(0);
+	await expect(bench.getByRole('group', { name: 'A recent hard set' })).toBeVisible();
+	await expect(bench.getByTestId('baseline-estimate')).toHaveText(
+		'Enter a recent hard set. RPE is how hard it felt: 10 is nothing left.'
+	);
 	await bench.getByRole('textbox', { name: 'Weight' }).fill('100');
 	await bench.getByRole('textbox', { name: 'Reps' }).fill('5');
 	await bench.getByRole('textbox', { name: 'RPE' }).fill('8');
@@ -112,8 +153,10 @@ test('a tested squat is stored as measured and a bench from a set as estimated, 
 	const stored = Math.round(e1rm.value * 100) / 100;
 	const shown = roundEstimate(e1rm.value, 'kg');
 	expect(shown % 0.5).toBe(0);
-	const estimate = `≈ ${shown} kg estimated 1RM · ${e1rm.confidence} confidence`;
+	const estimate = `I estimate your best single at about ${shown} kg.`;
 	await expect(bench.getByTestId('baseline-estimate')).toHaveText(estimate);
+	await closeSheet(page, bench);
+	await expect(liftRow(page, 'Bench press')).toHaveAccessibleName(/^Bench press\s*100 kg × 5/);
 
 	await page.getByTestId('save-section').click();
 	await expect(toastWith(page, 'Saved')).toBeVisible();
@@ -153,67 +196,73 @@ test('a tested squat is stored as measured and a bench from a set as estimated, 
 
 	await page.reload();
 	await editorReady(page);
-	await expect(squat.getByTestId('baseline-kind')).toHaveText('Measured');
-	await expect(squat.getByRole('radio', { name: 'Tested max' })).toBeChecked();
-	await expect(squat.getByRole('textbox', { name: '1RM' })).toHaveValue('140');
-	await expect(squat.getByLabel('When')).toHaveValue('2026-10-12');
-	await expect(bench.getByTestId('baseline-kind')).toHaveText('Estimated');
-	await expect(bench.getByRole('radio', { name: 'From a recent set' })).toBeChecked();
+	await expect(liftRow(page, 'Back squat')).toHaveAccessibleName(/^Back squat\s*140 kg/);
+	await expect(liftRow(page, 'Bench press')).toHaveAccessibleName(/^Bench press\s*100 kg × 5/);
+	const squatAgain = await openSheet(page, page, /^Back squat/, 'Back squat');
+	await expect(squatAgain.getByRole('radio', { name: 'Tested max' })).toBeChecked();
+	await expect(squatAgain.getByRole('textbox', { name: '1RM' })).toHaveValue('140');
+	await expect(squatAgain.getByLabel('When')).toHaveValue('2026-10-12');
+	await fieldsInside(squatAgain);
+	await closeSheet(page, squatAgain);
+	const benchAgain = await openSheet(page, page, /^Bench press/, 'Bench press');
+	await expect(benchAgain.getByRole('radio', { name: 'From a recent set' })).toBeChecked();
 	// The computed 1RM is never offered as a max of the owner's: the set is what they edit.
-	await expect(bench.getByRole('textbox', { name: '1RM' })).toHaveCount(0);
-	await expect(bench.getByRole('textbox', { name: 'Weight' })).toHaveValue('100');
-	await expect(bench.getByRole('textbox', { name: 'Reps' })).toHaveValue('5');
-	await expect(bench.getByRole('textbox', { name: 'RPE' })).toHaveValue('8');
-	await expect(bench.getByTestId('baseline-estimate')).toHaveText(estimate);
-	// Every field stays inside its card: a date input is never squeezed into half a phone.
-	for (const card of [squat, bench]) {
-		const { x, width } = (await card.boundingBox())!;
-		for (const field of await card.locator('input:not([type=radio])').all()) {
-			const box = (await field.boundingBox())!;
-			expect(box.x + box.width, await field.evaluate((el) => el.id)).toBeLessThanOrEqual(x + width);
-		}
-	}
-	// Both kinds in one view: the measured squat, and the estimated bench below it.
-	await squat.evaluate((el) => scrollTo(0, el.getBoundingClientRect().top + scrollY - 16));
+	await expect(benchAgain.getByRole('textbox', { name: '1RM' })).toHaveCount(0);
+	await expect(benchAgain.getByRole('textbox', { name: 'Weight' })).toHaveValue('100');
+	await expect(benchAgain.getByRole('textbox', { name: 'Reps' })).toHaveValue('5');
+	await expect(benchAgain.getByRole('textbox', { name: 'RPE' })).toHaveValue('8');
+	await expect(benchAgain.getByTestId('baseline-estimate')).toHaveText(estimate);
+	await fieldsInside(benchAgain);
 	await captureScreen(page, testInfo, 'profile-strength');
+	await closeSheet(page, benchAgain);
 });
 
 test('a lift left blank shows its error until it is removed, and 600 kg is out of range', async ({
 	page
 }) => {
-	await page.goto('/profile/strength');
+	await gotoHydrated(page, '/profile/strength');
 	await editorReady(page);
-	await addButton(page, 'Deadlift').click();
-	await addButton(page, 'Back squat').click();
-	const deadlift = lift(page, 'Deadlift');
-	const squat = lift(page, 'Back squat');
+	await closeSheet(page, await addLift(page, 'Deadlift'));
+	const squat = await addLift(page, 'Back squat');
 	await squat.getByRole('radio', { name: 'Tested max' }).check();
-	const squatMax = squat.getByRole('textbox', { name: '1RM' });
-	await squatMax.fill('600');
+	await squat.getByRole('textbox', { name: '1RM' }).fill('600');
+	await closeSheet(page, squat);
 	const save = page.getByTestId('save-section');
 	await save.click();
-	await expect(squat.getByRole('alert')).toHaveText('1RM between 1 and 500 kg');
+	// Each row with a problem says it in one red line, and the first takes the focus.
+	const deadliftRow = liftRow(page, 'Deadlift');
+	const squatRow = liftRow(page, 'Back squat');
+	await expect(deadliftRow).toHaveAttribute('aria-invalid', 'true');
+	await expect(deadliftRow).toHaveAccessibleDescription('How do you know this number?');
+	await expect(squatRow).toHaveAccessibleDescription('1RM between 1 and 500 kg');
+	await expect(deadliftRow).toBeFocused();
+	// Opened, the sheet shows the message on its field.
+	const squatAgain = await openSheet(page, page, /^Back squat/, 'Back squat');
+	const squatMax = squatAgain.getByRole('textbox', { name: '1RM' });
 	await expect(squatMax).toHaveAttribute('aria-invalid', 'true');
-	await expect(deadlift.getByRole('alert')).toHaveText('How do you know this number?');
+	await expect(squatAgain.getByRole('alert')).toHaveText('1RM between 1 and 500 kg');
 
 	await squatMax.fill('200');
+	await closeSheet(page, squatAgain);
 	await save.click();
 	await expect(page.getByTestId('save-error')).toBeVisible();
-	await expect(squat.getByRole('alert')).toHaveCount(0);
-	await expect(deadlift.getByRole('alert')).toHaveText('How do you know this number?');
+	await expect(squatRow).not.toHaveAttribute('aria-invalid');
+	await expect(deadliftRow).toHaveAccessibleDescription('How do you know this number?');
 	expect(await query('select count(*)::int as n from strength_baselines')).toEqual([{ n: 0 }]);
 
-	// Removed from the keyboard: focus moves to the next lift, which keeps its place on screen,
-	// its value and none of the removed lift's error.
-	await squat.evaluate((el) => el.setAttribute('data-was-here', ''));
-	await deadlift.getByRole('button', { name: 'Remove Deadlift' }).focus();
+	// Removed from its sheet: the row goes, the sheet with it, and the focus takes its place.
+	// The next lift keeps its place on screen, its value and none of the removed lift's error.
+	await squatRow.evaluate((el) => el.setAttribute('data-was-here', ''));
+	const deadlift = await openSheet(page, page, /^Deadlift/, 'Deadlift');
+	await deadlift.getByRole('button', { name: 'Remove this lift' }).focus();
 	await page.keyboard.press('Enter');
-	await expect(deadlift).toHaveCount(0);
-	await expect(squat.getByRole('button', { name: 'Remove Back squat' })).toBeFocused();
+	await expect(deadlift).toBeHidden();
+	await expect(page.getByTestId('baseline-lift')).toHaveCount(1);
+	await expect(page.locator(':focus')).toHaveAttribute('data-testid', /baseline-lift|add-lift/);
 	await expect(page.getByRole('status').filter({ hasText: 'Removed Deadlift' })).toHaveCount(1);
-	await expect(squat).toHaveAttribute('data-was-here', '');
-	await expect(squat.getByRole('alert')).toHaveCount(0);
-	await expect(squatMax).toHaveValue('200');
+	await expect(squatRow).toHaveAttribute('data-was-here', '');
+	await expect(squatRow).not.toHaveAttribute('aria-invalid');
+	await expect(squatRow).toHaveAccessibleName(/^Back squat\s*200 kg/);
 
 	await save.click();
 	await expect(toastWith(page, 'Saved')).toBeVisible();
@@ -222,7 +271,7 @@ test('a lift left blank shows its error until it is removed, and 600 kg is out o
 	]);
 });
 
-test('lifts are added with buttons: suggestions for the disciplines, the rest on request, and one of your own', async ({
+test('Add a lift lists the disciplines’ lifts first, then the rest, then one of your own', async ({
 	page
 }) => {
 	// Weightlifting experience: its lifts are offered first.
@@ -230,28 +279,12 @@ test('lifts are added with buttons: suggestions for the disciplines, the rest on
 		`insert into discipline_experience (owner_id, discipline, level)
 		select id, 'weightlifting', 'intermediate' from owners`
 	);
-	await page.goto('/profile/strength');
+	await gotoHydrated(page, '/profile/strength');
 	await editorReady(page);
-	const add = page.getByRole('region', { name: 'Add a lift you know' });
-	await expect(add.getByRole('button')).toHaveText([
-		'Snatch',
-		'Clean & jerk',
-		'Front squat',
-		'Back squat',
-		'Other lift',
-		'More lifts'
-	]);
-	// Buttons, not radios: arrow keys move nothing and add nothing.
-	await add.getByRole('button', { name: 'Snatch' }).focus();
-	for (const key of ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp']) {
-		await page.keyboard.press(key);
-	}
-	await expect(page.getByTestId('baseline-lift')).toHaveCount(0);
-
-	await add.getByRole('button', { name: 'More lifts' }).focus();
-	await page.keyboard.press('Enter');
-	await expect(add.getByRole('button', { name: 'Bench press' })).toBeFocused();
-	await expect(add.getByRole('button')).toHaveText([
+	await page.getByTestId('add-lift').click();
+	const adding = page.getByRole('dialog', { name: 'Add a lift' });
+	// One list that scrolls: no "More lifts".
+	await expect(adding.locator('label')).toHaveText([
 		'Snatch',
 		'Clean & jerk',
 		'Front squat',
@@ -263,16 +296,34 @@ test('lifts are added with buttons: suggestions for the disciplines, the rest on
 		'Weighted pull-up',
 		'Other lift'
 	]);
+	// Arrow keys step through it and add nothing; the sheet stays until a pick or Escape.
+	await adding.getByRole('radio', { name: 'Snatch' }).focus();
+	for (const key of ['ArrowDown', 'ArrowDown', 'ArrowUp']) {
+		await page.keyboard.press(key);
+	}
+	await expect(adding.getByRole('radio', { name: 'Clean & jerk' })).toBeFocused();
+	await expect(adding).toBeVisible();
+	await expect(page.getByTestId('baseline-lift')).toHaveCount(0);
+	await closeSheet(page, adding);
+	await expect(page.getByTestId('baseline-lift')).toHaveCount(0);
 
-	await add.getByRole('button', { name: 'Other lift' }).click();
-	const own = page.getByTestId('baseline-lift');
+	const own = await addLift(page, 'Other lift');
 	await own.getByRole('radio', { name: 'My best guess' }).check();
-	await expect(own.getByTestId('baseline-kind')).toHaveText('Estimated');
 	await own.getByRole('textbox', { name: '1RM' }).fill('90');
+	await closeSheet(page, own);
+	// A best guess says so in the row's words: "About".
+	const row = page.getByTestId('baseline-lift');
+	await expect(row).toHaveAccessibleName(/^Other lift\s*About 90 kg/);
 	await page.getByTestId('save-section').click();
-	await expect(own.getByRole('alert')).toHaveText('Name the lift');
-	await own.getByRole('textbox', { name: 'Lift name' }).fill('Zercher squat');
-	await expect(lift(page, 'Zercher squat')).toBeVisible();
+	await expect(row).toHaveAccessibleDescription('Name the lift');
+	const named = await openSheet(page, page, /^Other lift/, 'Other lift');
+	await expect(named.getByRole('alert')).toHaveText('Name the lift');
+	await named.getByRole('textbox', { name: 'Lift name' }).fill('Zercher squat');
+	// The sheet and its row take the name as it is typed.
+	await expect(page.getByRole('dialog', { name: 'Zercher squat' })).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	await expect(row).toHaveAccessibleName(/^Zercher squat\s*About 90 kg/);
 	await page.getByTestId('save-section').click();
 	await expect(toastWith(page, 'Saved')).toBeVisible();
 	expect(await currentLifts()).toMatchObject([
@@ -297,10 +348,10 @@ test('switching back to “I don’t know” sets the saved lifts aside and keep
 			{ lift: 'bench_press', source: 'set', unit: 'kg', setWeight: 100, setReps: 5, setRpe: 8 }
 		]
 	});
-	await page.goto('/profile/strength');
+	await gotoHydrated(page, '/profile/strength');
 	await editorReady(page);
 	await expect(page.getByTestId('baseline-lift')).toHaveCount(2);
-	await unknownSwitch(page).check();
+	await page.getByTestId('baselines-unknown').click();
 	await expect(page.getByTestId('baseline-lift')).toHaveCount(0);
 	await expect(page.getByTestId('baselines-explainer')).toContainText(
 		'any you saved before stay in your history'
@@ -320,11 +371,12 @@ test('switching back to “I don’t know” sets the saved lifts aside and keep
 		{ lift: 'bench_press', kind: 'estimated', superseded: true }
 	]);
 
-	// After a reload the lifts are history: turning "I don't know" off starts from none.
+	// After a reload the lifts are history: "I know some of my lifts" starts from none.
 	await page.reload();
 	await editorReady(page);
-	await expect(unknownSwitch(page)).toBeChecked();
-	await unknownSwitch(page).uncheck();
+	await expect(page.getByTestId('baselines-explainer')).toBeVisible();
+	await page.getByTestId('baselines-known').click();
 	await expect(page.getByTestId('baseline-lift')).toHaveCount(0);
-	await expect(addButton(page, 'Back squat')).toBeVisible();
+	await expect(page.getByTestId('add-lift')).toBeVisible();
+	await expect(page.getByTestId('baselines-unknown')).toBeFocused();
 });

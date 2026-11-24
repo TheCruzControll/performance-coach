@@ -6,7 +6,8 @@ import {
 	blankExperience,
 	errorsByRow,
 	experienceDraft,
-	experiencePayload
+	experiencePayload,
+	levelValue
 } from './experience';
 
 const updatedAt = new Date('2026-11-01T08:00:00Z');
@@ -179,5 +180,12 @@ describe('addableDisciplines', () => {
 			'custom'
 		]);
 		expect(addableDisciplines([])).toHaveLength(9);
+	});
+});
+
+describe('levelValue', () => {
+	it('is the level’s name on the row, and nothing before one is picked (“Choose”)', () => {
+		expect(levelValue({ level: 'novice' })).toBe('Novice');
+		expect(levelValue({ level: null })).toBeUndefined();
 	});
 });

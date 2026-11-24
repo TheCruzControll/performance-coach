@@ -327,6 +327,19 @@ export async function openSheet(
 	return sheet;
 }
 
+/**
+ * An Experience row's level (`experience-entry`): open the discipline's sheet from its row, pick
+ * the level ("Novice", whatever its hint says), and close the sheet with Escape: it holds years
+ * and sessions too, so a pick leaves it open.
+ */
+export async function setLevel(page: Page, entry: Locator, level: string): Promise<void> {
+	await entry.click();
+	const sheet = page.getByRole('dialog');
+	await sheet.getByRole('radio', { name: new RegExp(`^${escape(level)}\\b`) }).check();
+	await page.keyboard.press('Escape');
+	await expect(sheet).toBeHidden();
+}
+
 /** A toast notification with this text (not the same words elsewhere on the screen). */
 export function toastWith(page: Page, text: string | RegExp) {
 	return page.locator('.toaster .toast').filter({ hasText: text });

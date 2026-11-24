@@ -1,10 +1,12 @@
 <!--
   @component
-  Profile → Experience: the owner's level in each discipline they train, with years and current
-  sessions a week (both optional), so the coach starts each one at the right level. Disciplines
-  of open goals are listed already. Others are added with a row of buttons, never a choice group
-  (an arrow key would add every discipline it passed); a custom one needs a name. Any card can
-  be removed.
+  Profile → Experience (Paper, 9 · "Experience", "A discipline"): the owner's level in each
+  discipline they train, so the coach starts each one at the right level. One row per
+  discipline with its level, opening a sheet that holds the level, then years and current
+  sessions a week (both optional) as fields, and Remove. Disciplines of open goals are listed
+  already. "Add something else you train" asks what it is first, from a sheet, then opens the new
+  one's own; a custom one needs a name. Rows are keyed, so removing one never hands its state or
+  its errors to the next.
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
@@ -16,38 +18,39 @@
 		type Discipline
 	} from '#lib/domain/profile/catalog.ts';
 	import type { FieldErrors } from '#lib/domain/profile/schemas.ts';
+	import BottomSheet from '../components/BottomSheet.svelte';
 	import Button from '../components/Button.svelte';
-	import Card from '../components/Card.svelte';
 	import ChoiceGroup from '../components/ChoiceGroup.svelte';
-	import EmptyState from '../components/EmptyState.svelte';
-	import IconButton from '../components/IconButton.svelte';
-	import Notice from '../components/Notice.svelte';
+	import ListRow from '../components/ListRow.svelte';
 	import NumberField from '../components/NumberField.svelte';
-	import Section from '../components/Section.svelte';
+	import SheetRow from '../components/SheetRow.svelte';
 	import TextField from '../components/TextField.svelte';
 	import type { EditorProps } from './editors';
 	import {
 		addableDisciplines,
 		blankExperience,
 		errorsByRow,
+		levelValue,
 		type ExperienceDraft,
 		type ExperienceState
 	} from './experience';
 
 	let { value = $bindable(), errors = {} }: EditorProps<ExperienceState> = $props();
 
-	const levels = EXPERIENCE_LEVELS.map((l) => ({
-		value: l,
-		label: EXPERIENCE_LEVEL_INFO[l].label
-	}));
-	const addable = $derived(addableDisciplines(value.entries));
+	const levels = EXPERIENCE_LEVELS.map((l) => ({ value: l, ...EXPERIENCE_LEVEL_INFO[l] }));
+	const addable = $derived(
+		addableDisciplines(value.entries).map((d) => ({
+			value: d,
+			label: d === 'custom' ? 'Something else' : DISCIPLINE_INFO[d].short
+		}))
+	);
 	const nameOf = (entry: ExperienceDraft) =>
 		disciplineLabel(entry.discipline, entry.customLabel?.trim());
 
 	/**
 	 * A save's errors, pinned to the rows that were there when they came back (and only then:
-	 * not again when rows come and go), so a card removed afterwards takes its errors with it
-	 * instead of handing them to the card that moves up.
+	 * not again when rows come and go), so a row removed afterwards takes its errors with it
+	 * instead of handing them to the row that moves up.
 	 */
 	let pinnedFrom: FieldErrors | undefined;
 	let pinned: Record<string, FieldErrors> = {};
@@ -58,8 +61,16 @@
 		}
 		return pinned;
 	});
+	/** The row's one red line: the first error in its sheet's order. */
+	const firstError = (own: FieldErrors) =>
+		own.customLabel ?? own.level ?? own.years ?? own.sessionsPerWeek;
 
 	let root = $state<HTMLElement>();
+	/** The entry whose sheet is open: its row opened it, or it was just added. */
+	let opened = $state<string | null>(null);
+	let adding = $state(false);
+	let choice = $state<Discipline | null>(null);
+
 	let announcement = $state('');
 	let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -70,49 +81,99 @@
 		timer = setTimeout(() => (announcement = text), 100);
 	}
 
-	const cards = () => [...(root?.querySelectorAll<HTMLElement>('.entry') ?? [])];
+	const rows = () => [
+		...(root?.querySelectorAll<HTMLElement>('[data-testid="experience-entry"]') ?? [])
+	];
+	const byTestId = (testId: string) =>
+		root?.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
 
+	/** Resolves once `dialog` has closed (at once if it is not open). */
+	function closed(dialog: HTMLDialogElement | null | undefined): Promise<void> {
+		return new Promise((resolve) => {
+			if (!dialog?.open) resolve();
+			else dialog.addEventListener('close', () => resolve(), { once: true });
+		});
+	}
+
+	function startAdding() {
+		choice = null;
+		adding = true;
+	}
+
+	/** A discipline picked from "What else do you train?": listed, then its own sheet opens. */
 	async function add(discipline: Discipline) {
-		value.entries.push(blankExperience(discipline, value.entries));
+		if (!adding) return;
+		adding = false;
+		const entry = blankExperience(discipline, value.entries);
+		value.entries.push(entry);
 		announce(
 			discipline === 'custom'
 				? 'Added another discipline'
 				: `Added ${DISCIPLINE_INFO[discipline].label}`
 		);
+		// Once the question has gone, the new row takes the focus, so its sheet hands it back there.
+		await closed(root?.querySelector<HTMLDialogElement>('[data-testid="add-discipline-sheet"]'));
 		await tick();
-		// Straight to what the new card needs first: a name for a custom one, else its level.
-		const field = cards().at(-1)?.querySelector('input');
-		field?.focus({ preventScroll: true });
-		field?.scrollIntoView({ block: 'center' });
+		rows()[value.entries.findIndex((e) => e.key === entry.key)]?.focus();
+		opened = entry.key;
 	}
 
-	async function remove(index: number) {
+	/** An arrow key is moving the pick: the change it fires adds nothing. */
+	let stepping = false;
+	const isRadio = (target: EventTarget | null): target is HTMLInputElement =>
+		target instanceof HTMLInputElement && target.type === 'radio';
+
+	function picked() {
+		const stepped = stepping;
+		stepping = false;
+		if (!stepped && choice) void add(choice);
+	}
+
+	/** Arrows step through the disciplines; Enter or Space adds the focused one. */
+	function onAddKey(event: KeyboardEvent) {
+		if (!isRadio(event.target)) return;
+		stepping = event.key.startsWith('Arrow');
+		if (event.key !== 'Enter' && event.key !== ' ') return;
+		event.preventDefault();
+		void add(event.target.value as Discipline);
+	}
+
+	/** A tap adds the discipline, also one an arrow key had stepped to (it fires no change). */
+	function onAddClick(event: MouseEvent) {
+		if (isRadio(event.target) && event.detail > 0) void add(event.target.value as Discipline);
+	}
+
+	async function remove(key: string) {
+		const index = value.entries.findIndex((e) => e.key === key);
+		if (index === -1) return;
 		const entry = value.entries[index]!;
-		const focused = cards()[index]?.contains(document.activeElement);
+		opened = null;
 		value.entries.splice(index, 1);
+		// Its errors go with it: a row added later under the same key starts without them.
+		delete pinned[key];
 		announce(`Removed ${nameOf(entry)}`);
-		if (!focused) return;
-		// Keep keyboard focus in the list: the next card's Remove, else the one before, else Add.
+		// Its row went with its sheet: the focus takes its place, on the next row, the one before,
+		// or the way to add one.
 		await tick();
-		const next = cards()[index] ?? cards()[index - 1];
-		(next ?? root?.querySelector('.add'))?.querySelector('button')?.focus();
+		const left = rows();
+		(left[index] ?? left[index - 1] ?? byTestId('add-discipline'))?.focus();
 	}
 </script>
 
 <div class="experience" bind:this={root}>
-	{#each value.entries as entry, i (entry.key)}
-		{@const name = nameOf(entry)}
-		{@const own = rowErrors[entry.key] ?? {}}
-		<div class="entry">
-			<Card
-				title={name}
-				tone={DISCIPLINE_INFO[entry.discipline].tone}
-				data-testid="experience-entry"
-			>
-				{#snippet action()}
-					<IconButton icon="close" size="sm" label="Remove {name}" onclick={() => remove(i)} />
-				{/snippet}
-				<div class="fields">
+	{#if value.entries.length}
+		<div class="rows">
+			{#each value.entries as entry (entry.key)}
+				{@const name = nameOf(entry)}
+				{@const own = rowErrors[entry.key] ?? {}}
+				<SheetRow
+					label={name}
+					value={levelValue(entry)}
+					placeholder="Choose"
+					error={firstError(own)}
+					bind:open={() => opened === entry.key, (open) => (opened = open ? entry.key : null)}
+					data-testid="experience-entry"
+				>
 					{#if entry.discipline === 'custom'}
 						<TextField
 							label="What is it?"
@@ -126,11 +187,14 @@
 					{/if}
 					<ChoiceGroup
 						legend="Level"
-						hint={entry.level ? EXPERIENCE_LEVEL_INFO[entry.level].hint : 'Pick the closest fit.'}
+						hideLegend
+						variant="card"
+						hintPlacement="end"
+						options={levels}
 						bind:value={entry.level}
 						error={own.level}
-						options={levels}
 					/>
+					<!-- Years and sessions are fields here, not rows opening a sheet over the sheet. -->
 					<div class="pair">
 						<NumberField
 							label="Years"
@@ -143,74 +207,76 @@
 						<NumberField
 							label="Sessions"
 							unit="a week"
-							hint="Right now"
 							integer
 							bind:value={entry.sessionsPerWeek}
 							error={own.sessionsPerWeek}
 							optional
 						/>
 					</div>
-				</div>
-			</Card>
+					<ListRow
+						title="Remove {name}"
+						danger
+						onclick={() => remove(entry.key)}
+						data-testid="experience-remove"
+					/>
+				</SheetRow>
+			{/each}
 		</div>
-	{:else}
-		<EmptyState
-			compact
-			icon="progress"
-			title="No disciplines yet"
-			description="Add each one you train, with your level in it: the coach starts every discipline from there."
-			data-testid="experience-empty"
-		/>
-	{/each}
-
-	{#if errors.entries}<Notice tone="danger">{errors.entries}</Notice>{/if}
-
+	{/if}
+	{#if errors.entries}<p class="error" role="alert">{errors.entries}</p>{/if}
+	<!-- A text link as wide as its words (Paper), 8 px under the last row. -->
 	<div class="more">
-		<Section title={value.entries.length ? 'Also train something else?' : 'What do you train?'}>
-			<div class="add">
-				{#each addable as discipline (discipline)}
-					{@const label = discipline === 'custom' ? 'Other…' : DISCIPLINE_INFO[discipline].short}
-					<Button
-						variant="secondary"
-						size="sm"
-						icon="plus"
-						aria-label={discipline === 'custom' ? 'Add other discipline' : `Add ${label}`}
-						onclick={() => add(discipline)}
-					>
-						{label}
-					</Button>
-				{/each}
-			</div>
-		</Section>
+		<Button variant="link" onclick={startAdding} data-testid="add-discipline">
+			Add something else you train
+		</Button>
 	</div>
+
+	<BottomSheet
+		bind:open={adding}
+		title="What else do you train?"
+		data-testid="add-discipline-sheet"
+	>
+		<!-- The radios' keys and clicks bubble here: the group itself is the native one. -->
+		<div
+			role="presentation"
+			onkeydown={onAddKey}
+			onclick={onAddClick}
+			onpointerdown={() => (stepping = false)}
+		>
+			<ChoiceGroup
+				legend="What else do you train?"
+				hideLegend
+				variant="card"
+				options={addable}
+				bind:value={choice}
+				onchange={picked}
+			/>
+		</div>
+	</BottomSheet>
 
 	<p class="visually-hidden" role="status">{announcement}</p>
 </div>
 
 <style>
-	.experience {
+	.experience,
+	.rows {
 		display: grid;
-		gap: var(--space-4);
-	}
-
-	.fields {
-		display: grid;
-		gap: var(--space-5);
-	}
-
-	.pair {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: var(--space-3);
 	}
 
 	.more {
 		padding-top: var(--space-2);
 	}
 
-	.add {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-2);
+	.pair {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: var(--space-3);
+		align-items: start;
+	}
+
+	/* An error about the whole list: one red line under it. */
+	.error {
+		font: var(--type-caption);
+		color: var(--color-danger);
 	}
 </style>

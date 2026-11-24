@@ -6,7 +6,12 @@
  * next time the section opens while that goal is open. That is intended: the coach plans each
  * goal from the owner's level in it, so the screen keeps asking until it has one.
  */
-import { DISCIPLINES, type Discipline, type ExperienceLevel } from '#lib/domain/profile/catalog.ts';
+import {
+	DISCIPLINES,
+	EXPERIENCE_LEVEL_INFO,
+	type Discipline,
+	type ExperienceLevel
+} from '#lib/domain/profile/catalog.ts';
 import type { FieldErrors } from '#lib/domain/profile/schemas.ts';
 import type { ExperienceEntry } from '#lib/domain/profile/types.ts';
 
@@ -75,6 +80,11 @@ export function blankExperience(
 		sessionsPerWeek: null,
 		notes: null
 	};
+}
+
+/** A discipline's row, in words: its level ("Novice"), or nothing until one is picked. */
+export function levelValue(entry: Pick<ExperienceDraft, 'level'>): string | undefined {
+	return entry.level ? EXPERIENCE_LEVEL_INFO[entry.level].label : undefined;
 }
 
 /** Every catalog discipline without a row yet, in catalog order; another custom one always. */

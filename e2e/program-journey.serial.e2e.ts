@@ -45,6 +45,7 @@ import {
 	query,
 	resetTrainingProfile,
 	SAME_ORIGIN,
+	setLevel,
 	toastWith,
 	trackConsoleErrors
 } from './support';
@@ -164,12 +165,13 @@ async function onboardBlank(page: Page, testInfo: TestInfo) {
 	await expect(entries).toHaveCount(3);
 	for (const entry of await entries.all()) {
 		const level = (await entry.textContent())!.includes('Muay Thai') ? 'Intermediate' : 'Novice';
-		await entry.getByRole('radio', { name: level, exact: true }).check();
+		await setLevel(page, entry, level);
 	}
 	await moveOn(page, 'continue', 'strength');
 
 	// Leaving 1RMs blank: week 1 finds them.
-	await page.getByRole('switch', { name: 'I don’t know my 1RMs' }).check();
+	await page.getByTestId('baselines-unknown').click();
+	await expect(page.getByTestId('baselines-explainer')).toBeVisible();
 	await captureScreen(page, testInfo, 'journey-onboarding-strength');
 	await moveOn(page, 'continue', 'specifics');
 	for (const [step, to] of [

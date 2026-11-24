@@ -1,6 +1,6 @@
 /**
  * Editing state for Profile → Strength, built from what the services return: every 1RM is
- * optional, and "I don't know my 1RMs" is an answer of its own. Also the one-line summary of a
+ * optional, and "I don't know my numbers" is an answer of its own. Also the one-line summary of a
  * saved lift. No Intl on purpose: formatter construction is hydration cost on phones
  * (docs/performance.md).
  */
@@ -123,6 +123,34 @@ export function liveEstimate(lift: LiftDraft): E1rmEstimate | null {
 /** A weight as written: at most two decimals, no trailing zeros (82.50 → "82.5"). */
 export function trim(n: number): string {
 	return String(Math.round(n * 100) / 100);
+}
+
+/**
+ * A lift's row, in words: the set ("102.5 kg × 5"), a best guess ("About 150 kg") or a max
+ * ("140 kg"). Nothing until the lift has a source and its numbers, and the row says "Choose".
+ */
+export function liftValue(lift: LiftDraft): string | undefined {
+	if (lift.source === 'set') {
+		return lift.setWeight != null && lift.setReps != null
+			? `${trim(lift.setWeight)} ${lift.unit} × ${lift.setReps}`
+			: undefined;
+	}
+	if (!lift.source || lift.value == null) return undefined;
+	const max = `${trim(lift.value)} ${lift.unit}`;
+	return lift.source === 'estimate' ? `About ${max}` : max;
+}
+
+/** The line under a recent set: the estimate it gives, why it gives none, or what to enter. */
+export function estimateLine(lift: LiftDraft): string {
+	const estimate = liveEstimate(lift);
+	if (estimate) {
+		const best = trim(roundEstimate(estimate.value, lift.unit));
+		return `I estimate your best single at about ${best} ${lift.unit}.`;
+	}
+	if (lift.setWeight != null && lift.setReps != null) {
+		return 'I can’t estimate from that set. Use 1 to 12 reps at RPE 6 to 10.';
+	}
+	return 'Enter a recent hard set. RPE is how hard it felt: 10 is nothing left.';
 }
 
 /**

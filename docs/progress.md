@@ -251,6 +251,12 @@ milestones.md.
   plain questions in place of the five vitals tiles, Profile's list says "All working" or what
   needs a look, "Finish setting up" leads the list until onboarding is done, and at a desk Profile
   opens About beside the list. The e2e run and the budgets are CI's to prove.
+- **Instrument v2 Equipment, Strength and Experience (`v2/22c`).** Equipment is where you train
+  most as a sheet and two kit rows that open tick lists of their own, 'Nothing' for no home kit; a
+  lift is a row with what you know of it, its sheet taking the set or the max, when and how you
+  know, and Add a lift is a sheet to pick from; 'I don't know my numbers' makes Strength one
+  statement; a discipline is a row with its level, its sheet holding the level, years and
+  sessions. In Profile and in onboarding. The e2e run is CI's to prove.
 - **Instrument v2 at a desk (`v2/03c`), which completes the Instrument v2 shell (`v2/03`).** The
   rail is the canvas with a hairline, the four tabs 28 px apart and the avatar at its foot, with
   no brand mark. A readable screen is 616 px (560 of text) centred right of the rail but at most

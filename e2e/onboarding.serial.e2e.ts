@@ -15,10 +15,12 @@ import { devices, expect, test, type Page } from '@playwright/test';
 import {
 	captureScreen,
 	gotoHydrated,
+	pick,
 	profileAction,
 	query,
 	resetTrainingProfile,
 	SAME_ORIGIN,
+	setLevel,
 	toastWith,
 	trackConsoleErrors
 } from './support';
@@ -149,12 +151,13 @@ test('a fight and a marathon, every 1RM blank: set up step by step, stored, and 
 	const entries = page.getByTestId('experience-entry');
 	await expect(entries).toHaveCount(2);
 	for (const entry of await entries.all()) {
-		await entry.getByRole('radio', { name: 'Novice', exact: true }).check();
+		await setLevel(page, entry, 'Novice');
 	}
 	await captureScreen(page, testInfo, 'onboarding-experience');
 	await moveOn(page, 'continue', 'strength');
 
-	await page.getByRole('switch', { name: 'I don’t know my 1RMs' }).check();
+	await page.getByTestId('baselines-unknown').click();
+	await expect(page.getByTestId('baselines-explainer')).toBeVisible();
 	await captureScreen(page, testInfo, 'onboarding-strength');
 	await moveOn(page, 'continue', 'specifics');
 
@@ -287,10 +290,7 @@ test('stopped at schedule: a new browser context picks up there, from /onboardin
 	await page.getByRole('textbox', { name: 'What should your coach call you?' }).fill('Niko');
 	await moveOn(page, 'continue', 'goals');
 	await moveOn(page, 'continue', 'experience');
-	await page
-		.getByTestId('experience-entry')
-		.getByRole('radio', { name: 'Novice', exact: true })
-		.check();
+	await setLevel(page, page.getByTestId('experience-entry'), 'Novice');
 	await moveOn(page, 'continue', 'strength');
 	await moveOn(page, 'skip', 'equipment');
 	await moveOn(page, 'skip', 'injuries');
@@ -566,7 +566,7 @@ test.describe('leaving a step: Back and Finish later', () => {
 		await gotoHydrated(page, '/onboarding/experience');
 		await stepReady(page, 'experience');
 		const entry = page.getByTestId('experience-entry');
-		await entry.getByRole('radio', { name: 'Novice', exact: true }).check();
+		await setLevel(page, entry, 'Novice');
 		await page.getByTestId('step-back').click();
 		await expect(page).toHaveURL('/onboarding/goals');
 		await stepReady(page, 'goals');
@@ -578,7 +578,7 @@ test.describe('leaving a step: Back and Finish later', () => {
 
 		await gotoHydrated(page, '/onboarding/experience');
 		await stepReady(page, 'experience');
-		await expect(entry.getByRole('radio', { name: 'Novice', exact: true })).toBeChecked();
+		await expect(entry).toHaveAccessibleName(/^General strength\s*Novice/);
 		expect(errors).toEqual([]);
 	});
 
@@ -588,10 +588,11 @@ test.describe('leaving a step: Back and Finish later', () => {
 		await gotoHydrated(page, '/onboarding/experience');
 		await stepReady(page, 'experience');
 		// Years without a level: the level is required, so this entry cannot save yet.
-		await page
-			.getByTestId('experience-entry')
-			.getByRole('textbox', { name: /^Years/ })
-			.fill('3');
+		await page.getByTestId('experience-entry').click();
+		const sheet = page.getByRole('dialog', { name: 'General strength' });
+		await sheet.getByRole('textbox', { name: /^Years/ }).fill('3');
+		await page.keyboard.press('Escape');
+		await expect(sheet).toBeHidden();
 		await watchForErrors(page);
 		await page.getByTestId('step-back').click();
 		await expect(page).toHaveURL('/onboarding/goals');
@@ -606,7 +607,7 @@ test.describe('leaving a step: Back and Finish later', () => {
 	}) => {
 		await gotoHydrated(page, '/onboarding/equipment');
 		await stepReady(page, 'equipment');
-		await page.getByRole('radio', { name: 'Commercial gym' }).check();
+		await pick(page, page, 'Where you train most', /^Commercial gym/);
 		await page.getByTestId('finish-later').click();
 		await expect(page).toHaveURL('/today');
 		expect(await query('select gym_type from equipment_profiles')).toEqual([
@@ -623,7 +624,7 @@ test.describe('leaving a step: Back and Finish later', () => {
 		await block(page, 'equipment').getByRole('link', { name: 'Edit Equipment' }).click();
 		await expect(page).toHaveURL('/onboarding/equipment?then=review');
 		await stepReady(page, 'equipment');
-		await page.getByRole('radio', { name: 'Commercial gym' }).check();
+		await pick(page, page, 'Where you train most', /^Commercial gym/);
 		await page.getByTestId('step-back').click();
 		await expect(page).toHaveURL('/onboarding/review');
 		await stepReady(page, 'review');
@@ -650,10 +651,7 @@ test.describe('leaving a step: Back and Finish later', () => {
 			});
 			await gotoHydrated(page, '/onboarding/experience');
 			await stepReady(page, 'experience');
-			await page
-				.getByTestId('experience-entry')
-				.getByRole('radio', { name: 'Novice', exact: true })
-				.check();
+			await setLevel(page, page.getByTestId('experience-entry'), 'Novice');
 			await page.getByTestId('step-back').click();
 			await stepReady(page, 'goals');
 			const box = (await page.getByTestId('step-back').boundingBox())!;

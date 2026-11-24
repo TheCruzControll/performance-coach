@@ -8,13 +8,13 @@
  * the two halves can run in parallel; both run the same tests (scripts/playwright-projects.test.ts).
  */
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { contrast } from '../src/lib/ui/charts/palette-check';
 import { COACH_A11Y } from './coach-a11y';
 import { answerHistory, openWorkoutPanel, pick } from './design-workout';
 import { isDesktopPage } from './desktop';
 import { openMore } from './program-support';
-import { gotoHydrated, SCREENS as APP_ROOTS, signedOut } from './support';
+import { gotoHydrated, pick as pickFromSheet, SCREENS as APP_ROOTS, signedOut } from './support';
 
 export const SCREENS = [
 	...APP_ROOTS.map((t) => t.path),
@@ -189,10 +189,10 @@ export function a11ySuite(theme: 'dark' | 'light'): void {
 		});
 
 		test('a Profile section asking to discard its changes has no violations', async ({ page }) => {
-			await page.goto('/profile/equipment');
+			await gotoHydrated(page, '/profile/equipment');
 			await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
 			// A change that is never saved: nothing reaches the database.
-			await page.getByRole('radio', { name: 'Strength club' }).check();
+			await pickFromSheet(page, page, 'Where you train most', /^Strength club/);
 			// Leaving: Back on a phone; from 1024 px, where Back is hidden, another section.
 			const leave = isDesktopPage(page)
 				? page.getByRole('navigation', { name: 'Profile' }).getByTestId('section-goals')
@@ -214,33 +214,59 @@ export function a11ySuite(theme: 'dark' | 'light'): void {
 			expect(await audit(page)).toEqual([]);
 		});
 
-		test('Strength’s week-one explainer, both kinds of lift and an error have no violations', async ({
+		test('Strength’s week-one explainer, both kinds of lift, an error and a lift’s sheet have no violations', async ({
 			page
 		}) => {
-			await page.goto('/profile/strength');
+			await gotoHydrated(page, '/profile/strength');
 			await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
 			// Changes that are never saved: the browser refuses the invalid one before posting.
-			const unknown = page.getByRole('switch', { name: 'I don’t know my 1RMs' });
-			await unknown.check();
+			await page.getByTestId('baselines-unknown').click();
 			await expect(page.getByTestId('baselines-explainer')).toBeVisible();
 			await page.waitForTimeout(300);
 			expect(await audit(page), 'explainer').toEqual([]);
 
-			await unknown.uncheck();
-			await page.getByRole('button', { name: 'Back squat', exact: true }).click();
-			const squat = page.getByRole('region', { name: 'Back squat' });
-			await squat.getByRole('radio', { name: 'Tested max' }).check();
-			await squat.getByRole('textbox', { name: '1RM' }).fill('600');
-			await page.getByRole('button', { name: 'Bench press', exact: true }).click();
-			const bench = page.getByRole('region', { name: 'Bench press' });
-			await bench.getByRole('radio', { name: 'From a recent set' }).check();
-			await bench.getByRole('textbox', { name: 'Weight' }).fill('100');
-			await bench.getByRole('textbox', { name: 'Reps' }).fill('5');
+			await page.getByTestId('baselines-known').click();
+			/** Add a lift from its sheet, and its own sheet opens: fill it, then close it. */
+			const addLift = async (name: string, fill: (sheet: Locator) => Promise<void>) => {
+				await page.getByTestId('add-lift').click();
+				const adding = page.getByRole('dialog', { name: 'Add a lift' });
+				await adding.getByRole('radio', { name, exact: true }).click();
+				await expect(adding).toBeHidden();
+				const sheet = page.getByRole('dialog', { name, exact: true });
+				await fill(sheet);
+				await page.keyboard.press('Escape');
+				await expect(sheet).toBeHidden();
+			};
+			await addLift('Back squat', async (squat) => {
+				await squat.getByRole('radio', { name: 'Tested max' }).check();
+				await squat.getByRole('textbox', { name: '1RM' }).fill('600');
+			});
+			await addLift('Bench press', async (bench) => {
+				await bench.getByRole('radio', { name: 'From a recent set' }).check();
+				await bench.getByRole('textbox', { name: 'Weight' }).fill('100');
+				await bench.getByRole('textbox', { name: 'Reps' }).fill('5');
+			});
 			await page.getByTestId('save-section').click();
-			await expect(squat.getByRole('alert')).toBeVisible();
-			await expect(bench.getByTestId('baseline-estimate')).toContainText('estimated 1RM');
+			const lift = (name: string) => page.getByTestId('baseline-lift').filter({ hasText: name });
+			await expect(lift('Back squat')).toHaveAttribute('aria-invalid', 'true');
 			await page.waitForTimeout(300);
 			expect(await audit(page), 'lifts').toEqual([]);
+
+			// Each lift's sheet open: the max with its error, then the set with its estimate.
+			await lift('Back squat').click();
+			const squat = page.getByRole('dialog', { name: 'Back squat', exact: true });
+			await expect(squat.getByRole('alert')).toBeVisible();
+			await page.waitForTimeout(500);
+			expect(await audit(page), 'a max’s sheet').toEqual([]);
+			await page.keyboard.press('Escape');
+			await expect(squat).toBeHidden();
+			await lift('Bench press').click();
+			const bench = page.getByRole('dialog', { name: 'Bench press', exact: true });
+			await expect(bench.getByTestId('baseline-estimate')).toContainText(
+				'I estimate your best single'
+			);
+			await page.waitForTimeout(500);
+			expect(await audit(page), 'a set’s sheet').toEqual([]);
 		});
 
 		test('the goal sheet, blank and showing its errors, has no violations', async ({ page }) => {

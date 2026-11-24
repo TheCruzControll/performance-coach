@@ -1,16 +1,19 @@
 /**
- * Profile → Experience: the owner's level, years and sessions a week in each discipline. Serial
+ * Profile → Experience: the owner's level, years and sessions a week in each discipline, a row
+ * each, opening a sheet that holds them. Serial
  * (one test at a time, after the functional suites): every test starts from a blank training
  * profile, which every browser and worker shares.
  */
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
 	captureScreen,
 	gotoHydrated,
+	openSheet,
 	profileAction,
 	query,
 	resetTrainingProfile,
+	setLevel,
 	toastWith,
 	trackConsoleErrors
 } from './support';
@@ -42,20 +45,39 @@ async function editorReady(page: Page) {
 	await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
 }
 
-const card = (page: Page, name: string) => page.getByRole('region', { name, exact: true });
-const level = (page: Page, discipline: string, name: string) =>
-	card(page, discipline).getByRole('radio', { name, exact: true });
-const years = (page: Page, discipline: string) =>
-	card(page, discipline).getByRole('textbox', { name: /^Years/ });
-const sessions = (page: Page, discipline: string) =>
-	card(page, discipline).getByRole('textbox', { name: /^Sessions/ });
-const titles = (page: Page) => page.getByTestId('experience-entry').getByRole('heading');
+/** A discipline's row: its accessible name is the discipline, then its level ("Choose"). */
+const entry = (page: Page, name: string) =>
+	page.getByTestId('experience-entry').filter({ hasText: name });
+const titles = (page: Page) => page.getByTestId('experience-entry').locator('.title');
+/** A discipline's sheet, opened from its row and titled with its name. */
+const sheetOf = (page: Page, name: string) => openSheet(page, page, new RegExp(`^${name}`), name);
+const level = (sheet: Locator, name: string) =>
+	sheet.getByRole('radio', { name: new RegExp(`^${name}\\b`) });
+const years = (sheet: Locator) => sheet.getByRole('textbox', { name: /^Years/ });
+const sessions = (sheet: Locator) => sheet.getByRole('textbox', { name: /^Sessions/ });
+
+/** Close a sheet with Escape: what was typed or picked stays. */
+async function closeSheet(page: Page, sheet: Locator) {
+	await page.keyboard.press('Escape');
+	await expect(sheet).toBeHidden();
+}
+
+/** "Add something else you train": pick it, and the new discipline's own sheet opens. */
+async function addDiscipline(page: Page, pick: string, title: string): Promise<Locator> {
+	await page.getByTestId('add-discipline').click();
+	const adding = page.getByRole('dialog', { name: 'What else do you train?' });
+	await adding.getByRole('radio', { name: pick, exact: true }).click();
+	await expect(adding).toBeHidden();
+	const sheet = page.getByRole('dialog', { name: title, exact: true });
+	await expect(sheet).toBeVisible();
+	return sheet;
+}
 
 test.beforeEach(async () => {
 	await resetTrainingProfile();
 });
 
-test('the goals’ disciplines are listed already, and a card without a level stops Save there', async ({
+test('the goals’ disciplines are listed already, and a row without a level stops Save there', async ({
 	page
 }) => {
 	const errors = trackConsoleErrors(page);
@@ -65,15 +87,23 @@ test('the goals’ disciplines are listed already, and a card without a level st
 	await expect(page).toHaveURL('/profile/experience');
 	await expect(page.getByRole('heading', { level: 1, name: 'Experience' })).toBeVisible();
 	await editorReady(page);
-	// In catalog order, whatever order the goals are ranked in.
+	// Paper, 9 · "Experience": the lede, then a row each, in catalog order whatever order the
+	// goals are ranked in, saying "Choose" until it has a level.
+	await expect(page.getByText('Your level in each thing you train.')).toBeVisible();
 	await expect(titles(page)).toHaveText(['Powerlifting', 'Muay Thai']);
+	await expect(entry(page, 'Powerlifting')).toHaveAccessibleName(/^Powerlifting\s*Choose/);
 
-	await level(page, 'Powerlifting', 'Intermediate').check();
+	await setLevel(page, entry(page, 'Powerlifting'), 'Intermediate');
+	await expect(entry(page, 'Powerlifting')).toHaveAccessibleName(/^Powerlifting\s*Intermediate/);
 	await page.getByTestId('save-section').click();
-	await expect(card(page, 'Muay Thai').getByRole('alert')).toHaveText('Pick your level');
-	await expect(card(page, 'Powerlifting').getByRole('alert')).toHaveCount(0);
-	await expect(level(page, 'Muay Thai', 'New')).toBeFocused();
+	await expect(entry(page, 'Muay Thai')).toHaveAccessibleDescription('Pick your level');
+	await expect(entry(page, 'Powerlifting')).not.toHaveAttribute('aria-invalid');
+	await expect(entry(page, 'Muay Thai')).toBeFocused();
 	await expect(page.getByTestId('save-error')).toContainText('Check the highlighted fields');
+	// Opened, its sheet shows the message on the level list.
+	const muayThai = await sheetOf(page, 'Muay Thai');
+	await expect(muayThai.getByRole('alert')).toHaveText('Pick your level');
+	await closeSheet(page, muayThai);
 	expect(await rows()).toEqual([]);
 	expect(errors).toEqual([]);
 });
@@ -82,17 +112,23 @@ test('levels, years and sessions save, and are there after a reload and in Postg
 	page
 }, testInfo) => {
 	await seedGoals('powerlifting', 'muay_thai');
-	await page.goto('/profile/experience');
+	await gotoHydrated(page, '/profile/experience');
 	await editorReady(page);
-	await level(page, 'Powerlifting', 'Intermediate').check();
-	await expect(card(page, 'Powerlifting').getByText('Steady, structured training')).toBeVisible();
+	const powerlifting = await sheetOf(page, 'Powerlifting');
+	await level(powerlifting, 'Intermediate').check();
+	// The level's hint sits at its row's end.
+	await expect(powerlifting.getByText('Steady, structured training')).toBeVisible();
 	// Years take a decimal point on the phone's keypad; sessions are whole numbers.
-	await expect(years(page, 'Powerlifting')).toHaveAttribute('inputmode', 'decimal');
-	await expect(sessions(page, 'Powerlifting')).toHaveAttribute('inputmode', 'numeric');
-	await years(page, 'Powerlifting').fill('2.5');
-	await sessions(page, 'Powerlifting').fill('4');
-	await level(page, 'Muay Thai', 'Novice').check();
-	await sessions(page, 'Muay Thai').fill('2');
+	await expect(years(powerlifting)).toHaveAttribute('inputmode', 'decimal');
+	await expect(sessions(powerlifting)).toHaveAttribute('inputmode', 'numeric');
+	await years(powerlifting).fill('2.5');
+	await sessions(powerlifting).fill('4');
+	await closeSheet(page, powerlifting);
+	await expect(entry(page, 'Powerlifting')).toHaveAccessibleName(/^Powerlifting\s*Intermediate/);
+	const muayThai = await sheetOf(page, 'Muay Thai');
+	await level(muayThai, 'Novice').check();
+	await sessions(muayThai).fill('2');
+	await closeSheet(page, muayThai);
 
 	await page.getByTestId('save-section').click();
 	await expect(toastWith(page, 'Saved')).toBeVisible();
@@ -112,53 +148,75 @@ test('levels, years and sessions save, and are there after a reload and in Postg
 	await page.reload();
 	await editorReady(page);
 	await expect(titles(page)).toHaveText(['Powerlifting', 'Muay Thai']);
-	await expect(level(page, 'Powerlifting', 'Intermediate')).toBeChecked();
-	await expect(years(page, 'Powerlifting')).toHaveValue('2.5');
-	await expect(sessions(page, 'Powerlifting')).toHaveValue('4');
-	await expect(level(page, 'Muay Thai', 'Novice')).toBeChecked();
-	await expect(years(page, 'Muay Thai')).toHaveValue('');
-	await expect(sessions(page, 'Muay Thai')).toHaveValue('2');
+	await expect(entry(page, 'Muay Thai')).toHaveAccessibleName(/^Muay Thai\s*Novice/);
+	const powerliftingAgain = await sheetOf(page, 'Powerlifting');
+	await expect(level(powerliftingAgain, 'Intermediate')).toBeChecked();
+	await expect(years(powerliftingAgain)).toHaveValue('2.5');
+	await expect(sessions(powerliftingAgain)).toHaveValue('4');
+	await closeSheet(page, powerliftingAgain);
+	const muayThaiAgain = await sheetOf(page, 'Muay Thai');
+	await expect(level(muayThaiAgain, 'Novice')).toBeChecked();
+	await expect(years(muayThaiAgain)).toHaveValue('');
+	await expect(sessions(muayThaiAgain)).toHaveValue('2');
+	await closeSheet(page, muayThaiAgain);
 
 	// Nothing unsaved: leaving asks nothing.
 	await page.getByTestId('back-to-profile').click();
 	await expect(page).toHaveURL('/profile');
 });
 
-test('disciplines add with buttons that arrow keys never press, and a custom one needs a name', async ({
+test('a discipline is added from a sheet that arrow keys never add from, and a custom one needs a name', async ({
 	page
 }) => {
 	await seedGoals('powerlifting');
-	await page.goto('/profile/experience');
+	await gotoHydrated(page, '/profile/experience');
 	await editorReady(page);
 	await expect(titles(page)).toHaveText(['Powerlifting']);
 
-	// A radio group here would add one discipline per arrow key; buttons add nothing.
-	const addRunning = page.getByRole('button', { name: 'Add Running', exact: true });
-	await addRunning.focus();
-	for (const key of ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp']) {
+	// Every discipline not listed yet, by its short name, and one of your own last.
+	await page.getByTestId('add-discipline').click();
+	const adding = page.getByRole('dialog', { name: 'What else do you train?' });
+	await expect(adding.getByRole('radio', { name: 'Powerlifting', exact: true })).toHaveCount(0);
+	await expect(adding.locator('label').last()).toHaveText('Something else');
+	// Arrow keys step through it and add nothing.
+	const running = adding.getByRole('radio', { name: 'Running', exact: true });
+	await running.focus();
+	for (const key of ['ArrowDown', 'ArrowUp']) {
 		await page.keyboard.press(key);
 	}
+	await expect(running).toBeFocused();
+	await expect(adding).toBeVisible();
 	await expect(titles(page)).toHaveText(['Powerlifting']);
-	await expect(addRunning).toBeFocused();
 
-	// Added, it leaves the row and its card asks for a level first.
+	// Enter adds the one in focus: the question goes, and the new one's sheet asks its level.
 	await page.keyboard.press('Enter');
+	await expect(adding).toBeHidden();
+	const runningSheet = page.getByRole('dialog', { name: 'Running', exact: true });
+	await expect(runningSheet).toBeVisible();
 	await expect(titles(page)).toHaveText(['Powerlifting', 'Running']);
-	await expect(addRunning).toHaveCount(0);
-	await expect(level(page, 'Running', 'New')).toBeFocused();
+	await expect(page.getByRole('status').filter({ hasText: 'Added Running' })).toHaveCount(1);
+	await level(runningSheet, 'Novice').check();
+	await closeSheet(page, runningSheet);
+	// Closed, the sheet hands the focus to the new row.
+	await expect(entry(page, 'Running')).toBeFocused();
+	await page.getByTestId('add-discipline').click();
+	await expect(adding.getByRole('radio', { name: 'Running', exact: true })).toHaveCount(0);
+	await closeSheet(page, adding);
 
-	await page.getByRole('button', { name: 'Add other discipline' }).click();
-	const name = card(page, 'Something else').getByRole('textbox', { name: 'What is it?' });
-	await expect(name).toBeFocused();
-	await level(page, 'Something else', 'New').check();
-	await level(page, 'Powerlifting', 'Advanced').check();
-	await level(page, 'Running', 'Novice').check();
+	const own = await addDiscipline(page, 'Something else', 'Something else');
+	await level(own, 'New').check();
+	await closeSheet(page, own);
+	await setLevel(page, entry(page, 'Powerlifting'), 'Advanced');
 	await page.getByTestId('save-section').click();
-	await expect(card(page, 'Something else').getByRole('alert')).toHaveText('Name this discipline');
-	await expect(name).toBeFocused();
+	await expect(entry(page, 'Something else')).toHaveAccessibleDescription('Name this discipline');
+	await expect(entry(page, 'Something else')).toBeFocused();
 	expect(await rows()).toEqual([]);
 
-	await name.fill('Climbing');
+	const named = await sheetOf(page, 'Something else');
+	await expect(named.getByRole('alert')).toHaveText('Name this discipline');
+	await named.getByRole('textbox', { name: 'What is it?' }).fill('Climbing');
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('dialog')).toHaveCount(0);
 	await expect(titles(page)).toHaveText(['Powerlifting', 'Running', 'Climbing']);
 	await page.getByTestId('save-section').click();
 	await expect(toastWith(page, 'Saved')).toBeVisible();
@@ -175,7 +233,7 @@ test('disciplines add with buttons that arrow keys never press, and a custom one
 	]);
 });
 
-test('removing a card in the middle leaves the others as they were, errors included', async ({
+test('removing a row in the middle leaves the others as they were, errors included', async ({
 	page,
 	request
 }) => {
@@ -183,30 +241,38 @@ test('removing a card in the middle leaves the others as they were, errors inclu
 	await profileAction(request, '/profile/experience?/save', {
 		entries: [{ discipline: 'running', level: 'intermediate', years: 3, sessionsPerWeek: 4 }]
 	});
-	await page.goto('/profile/experience');
+	await gotoHydrated(page, '/profile/experience');
 	await editorReady(page);
-	// What was saved first, then a blank card for each goal discipline without one.
+	// What was saved first, then a blank row for each goal discipline without one.
 	await expect(titles(page)).toHaveText(['Running', 'Powerlifting', 'Muay Thai']);
-	await level(page, 'Muay Thai', 'Advanced').check();
-	await years(page, 'Muay Thai').fill('6');
+	const muayThai = await sheetOf(page, 'Muay Thai');
+	await level(muayThai, 'Advanced').check();
+	await years(muayThai).fill('6');
+	await closeSheet(page, muayThai);
 	await page.getByTestId('save-section').click();
-	await expect(card(page, 'Powerlifting').getByRole('alert')).toHaveText('Pick your level');
+	await expect(entry(page, 'Powerlifting')).toHaveAccessibleDescription('Pick your level');
 
-	// The card below stays the same element, so nothing in it (half-typed text, say) moves.
-	await card(page, 'Muay Thai').evaluate((el) => el.setAttribute('data-kept', ''));
-	const remove = page.getByRole('button', { name: 'Remove Powerlifting' });
-	await remove.focus();
+	// The row below stays the same element, so nothing in it moves.
+	await entry(page, 'Muay Thai').evaluate((el) => el.setAttribute('data-kept', ''));
+	const powerlifting = await sheetOf(page, 'Powerlifting');
+	await powerlifting.getByRole('button', { name: 'Remove Powerlifting' }).focus();
 	await page.keyboard.press('Enter');
+	await expect(powerlifting).toBeHidden();
 	await expect(titles(page)).toHaveText(['Running', 'Muay Thai']);
-	await expect(card(page, 'Muay Thai')).toHaveAttribute('data-kept', '');
-	// Its error left with it, and keyboard focus moved to the next card's Remove.
-	await expect(page.getByTestId('experience-entry').getByRole('alert')).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'Remove Muay Thai' })).toBeFocused();
-	await expect(level(page, 'Running', 'Intermediate')).toBeChecked();
-	await expect(years(page, 'Running')).toHaveValue('3');
-	await expect(sessions(page, 'Running')).toHaveValue('4');
-	await expect(level(page, 'Muay Thai', 'Advanced')).toBeChecked();
-	await expect(years(page, 'Muay Thai')).toHaveValue('6');
+	await expect(entry(page, 'Muay Thai')).toHaveAttribute('data-kept', '');
+	// Its error left with it, and the focus took its place.
+	await expect(page.locator('[data-testid="experience-entry"][aria-invalid]')).toHaveCount(0);
+	await expect(page.locator(':focus')).toHaveAttribute(
+		'data-testid',
+		/experience-entry|add-discipline/
+	);
+	await expect(page.getByRole('status').filter({ hasText: 'Removed Powerlifting' })).toHaveCount(1);
+	await expect(entry(page, 'Running')).toHaveAccessibleName(/^Running\s*Intermediate/);
+	await expect(entry(page, 'Muay Thai')).toHaveAccessibleName(/^Muay Thai\s*Advanced/);
+	const runningSheet = await sheetOf(page, 'Running');
+	await expect(years(runningSheet)).toHaveValue('3');
+	await expect(sessions(runningSheet)).toHaveValue('4');
+	await closeSheet(page, runningSheet);
 
 	await page.getByTestId('save-section').click();
 	await expect(toastWith(page, 'Saved')).toBeVisible();
@@ -219,31 +285,31 @@ test('removing a card in the middle leaves the others as they were, errors inclu
 	await page.reload();
 	await editorReady(page);
 	await expect(titles(page)).toHaveText(['Running', 'Muay Thai', 'Powerlifting']);
-	await expect(card(page, 'Powerlifting').getByRole('radio', { checked: true })).toHaveCount(0);
+	await expect(entry(page, 'Powerlifting')).toHaveAccessibleName(/^Powerlifting\s*Choose/);
 });
 
-test('with nothing in play the screen says what to add, and comes back to that empty', async ({
+test('with nothing in play there are no rows, only the way to add one, and it comes back to that', async ({
 	page
 }, testInfo) => {
-	await page.goto('/profile/experience');
+	await gotoHydrated(page, '/profile/experience');
 	await editorReady(page);
-	const empty = page.getByTestId('experience-empty');
-	await expect(empty).toContainText('No disciplines yet');
-	await expect(page.getByRole('heading', { name: 'What do you train?' })).toBeVisible();
+	const add = page.getByTestId('add-discipline');
+	await expect(page.getByTestId('experience-entry')).toHaveCount(0);
+	await expect(add).toHaveText('Add something else you train');
 	await captureScreen(page, testInfo, 'profile-experience-empty');
 
-	await page.getByRole('button', { name: 'Add Muay Thai' }).click();
-	await expect(empty).toHaveCount(0);
-	await expect(page.getByRole('heading', { name: 'Also train something else?' })).toBeVisible();
-	await page.getByRole('button', { name: 'Remove Muay Thai' }).click();
-	await expect(empty).toBeVisible();
+	const muayThai = await addDiscipline(page, 'Muay Thai', 'Muay Thai');
+	await expect(page.getByTestId('experience-entry')).toHaveCount(1);
+	await muayThai.getByRole('button', { name: 'Remove Muay Thai' }).click();
+	await expect(muayThai).toBeHidden();
 	await expect(page.getByTestId('experience-entry')).toHaveCount(0);
-	// The card went without a trace on screen: a screen reader hears it.
+	await expect(add).toBeFocused();
+	// The row went without a trace on screen: a screen reader hears it.
 	await expect(page.getByRole('status').filter({ hasText: 'Removed Muay Thai' })).toHaveCount(1);
 });
 
 for (const theme of ['dark', 'light'] as const) {
-	test(`cards, their errors and a custom discipline have no WCAG A/AA violations (${theme})`, async ({
+	test(`rows, their errors, a custom discipline and its sheet have no WCAG A/AA violations (${theme})`, async ({
 		page
 	}, testInfo) => {
 		await page.addInitScript(
@@ -251,22 +317,29 @@ for (const theme of ['dark', 'light'] as const) {
 			theme
 		);
 		await seedGoals('powerlifting', 'muay_thai');
-		await page.goto('/profile/experience');
+		await gotoHydrated(page, '/profile/experience');
 		await editorReady(page);
 		if (theme === 'light')
 			await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-		await level(page, 'Powerlifting', 'Intermediate').check();
-		await page.getByRole('button', { name: 'Add other discipline' }).click();
+		await setLevel(page, entry(page, 'Powerlifting'), 'Intermediate');
+		await closeSheet(page, await addDiscipline(page, 'Something else', 'Something else'));
 		await page.getByTestId('save-section').click();
-		await expect(card(page, 'Muay Thai').getByRole('alert')).toBeVisible();
+		await expect(entry(page, 'Muay Thai')).toHaveAttribute('aria-invalid', 'true');
 		await page.evaluate(() => document.fonts.ready);
 		await page.waitForTimeout(400);
-		const { violations } = await new AxeBuilder({ page })
-			.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-			.analyze();
-		expect(violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.target.join(' ')}`))).toEqual(
-			[]
-		);
+		const audit = async () =>
+			(
+				await new AxeBuilder({ page })
+					.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+					.analyze()
+			).violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.target.join(' ')}`));
+		expect(await audit(), 'rows').toEqual([]);
 		await captureScreen(page, testInfo, `profile-experience-errors-${theme}`);
+
+		// A custom discipline's sheet, with its name field and its errors.
+		const own = await sheetOf(page, 'Something else');
+		await expect(own.getByRole('alert').first()).toBeVisible();
+		await page.waitForTimeout(400);
+		expect(await audit(), 'sheet').toEqual([]);
 	});
 }

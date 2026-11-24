@@ -21,6 +21,7 @@ import {
 import {
 	captureScreen,
 	gotoHydrated,
+	pick,
 	profileAction,
 	resetTrainingProfile,
 	trackConsoleErrors
@@ -224,8 +225,19 @@ test('welcome to review with the keyboard alone, each step a card with its actio
 	await pressOn(page, 'Enter', 'experience');
 
 	await checkStep(page, testInfo, 'experience');
-	const level = page.getByTestId('experience-entry').getByRole('group', { name: 'Level' });
-	await arrowTo(page, level, level.getByRole('radio', { name: 'Novice' }));
+	// The discipline's row opens its sheet from the keyboard; the level is picked with the arrow
+	// keys inside it, and Escape hands the focus back to the row.
+	const entry = page.getByTestId('experience-entry');
+	await tabTo(page, entry);
+	await page.keyboard.press('Enter');
+	// The goal ticked Running only, so Running is the one discipline on this step.
+	const runningSheet = page.getByRole('dialog', { name: 'Running' });
+	const level = runningSheet.getByRole('group', { name: 'Level' });
+	await arrowTo(page, level, level.getByRole('radio', { name: /^Novice/ }));
+	await page.keyboard.press('Escape');
+	await expect(runningSheet).toBeHidden();
+	await expect(entry).toBeFocused();
+	await expect(entry).toHaveAccessibleName(/^Running\s*Novice/);
 	// The focus order follows the layout: the form, then Back, then Continue.
 	await tabTo(page, back(page));
 	await page.keyboard.press('Tab');
@@ -233,10 +245,11 @@ test('welcome to review with the keyboard alone, each step a card with its actio
 	await pressOn(page, 'Enter', 'strength');
 
 	await checkStep(page, testInfo, 'strength');
-	const unknown = page.getByRole('switch', { name: 'I don’t know my 1RMs' });
-	await tabTo(page, unknown);
-	await page.keyboard.press('Space');
-	await expect(unknown).toBeChecked();
+	await tabTo(page, page.getByTestId('baselines-unknown'));
+	await page.keyboard.press('Enter');
+	await expect(page.getByTestId('baselines-explainer')).toBeVisible();
+	// The row that turns it round takes the focus.
+	await expect(page.getByTestId('baselines-known')).toBeFocused();
 	await tabTo(page, next(page));
 	await pressOn(page, 'Enter', 'specifics');
 
@@ -363,8 +376,8 @@ test.describe('with the service worker blocked (page.route must see every reques
 	}, testInfo) => {
 		await gotoHydrated(page, '/onboarding/equipment');
 		await stepReady(page, 'equipment');
-		const gym = page.getByRole('radio', { name: 'Commercial gym' });
-		await gym.check();
+		const gym = page.getByTestId('gym-type');
+		await pick(page, page, 'Where you train most', /^Commercial gym/);
 		await page.route('**/onboarding/equipment?/save', (route) =>
 			route.abort('internetdisconnected')
 		);
@@ -373,7 +386,7 @@ test.describe('with the service worker blocked (page.route must see every reques
 			await expect(stepError(page)).toHaveText('Can’t reach the server. Check your connection.');
 		});
 		await expect(page).toHaveURL('/onboarding/equipment');
-		await expect(gym).toBeChecked();
+		await expect(gym).toContainText('Commercial gym');
 		await expect(stepError(page)).toBeFocused();
 		await expectErrorAboveActions(page);
 		await captureScreen(page, testInfo, 'onboarding-desktop-offline');

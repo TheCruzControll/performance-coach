@@ -9,6 +9,7 @@ import { expect, test, type Page } from '@playwright/test';
 import {
 	captureScreen,
 	gotoHydrated,
+	pick,
 	profileAction,
 	query,
 	resetTrainingProfile,
@@ -42,7 +43,10 @@ async function editorReady(page: Page) {
 	await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
 }
 
-const place = (page: Page, name: string) => page.getByRole('radio', { name });
+/** "Where you train most": a row with its answer, which opens a sheet to pick it. */
+const gym = (page: Page) => page.getByTestId('gym-type');
+const choosePlace = (page: Page, name: string) =>
+	pick(page, page, 'Where you train most', new RegExp(`^${name}`));
 
 test.beforeEach(async () => {
 	await resetTrainingProfile();
@@ -62,7 +66,10 @@ test('Profile lists the equipment section, and it opens the editor', async ({ pa
 	await expect(page).toHaveURL('/profile/equipment');
 	await expect(page.getByRole('heading', { level: 1, name: 'Equipment' })).toBeVisible();
 	await editorReady(page);
-	await expect(place(page, 'Commercial gym')).not.toBeChecked();
+	// Three rows: nothing picked yet, and no kit ticked here or at home.
+	await expect(gym(page)).toContainText('Choose');
+	await expect(page.getByTestId('kit-row')).toContainText('Nothing');
+	await expect(page.getByTestId('home-kit-row')).toContainText('Nothing');
 	const { scrollWidth, innerWidth } = await page.evaluate(() => ({
 		scrollWidth: document.documentElement.scrollWidth,
 		innerWidth: window.innerWidth
@@ -74,21 +81,34 @@ test('Profile lists the equipment section, and it opens the editor', async ({ pa
 test('equipment saves, and is still there after a reload and in Postgres', async ({
 	page
 }, testInfo) => {
-	await page.goto('/profile/equipment');
+	await gotoHydrated(page, '/profile/equipment');
 	await editorReady(page);
-	await place(page, 'Commercial gym').check();
+	await choosePlace(page, 'Commercial gym');
+	await expect(gym(page)).toContainText('Commercial gym');
+
+	// What's there is a tick list of its own, under the section's name as the way back.
+	const kitRow = page.getByTestId('kit-row');
+	const back = page.getByTestId('sub-back');
+	await kitRow.click();
+	await expect(page.getByRole('heading', { level: 1, name: 'What’s there' })).toBeFocused();
+	await expect(back).toHaveText('Equipment');
 	const kit = page.getByRole('group', { name: 'What’s there?' });
 	await kit.getByRole('checkbox', { name: 'Barbell & plates' }).check();
 	await kit.getByRole('checkbox', { name: 'Squat rack' }).check();
-	const atHome = page.getByRole('switch', { name: 'I also train at home' });
-	await atHome.check();
+	await back.click();
+	await expect(page.getByRole('heading', { level: 1, name: 'Equipment' })).toBeVisible();
+	await expect(kitRow).toContainText('2 things');
+
+	// Home kit is the same list: none is "Nothing", what the old switch's off state stored.
+	const homeRow = page.getByTestId('home-kit-row');
+	await homeRow.click();
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'What you have at home' })
+	).toBeVisible();
 	const home = page.getByRole('group', { name: 'At home' });
 	await home.getByRole('checkbox', { name: 'Dumbbells' }).check();
-	// Off hides and empties the home list; on again, before saving, brings the same kit back.
-	await atHome.uncheck();
-	await expect(home).toHaveCount(0);
-	await atHome.check();
-	await expect(home.getByRole('checkbox', { name: 'Dumbbells' })).toBeChecked();
+	await back.click();
+	await expect(homeRow).toContainText('1 thing');
 	const notes = page.getByRole('textbox', { name: /Anything else/ });
 	await notes.fill('Rack is free before 7am');
 
@@ -119,13 +139,18 @@ test('equipment saves, and is still there after a reload and in Postgres', async
 
 	await page.reload();
 	await editorReady(page);
-	await expect(place(page, 'Commercial gym')).toBeChecked();
+	await expect(gym(page)).toContainText('Commercial gym');
+	await expect(kitRow).toContainText('2 things');
+	await expect(homeRow).toContainText('1 thing');
+	await expect(notes).toHaveValue('Rack is free before 7am');
+	await kitRow.click();
 	await expect(kit.getByRole('checkbox', { name: 'Barbell & plates' })).toBeChecked();
 	await expect(kit.getByRole('checkbox', { name: 'Squat rack' })).toBeChecked();
 	await expect(kit.getByRole('checkbox', { name: 'Bench' })).not.toBeChecked();
-	await expect(page.getByRole('switch', { name: 'I also train at home' })).toBeChecked();
+	await back.click();
+	await homeRow.click();
 	await expect(home.getByRole('checkbox', { name: 'Dumbbells' })).toBeChecked();
-	await expect(notes).toHaveValue('Rack is free before 7am');
+	await back.click();
 
 	// Nothing unsaved: leaving asks nothing.
 	await page.getByTestId('back-to-profile').click();
@@ -136,13 +161,13 @@ test('offline, Save says it can’t reach the server and keeps the change; onlin
 	page,
 	context
 }) => {
-	await page.goto('/profile/equipment');
+	await gotoHydrated(page, '/profile/equipment');
 	await editorReady(page);
-	await place(page, 'Home or garage gym').check();
+	await choosePlace(page, 'Home or garage gym');
 	await context.setOffline(true);
 	await page.getByTestId('save-section').click();
 	await expect(page.getByTestId('save-error')).toContainText('Can’t reach the server');
-	await expect(place(page, 'Home or garage gym')).toBeChecked();
+	await expect(gym(page)).toContainText('Home or garage gym');
 	expect(await query('select gym_type from equipment_profiles')).toEqual([]);
 
 	await context.setOffline(false);
@@ -161,7 +186,7 @@ test.describe('with the network in the test’s hands', () => {
 	}) => {
 		await page.goto('/profile/equipment');
 		await editorReady(page);
-		await place(page, 'Home or garage gym').check();
+		await choosePlace(page, 'Home or garage gym');
 		// What the guard answers a form action once the session has ended (src/lib/server/auth).
 		await page.route(
 			(url) => url.pathname === '/profile/equipment' && url.search === '?/save',
@@ -193,7 +218,7 @@ test.describe('with the network in the test’s hands', () => {
 		await page.unroute(chunk);
 		await page.getByRole('button', { name: 'Try again' }).click();
 		await editorReady(page);
-		await expect(place(page, 'Commercial gym')).toBeVisible();
+		await expect(gym(page)).toBeVisible();
 		await expect(page.getByTestId('save-section')).toBeEnabled();
 	});
 
@@ -233,7 +258,7 @@ test.describe('with the network in the test’s hands', () => {
 		await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'true');
 		release();
 		await editorReady(page);
-		await expect(place(page, 'Commercial gym')).toBeVisible();
+		await expect(gym(page)).toBeVisible();
 		// Its root is a grid (EquipmentEditor.svelte), a plain block without its stylesheet.
 		expect(
 			await page.evaluate(() => (window as unknown as { __firstDisplay: string }).__firstDisplay)
@@ -294,8 +319,8 @@ test('leaving with unsaved changes asks first: Keep editing stays, Discard leave
 	await gotoHydrated(page, '/profile');
 	await page.getByRole('link', { name: /Equipment/ }).click();
 	await editorReady(page);
-	await expect(place(page, 'Strength club')).toBeChecked();
-	await place(page, 'Minimal or travel').check();
+	await expect(gym(page)).toContainText('Strength club');
+	await choosePlace(page, 'Minimal or travel');
 
 	const sheet = page.getByTestId('discard-sheet');
 	await page.getByTestId('back-to-profile').click();
@@ -303,7 +328,7 @@ test('leaving with unsaved changes asks first: Keep editing stays, Discard leave
 	await expect(page).toHaveURL('/profile/equipment');
 	await sheet.getByRole('button', { name: 'Keep editing' }).click();
 	await expect(sheet).toBeHidden();
-	await expect(place(page, 'Minimal or travel')).toBeChecked();
+	await expect(gym(page)).toContainText('Minimal or travel');
 
 	// Discard goes where the tab bar was going, and stores nothing.
 	await page
@@ -321,8 +346,8 @@ test('leaving with unsaved changes asks first: Keep editing stays, Discard leave
 	await page.evaluate(() => history.back());
 	await expect(page).toHaveURL('/profile/equipment');
 	await editorReady(page);
-	await expect(place(page, 'Strength club')).toBeChecked();
-	await place(page, 'Minimal or travel').check();
+	await expect(gym(page)).toContainText('Strength club');
+	await choosePlace(page, 'Minimal or travel');
 	await page.evaluate(() => history.back());
 	await expect(sheet).toBeVisible();
 	await expect(page).toHaveURL('/profile/equipment');
@@ -361,7 +386,7 @@ test('Back before the next screen has rendered comes back to the saved section',
 	await gotoHydrated(page, '/profile');
 	await page.getByRole('link', { name: /Equipment/ }).click();
 	await editorReady(page);
-	await place(page, 'Minimal or travel').check();
+	await choosePlace(page, 'Minimal or travel');
 	await page
 		.getByRole('navigation', { name: 'Primary' })
 		.getByRole('link', { name: 'Today' })
@@ -372,14 +397,14 @@ test('Back before the next screen has rendered comes back to the saved section',
 	// Back while Today is still waiting to render: the edits are gone already…
 	await page.evaluate(() => history.back());
 	await expect(page).toHaveURL('/profile/equipment');
-	await expect(place(page, 'Strength club')).toBeChecked();
+	await expect(gym(page)).toContainText('Strength club');
 	// …and once the browser runs the overtaken navigation's update, Today never covers the editor.
 	await page.waitForFunction(() => {
 		const late = (window as unknown as { __late: { supported: boolean; updates: number } }).__late;
 		return !late.supported || late.updates >= 2; // the editor's own transition, then Today's
 	});
 	await expect(page.getByRole('heading', { level: 1, name: 'Equipment' })).toBeVisible();
-	await expect(place(page, 'Strength club')).toBeChecked();
+	await expect(gym(page)).toContainText('Strength club');
 	expect(errors).toEqual([]); // the overtaken transition is skipped quietly
 });
 
