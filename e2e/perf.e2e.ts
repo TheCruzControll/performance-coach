@@ -17,7 +17,7 @@ const STRENGTH_SESSION = '/train/session/<strength>';
 const HISTORY = '/train/history';
 /** Today once onboarding is complete and there is no program: the Build card over the summary. */
 const TODAY_BUILD = '/today (build)';
-/** Today with the 'today' fixture's week 1 around the server's today: its sessions and Up next. */
+/** Today with the 'today' fixture's week 1 around the server's today: its day. */
 const TODAY_PROGRAM = '/today (program)';
 const PROGRAM_SCREENS = [TODAY_BUILD, TODAY_PROGRAM, '/train', STRENGTH_SESSION, HISTORY];
 const SCREENS = [

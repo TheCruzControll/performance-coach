@@ -1,7 +1,7 @@
 /**
  * A bridge week between blocks (M6 bridge-week-states) on real Postgres, from the bridge-week
  * fixture: three unplanned weeks after Base, this week the last, and Build from next Monday.
- * Train, the whole plan and Today each show the bridge as a deliberate gap with the day the next
+ * Train, the whole plan and Today ('Free week') each show the bridge as a deliberate gap with the day the next
  * block starts, never seven rest days, and Train lists what was logged in it as off-plan; History
  * says the week was not planned before the change that made the bridge. A Base week and Build's
  * first week read as they always have.
@@ -19,6 +19,7 @@ import {
 import { seedAnalyticsFixture } from '../../../src/lib/server/test-support/analytics-fixtures/index';
 import { atLocal } from '../../../src/lib/server/test-support/analytics-fixtures/dashboards';
 import type { BridgeFixtureResult } from '../../../src/lib/server/test-support/analytics-fixtures/bridge-week';
+import { bridgeLead } from '../../../src/routes/(app)/today/day-words';
 import { loadTodayPlan } from '../../../src/routes/(app)/today/plan.server';
 import {
 	loadHistory,
@@ -163,7 +164,7 @@ describe('a bridge week', () => {
 	});
 
 	// Today reads the plan and its week together, each on its own connection: on the shared pool.
-	it('Today names the next block’s start in place of the week, and Up next is Build', async () => {
+	it('Today is a free week naming the next block’s start, with Build’s first session under it', async () => {
 		await withCommitted(async (db) => {
 			const { owner } = await seeded(db, WEDNESDAY);
 			const program = await getCurrentProgram(owner, WEDNESDAY, { db });
@@ -174,10 +175,21 @@ describe('a bridge week', () => {
 				{ db }
 			);
 			if (view.failed) throw new Error('the plan failed to load');
-			expect(view.week).toBeNull();
-			expect(view.bridge).toMatchObject({ title: 'Between blocks' });
-			expect(view.bridge!.description).toMatch(/^Your next block starts Mon 23 Nov\./);
-			expect(view.upNext[0]).toMatchObject({ title: 'Strength A', when: 'Monday' });
+			// Never seven rest days: no dots, and the next block by name.
+			expect(view.dots).toBeNull();
+			expect(view.day).toMatchObject({
+				state: 'bridge',
+				title: 'Free week',
+				when: bridgeLead('Build', NEXT_MONDAY),
+				lead: null,
+				log: 'plain'
+			});
+			expect(view.day.when).toBe(
+				'Between blocks · Build starts Monday 23 November. Nothing is planned until then, so train as you like.'
+			);
+			expect(view.day.lines).toMatchObject([
+				{ kind: 'later', label: 'Monday', title: 'Strength A' }
+			]);
 		});
 	});
 });

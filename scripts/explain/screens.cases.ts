@@ -141,7 +141,7 @@ export function screensExplain({ url, owner }: { url: string; owner: string }) {
 		const data = await loadToday(owner, { now: NOW, origin: origin('/today') }, { db });
 		const plan = await data.plan;
 		ready('/today', data, (d) => d.setup?.complete === true && d.program === 'active');
-		ready('/today plan', plan, (p) => p?.failed === false && p.week !== null);
+		ready('/today plan', plan, (p) => p?.failed === false && p.dots !== null);
 		return { ...data, plan };
 	};
 

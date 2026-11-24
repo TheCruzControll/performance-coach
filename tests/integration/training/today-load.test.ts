@@ -1,9 +1,12 @@
 /**
- * Today's streamed plan (src/routes/(app)/today/plan.server.ts) on real Postgres: the week with
- * today's sessions, Up next across weeks, a rest day naming the next session, 'Starts Monday'
- * before week 1, and 'Nothing planned yet' once the first block is over, offering its review
- * (none mid-week while sessions remain; a failed prompt read leaves the plan). When the database
- * cannot be reached it never rejects: {failed: true}, and the failure recorded as a server error.
+ * Today's streamed plan (src/routes/(app)/today/plan.server.ts) on real Postgres: the day as one
+ * statement with its one Start and its one line (a goal to set, or the next session), the week as
+ * seven dots with each other day composed (a past day missed or skipped said as skipped, with no
+ * sentence from the coach), a done session as a quiet line with its workout, a done day with how
+ * long it took, a rest day naming the next session, the start's day before week 1, and 'Nothing
+ * yet' once the first block is over, offering its review (none mid-week while sessions remain; a
+ * failed prompt read leaves the day). When the database cannot be reached it never rejects:
+ * {failed: true}, and the failure recorded as a server error.
  * - It reads the plan and its week together, each on its own connection, so the cases run on the
  *   shared pool (withCommitted), never in one transaction.
  */
@@ -11,6 +14,7 @@ import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { workouts } from '../../../src/lib/server/db';
 import { findErrorsByRequestId } from '../../../src/lib/server/services/errors';
+import { createGoal } from '../../../src/lib/server/services/profile/index';
 import {
 	createProgramFromPlan,
 	getCurrentProgram,
@@ -23,11 +27,12 @@ import {
 	programFixture,
 	type ProgramFixture
 } from '../../../src/lib/server/test-support/program-fixtures';
+import { completeLead, skippedLine, STARTS_LEAD } from '../../../src/routes/(app)/today/day-words';
 import { loadTodayPlan, type TodayPlanView } from '../../../src/routes/(app)/today/plan.server';
 import type { Executor } from '../../../src/lib/server/db/types';
 import { unreachableDb, watchPool, withCommitted, withRollback } from '../helpers';
-import { makeOwner } from '../profile/fixtures';
-import { logStrength } from './fixtures/history';
+import { generalGoal, makeOwner } from '../profile/fixtures';
+import { logOther, logStrength } from './fixtures/history';
 
 /** A Thursday. */
 const TODAY = '2026-11-05';
@@ -66,87 +71,222 @@ const ACTIVE = {
 	blockComplete: false,
 	firstPlannedDay: TODAY
 } as CurrentProgram;
-const titles = (cards: { title: string }[]) => cards.map((c) => c.title);
-const dayOf = (view: View, date: string) => view.week!.days.find((d) => d.date === date)!;
+const otherOn = (view: View, date: string) => view.others.find((d) => d.date === date)!;
+
+/** A workout's client id, as History links to it. */
+async function clientIdOf(db: Executor, workoutId: string) {
+	const [row] = await db
+		.select({ clientId: workouts.clientId })
+		.from(workouts)
+		.where(eq(workouts.id, workoutId));
+	return row!.clientId;
+}
 
 describe('Today’s plan', () => {
-	it('shows the week with today selected, today’s sessions, and Up next from next week', async () => {
+	it('shows today’s session with one Start, the week as dots, and each other day', async () => {
 		await withCommitted(async (db) => {
 			const owner = await seeded(db, 'today', '2026-11-02');
 			const view = await viewOf(db, owner);
-			expect(view).toMatchObject({ starts: null, complete: null });
-			expect(view.week).toMatchObject({ label: 'Week 1', today: TODAY, selected: TODAY });
-			expect(view.week!.strip.map((d) => d.dots.length)).toEqual([0, 0, 1, 2, 0, 0, 0]);
-			const today = dayOf(view, TODAY);
-			expect(today).toMatchObject({ heading: 'Thursday 5 November', rest: null });
-			expect(titles(today.cards)).toEqual(['Full body', 'Muay Thai class']);
-			expect(today.cards.map((c) => c.baseline)).toEqual([true, false]);
-			// Nothing else this week, so Up next crosses into week 2, in date order.
-			// Each on its date, from the owner's today, for the coming days' kits (coming-kits.ts).
 			expect(view.today).toBe(TODAY);
-			expect(view.upNext.map((c) => [c.title, c.when, c.date])).toEqual([
-				['Full body', 'Monday', '2026-11-09'],
-				['Muay Thai class', 'Tuesday', '2026-11-10'],
-				['Intervals', 'Wednesday', '2026-11-11']
+			// Monday to Sunday: Wednesday's easy run was missed, today has two sessions to do.
+			expect(view.dots!.map((d) => [d.letter, d.mark])).toEqual([
+				['M', 'rest'],
+				['T', 'rest'],
+				['W', 'planned'],
+				['T', 'today'],
+				['F', 'rest'],
+				['S', 'rest'],
+				['S', 'rest']
 			]);
-			// A rest day later this week names the next session, from next week.
-			expect(dayOf(view, '2026-11-07').rest).toBe(
-				'Recovery is part of the plan. Next: Full body, Monday.'
-			);
+			expect(view.dots![3]!.name).toBe('Thursday 5 November, today, 2 sessions');
+			const strength = view.day.lead!.lineage;
+			expect(view.day).toMatchObject({
+				state: 'session',
+				date: TODAY,
+				title: 'Full body',
+				// Nothing is done yet in week 1: this is the first session, of a baseline week.
+				when: 'Your first session · strength · about 60 min',
+				coach: 'Start light today. I’ll set your weights from how these sets feel.',
+				lead: {
+					link: { id: 'start-workout', href: `/workout?start=${strength}` }
+				},
+				rows: [],
+				log: null
+			});
+			// No goal is set: the one line asks for one, ahead of the class later today.
+			expect(view.day.lines).toEqual([
+				{
+					kind: 'goal',
+					label: 'Goal',
+					title: 'None set yet',
+					end: 'Add one',
+					tick: false,
+					quiet: false,
+					href: '/profile/goals',
+					chevron: true
+				}
+			]);
+			// Every other day of the week, composed for a tap on its dot.
+			expect(view.others.map((d) => d.date)).toEqual([
+				'2026-11-02',
+				'2026-11-03',
+				'2026-11-04',
+				'2026-11-06',
+				'2026-11-07',
+				'2026-11-08'
+			]);
+			// Wednesday has passed with its run missed: said as skipped, with no sentence to train by.
+			const wednesday = otherOn(view, '2026-11-04');
+			expect(wednesday).toMatchObject({
+				state: 'other-day',
+				title: 'Easy run',
+				when: skippedLine(['Easy run']),
+				coach: null,
+				lead: null
+			});
+			expect(wednesday.rows.map((r) => [r.title, r.testId, r.secondary])).toEqual([
+				['Open the session', 'open-session', false],
+				['Back to today', 'today-back', true]
+			]);
+			expect(wednesday.rows[0]!.href).toMatch(/^\/train\/session\//);
+			expect(otherOn(view, '2026-11-06')).toMatchObject({
+				title: 'Rest day',
+				when: 'Nothing planned.',
+				rows: [{ title: 'Back to today', href: null, testId: 'today-back' }]
+			});
+			// The coming days' sessions, for their kits: this week's and the next ones after today.
+			expect(view.coming.filter((s) => s.date >= TODAY).map((s) => s.date)).toEqual([
+				TODAY,
+				TODAY,
+				'2026-11-09',
+				'2026-11-10',
+				'2026-11-11'
+			]);
 
-			// Skipping today's strength session shows it skipped, and Up next is unchanged.
-			await skipSession(
-				owner,
-				{ sessionLineage: today.cards[0]!.lineage },
-				{ version: 1, today: TODAY },
-				{ db }
-			);
-			const after = await viewOf(db, owner);
-			expect(dayOf(after, TODAY).cards.map((c) => [c.title, c.statusWords])).toEqual([
-				['Full body', 'Skipped'],
-				['Muay Thai class', null]
+			// With a goal set, the one line is the next session: the class later today.
+			await createGoal(owner, generalGoal(), { db });
+			const later = (await viewOf(db, owner)).day.lines;
+			expect(later).toEqual([
+				{
+					kind: 'later',
+					label: 'Later',
+					title: 'Muay Thai class',
+					end: '90 min',
+					tick: false,
+					quiet: false,
+					href: expect.stringMatching(/^\/train\/session\//),
+					chevron: false
+				}
 			]);
-			expect(after.upNext).toEqual(view.upNext);
+
+			// Skipping today's strength session leads with the class; the dot says one is skipped.
+			await skipSession(owner, { sessionLineage: strength }, { version: 1, today: TODAY }, { db });
+			const after = await viewOf(db, owner);
+			expect(after.day).toMatchObject({
+				state: 'session',
+				title: 'Muay Thai class',
+				when: 'Your first session · class · 90 min'
+			});
+			expect(after.dots![3]).toMatchObject({ mark: 'today' });
+			expect(after.dots![3]!.name).toMatch(/1 skipped/);
 		});
 	});
 
-	it('offers each of today’s sessions Start workout, and Done · View to the workout once done', async () => {
+	it('shows a done session as a quiet line to its workout, then the done day with how long it took', async () => {
 		await withCommitted(async (db) => {
 			const owner = await makeOwner(db);
 			const plan = programFixture('today', { monday: '2026-11-02', today: TODAY });
 			const { programId } = await createProgramFromPlan(owner, plan, { source: 'rules' }, { db });
 			const v1 = await getProgramVersion(owner, programId, 1, { db });
 			const sessions = v1.blocks[0]!.weeks[0]!.sessions as StoredSession[];
-			const fullBody = sessions.find((s) => s.date === TODAY)!;
-			const planned = { sessionId: fullBody.id, lineageId: fullBody.lineage, programId };
-			const startedAt = new Date(`${TODAY}T17:00:00Z`);
-			const { workoutId } = await logStrength(db, owner, { startedAt, planned }, []);
-			const [row] = await db
-				.select({ clientId: workouts.clientId })
-				.from(workouts)
-				.where(eq(workouts.id, workoutId));
+			const pin = (title: string) => {
+				const s = sessions.find((x) => x.date === TODAY && x.title === title)!;
+				return { sessionId: s.id, lineageId: s.lineage, programId };
+			};
+			const { workoutId } = await logStrength(
+				db,
+				owner,
+				{
+					startedAt: new Date(`${TODAY}T08:00:00Z`),
+					planned: pin('Full body'),
+					durationSeconds: 3480
+				},
+				[]
+			);
+			const fullBody = await clientIdOf(db, workoutId);
 
 			const view = await viewOf(db, owner);
-			const [done, muayThai] = dayOf(view, TODAY).cards;
-			expect(done).toMatchObject({ title: 'Full body', status: 'completed' });
-			expect(done!.start).toEqual({
-				id: 'done-workout',
-				label: 'Done · View',
-				href: `/progress/workouts/${row!.clientId}`,
-				icon: 'check'
+			expect(view.day).toMatchObject({
+				state: 'session',
+				title: 'Muay Thai class',
+				lead: { link: { id: 'start-workout' } }
 			});
-			expect(muayThai!.start).toEqual({
-				id: 'start-workout',
-				label: 'Start workout',
-				href: `/workout?start=${muayThai!.lineage}`,
-				icon: 'play'
+			// Done today already: no longer the first session.
+			expect(view.day.when).toBe('This evening · class · 90 min');
+			expect(view.day.lines).toEqual([
+				{
+					kind: 'done',
+					label: 'Morning',
+					title: 'Full body',
+					end: null,
+					tick: true,
+					quiet: true,
+					href: `/progress/workouts/${fullBody}`,
+					chevron: false
+				}
+			]);
+			expect(view.dots![3]!.mark).toBe('today');
+
+			const classId = await logOther(db, owner, {
+				startedAt: new Date(`${TODAY}T18:00:00Z`),
+				planned: pin('Muay Thai class'),
+				durationSeconds: 1800
 			});
-			// Only today's sessions: not another day's, nor Up next.
-			const others = view.week!.days.filter((d) => d.date !== TODAY).flatMap((d) => d.cards);
-			expect([...others, ...view.upNext].map((c) => c.start)).toEqual(
-				[...others, ...view.upNext].map(() => null)
+			const done = await viewOf(db, owner);
+			// Each completed workout's length reaches the day's when line.
+			expect(done.day).toMatchObject({
+				state: 'done',
+				title: 'All done',
+				when: 'Two sessions · 1 h 28 min',
+				coach: null,
+				lead: null
+			});
+			expect(done.day.lines.map((l) => [l.kind, l.label, l.title, l.href, l.chevron])).toEqual([
+				['done', 'Morning', 'Full body', `/progress/workouts/${fullBody}`, true],
+				[
+					'done',
+					'Evening',
+					'Muay Thai class',
+					`/progress/workouts/${await clientIdOf(db, classId)}`,
+					true
+				],
+				['later', 'Monday', 'Full body', expect.stringMatching(/^\/train\/session\//), false]
+			]);
+			expect(done.dots![3]!.mark).toBe('today-done');
+		});
+	});
+
+	it('says a past day whose sessions were skipped as skipped, with no coach sentence', async () => {
+		await withCommitted(async (db) => {
+			const owner = await seeded(db, 'today', '2026-11-02');
+			const before = await viewOf(db, owner);
+			const run = otherOn(before, '2026-11-04').rows[0]!.href!.split('/').at(-1)!;
+			// Skipped on Tuesday, before its day came.
+			await skipSession(
+				owner,
+				{ sessionLineage: run },
+				{ version: 1, today: '2026-11-03' },
+				{ db }
 			);
-			expect(view.upNext).toHaveLength(3);
+			const view = await viewOf(db, owner);
+			expect(view.dots![2]!.mark).toBe('skipped');
+			expect(otherOn(view, '2026-11-04')).toMatchObject({
+				state: 'other-day',
+				title: 'Easy run',
+				when: 'Easy run. The rest of the week stays as it is.',
+				coach: null,
+				lead: null
+			});
 		});
 	});
 
@@ -160,7 +300,7 @@ describe('Today’s plan', () => {
 				{ today: TODAY, program, origin: origin() },
 				{ db }
 			).finally(pool.stop);
-			expect(view).toMatchObject({ failed: false, week: { label: 'Week 1', today: TODAY } });
+			expect(view).toMatchObject({ failed: false, day: { state: 'session', date: TODAY } });
 			expect(pool.peak()).toBeGreaterThan(1);
 		});
 	});
@@ -169,48 +309,75 @@ describe('Today’s plan', () => {
 		await withCommitted(async (db) => {
 			const owner = await seeded(db, 'today-rest', '2026-11-02');
 			const view = await viewOf(db, owner);
-			const today = dayOf(view, TODAY);
-			expect(today.cards).toEqual([]);
-			expect(today.rest).toBe('Recovery is part of the plan. Next: Intervals, tomorrow.');
-			expect(view.upNext[0]).toMatchObject({
-				title: 'Intervals',
-				when: 'Tomorrow',
-				date: '2026-11-06'
+			expect(view.day).toMatchObject({
+				state: 'rest',
+				title: 'Rest day',
+				when: 'Nothing planned. Recovery is part of the plan.',
+				lead: null,
+				log: 'anyway'
 			});
+			expect(view.day.lines).toMatchObject([
+				{ kind: 'later', label: 'Tomorrow', title: 'Intervals', end: '45 min' }
+			]);
+			expect(view.dots![3]!.mark).toBe('rest');
 		});
 	});
 
-	it('before week 1, says when it starts and shows week 1 from its first day', async () => {
+	it('before week 1, says the day it starts, with week 1’s first session', async () => {
 		await withCommitted(async (db) => {
 			const owner = await seeded(db, 'hybrid', '2026-11-09');
 			const view = await viewOf(db, owner);
-			expect(view.starts).toEqual({
-				title: 'Starts Monday',
-				description: 'Week 1 begins Monday 9 November. First up: Full body.'
+			expect(view.dots).toBeNull();
+			expect(view.others).toEqual([]);
+			expect(view.day).toMatchObject({
+				state: 'starts',
+				title: 'Monday',
+				when: STARTS_LEAD,
+				lead: null,
+				log: 'anyway'
 			});
-			expect(view.week).toMatchObject({ label: 'Week 1', today: null, selected: '2026-11-09' });
-			expect(titles(dayOf(view, '2026-11-09').cards)).toEqual(['Full body']);
-			expect(view.upNext[0]).toMatchObject({ title: 'Full body', when: 'Monday' });
+			expect(view.day.lines).toMatchObject([
+				{ kind: 'later', label: 'Monday', title: 'Full body', end: '60 min' }
+			]);
+			// Week 1's sessions, for their kits.
+			expect(view.coming[0]).toMatchObject({ date: '2026-11-09', status: 'planned' });
 		});
 	});
 
-	it('once the first block is over, nothing is planned yet and Up next is empty', async () => {
+	it('once the first block is over, nothing is planned yet, with the way back and its review', async () => {
 		await withCommitted(async (db) => {
 			const owner = await seeded(db, 'one-week', '2026-10-26');
 			const view = await viewOf(db, owner);
 			expect(view).toEqual({
 				failed: false,
 				today: TODAY,
-				week: null,
-				starts: null,
-				complete: {
-					title: 'Nothing planned yet',
-					description:
-						'You trained through every planned week, Mon 26 Oct – Sun 1 Nov. Your next block is planned from how this one went.'
+				dots: null,
+				others: [],
+				coming: [],
+				day: {
+					state: 'complete',
+					date: TODAY,
+					title: 'Nothing yet',
+					when: completeLead(1, '2026-10-26', '2026-11-01'),
+					coach: null,
+					lead: null,
+					lines: [],
+					rows: [
+						{
+							title: 'Look back at every week',
+							href: '/train',
+							secondary: false,
+							testId: 'today-train-link'
+						},
+						{
+							title: 'Log something',
+							href: '/workout',
+							secondary: false,
+							testId: 'log-something-else'
+						}
+					],
+					log: null
 				},
-				upNext: [],
-				// No week is shown, so no week-kind line (m7/38).
-				weekKind: null,
 				// The block is over and has no review: Today offers it (review-prompt.server.ts).
 				review: expect.objectContaining({
 					kind: 'cycle',
@@ -219,6 +386,9 @@ describe('Today’s plan', () => {
 					create: expect.objectContaining({ action: '/progress/reviews?/createCycle' })
 				})
 			});
+			expect(view.day.when).toBe(
+				'One week trained · You trained 26 October to 1 November. I plan the next block from how this one went.'
+			);
 		});
 	});
 
@@ -248,7 +418,7 @@ describe('Today’s plan', () => {
 					}
 				);
 				expect(view).toMatchObject({ failed: false, review: null });
-				expect(view.failed || view.week).toBeTruthy();
+				expect(view.failed || view.day).toBeTruthy();
 				const recorded = await findErrorsByRequestId(request.requestId, { db: tx });
 				expect(recorded).toHaveLength(1);
 				expect(recorded[0]).toMatchObject({

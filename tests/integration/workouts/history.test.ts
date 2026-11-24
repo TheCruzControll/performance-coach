@@ -30,6 +30,7 @@ import {
 } from '../../../src/lib/server/services/programs/index';
 import {
 	completedWorkoutIds,
+	completedWorkouts,
 	getExerciseHistory,
 	getWorkoutDetail,
 	listWorkouts,
@@ -215,6 +216,31 @@ describe('completedWorkoutIds', () => {
 				[strength.lineage]: await clientIdOf(db, newest)
 			});
 			expect(await completedWorkoutIds(owner, [], { db })).toEqual({});
+		});
+	});
+});
+
+describe('completedWorkouts', () => {
+	it('gives each session’s newest completed workout with its length, null when not recorded', async () => {
+		await withRollback(async (db) => {
+			const { owner, strength, run, pin } = await seedWorkoutDay(db);
+			const at = (time: string) => ({ startedAt: utc(TODAY, time) });
+			const { workoutId } = await logStrength(
+				db,
+				owner,
+				{ ...at('07:00'), planned: pin(strength), durationSeconds: 3480 },
+				[]
+			);
+			const runId = await logRun(db, owner, {
+				...at('18:00'),
+				planned: pin(run),
+				metres: 5000,
+				durationSeconds: null
+			});
+			expect(await completedWorkouts(owner, [strength.lineage, run.lineage], { db })).toEqual({
+				[strength.lineage]: { id: await clientIdOf(db, workoutId), seconds: 3480 },
+				[run.lineage]: { id: await clientIdOf(db, runId), seconds: null }
+			});
 		});
 	});
 });

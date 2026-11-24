@@ -16,150 +16,193 @@ describe('servedPanel', () => {
 });
 
 describe('Program', () => {
-	const card = (title: string, lineage: string) => ({
-		title,
-		status: 'planned',
-		line: 'Strength · 60 min · Moderate · Morning',
-		statusWords: null,
-		tone: 'strength',
-		lineage,
-		baseline: false
-	});
+	const TODAY = '2026-11-05';
 	const served = (plan: unknown) => servedPanel(Program as Component, { plan });
+	const LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+	const dots = LETTERS.map((letter, i) => ({
+		date: `2026-11-0${i + 2}`,
+		letter,
+		name: `Day ${i + 2}`,
+		mark: `2026-11-0${i + 2}` === TODAY ? 'today' : 'rest'
+	}));
+	const day = (over: Record<string, unknown> = {}) => ({
+		state: 'session',
+		date: TODAY,
+		title: 'Full body',
+		when: 'This morning · strength · about 60 min',
+		coach: 'Baseline week. Finish every set with two reps still in you.',
+		lead: null,
+		lines: [],
+		rows: [],
+		log: null,
+		...over
+	});
+	const ready = (over: Record<string, unknown> = {}) => ({
+		failed: false,
+		today: TODAY,
+		dots,
+		day: day(),
+		others: [],
+		coming: [],
+		review: null,
+		...over
+	});
+	const start = (lineage: string) => ({
+		id: 'start-workout',
+		label: 'Start workout',
+		href: `/workout?start=${lineage}`,
+		icon: 'play'
+	});
+	const later = {
+		kind: 'later',
+		label: 'Tomorrow',
+		title: 'Intervals',
+		end: '45 min',
+		tick: false,
+		quiet: false,
+		href: '/train/session/b0',
+		chevron: false
+	};
+	const count = (html: string, text: string) => html.split(text).length - 1;
 
-	it('renders a settled plan in the markup: the strip, the day and Up next with when each is', async () => {
-		const html = await served({
-			failed: false,
-			week: {
-				label: 'Week 1',
-				today: '2026-11-05',
-				selected: '2026-11-05',
-				strip: [],
-				days: [
-					{
-						date: '2026-11-05',
-						heading: 'Thursday 5 November',
-						cards: [],
-						rest: 'Recovery is part of the plan. Next: Intervals, tomorrow.'
-					}
-				]
-			},
-			starts: null,
-			complete: null,
-			upNext: [{ ...card('Intervals', 'b0'), when: 'Tomorrow' }]
-		});
-		expect(html).toContain('data-testid="week-strip"');
-		// Today is named by the page's eyebrow date: its day says so to assistive tech only, and a
-		// rest day promises no sessions.
-		expect(html).toContain('class="visually-hidden">Today</h2>');
-		expect(html).not.toContain('Thursday 5 November');
-		expect(html).toContain('Next: Intervals, tomorrow.');
-		expect(html).toContain('Tomorrow');
-		expect(html).toContain('href="/train/session/b0"');
+	it('renders a session day in the markup: the dots, the day, one Start and the one line', async () => {
+		const html = await served(
+			ready({ day: day({ lead: { lineage: 'a0', link: start('a0') }, lines: [later] }) })
+		);
+		expect(html).toContain('data-testid="week-dots"');
+		expect(count(html, 'class="dot-day')).toBe(7);
+		expect(html).toMatch(/data-date="2026-11-05"[^>]*aria-current="date"/);
+		expect(html).toMatch(/data-testid="today-title">Full body<\/h2>/);
+		expect(html).toContain('data-testid="today-when">This morning · strength · about 60 min');
+		expect(html).toContain('data-testid="today-coach">Baseline week.');
+		// One Start, labelled Start: the session screen keeps 'Start workout'.
+		expect(count(html, 'data-testid="start-workout"')).toBe(1);
+		expect(html).toMatch(
+			/href="\/workout\?start=a0"[^>]*data-testid="start-workout"[\s\S]*?<span class="label[^"]*">[\s\S]*?Start[\s\S]*?<\/span>/
+		);
+		expect(html).not.toContain('Start workout');
+		expect(html).toMatch(
+			/<a class="line[^"]*" href="\/train\/session\/b0"[^>]*aria-label="Tomorrow, Intervals, 45 min"[^>]*data-testid="today-line"/
+		);
+		expect(html).not.toContain('data-testid="log-something-else"');
 		expect(html).not.toContain('aria-busy="true"');
 	});
 
-	it('shows a bridge week as Between blocks with Log something else, never a week of rest days', async () => {
-		const html = await served({
-			failed: false,
-			week: null,
-			starts: null,
-			complete: null,
-			bridge: { title: 'Between blocks', description: 'Your next block starts Mon 23 Nov.' },
-			upNext: [{ ...card('Strength A', 'b1'), when: 'Monday' }]
-		});
-		expect(html).toContain('data-testid="today-bridge"');
-		expect(html).toContain('Your next block starts Mon 23 Nov.');
-		expect(html).toMatch(/<a[^>]*href="\/workout"[^>]*data-testid="log-something-else"/);
-		expect(html).not.toContain('data-testid="week-strip"');
-		expect(html).not.toContain('data-testid="today-rest"');
-		expect(html).toContain('href="/train/session/b1"');
-	});
-
-	it('gives only the next session the primary Start; later ones a trailing text Start', async () => {
-		const start = (lineage: string) => ({
-			id: 'start-workout',
-			label: 'Start workout',
-			href: `/workout?start=${lineage}`,
-			icon: 'play'
-		});
-		const done = {
-			id: 'done-workout',
-			label: 'Done · View',
-			href: '/progress/workouts',
-			icon: 'check'
-		};
-		const day = (date: string, heading: string) => ({
-			failed: false,
-			week: {
-				label: 'Week 1',
-				today: '2026-11-05',
-				selected: date,
-				strip: [],
-				days: [
-					{
-						date,
-						heading,
-						cards: [
-							{ ...card('Full body', 'a0'), status: 'completed', start: done },
-							{ ...card('Intervals', 'b0'), start: start('b0') },
-							{ ...card('Muay Thai class', 'c0'), start: start('c0') }
-						],
-						rest: null
-					}
-				]
-			},
-			starts: null,
-			complete: null,
-			upNext: []
-		});
-		const html = await served(day('2026-11-05', 'Thursday 5 November'));
-		const links = [
-			...html.matchAll(/<a href="([^"]+)" class="btn[^"]*"[^>]*? data-variant="(\w+)"[^>]*>/g)
-		];
-		expect(
-			links.map(([tag, href, variant]) => [href, variant, /aria-label="([^"]*)"/.exec(tag)?.[1]])
-		).toEqual([
-			['/progress/workouts', 'secondary', undefined],
-			['/workout?start=b0', 'primary', undefined],
-			['/workout?start=c0', 'ghost', 'Start Muay Thai class'],
-			['/workout', 'ghost', undefined]
-		]);
-		expect(html).toContain('class="visually-hidden">Today’s sessions</h2>');
-		expect(html.match(/Start workout/g)).toHaveLength(1);
-		expect(html).toMatch(
-			/data-testid="start-workout"><!--\[-1-->.*?<span class="label[^"]*"><!---->Start<!---->/
+	it('a day of two with the first done: one Start, and the done one as a quiet line with a tick', async () => {
+		const html = await served(
+			ready({
+				day: day({
+					title: 'Muay Thai class',
+					lead: { lineage: 'b0', link: start('b0') },
+					lines: [
+						{
+							kind: 'done',
+							label: 'Morning',
+							title: 'Full body',
+							end: null,
+							tick: true,
+							quiet: true,
+							href: '/progress/workouts/w1',
+							chevron: false
+						}
+					]
+				})
+			})
 		);
-		// Another day of the week keeps its date, and offers no Start.
-		const other = await served(day('2026-11-06', 'Friday 6 November'));
-		expect(other).toMatch(/<h2 id="[^"]+" class="title[^"]*">Friday 6 November<\/h2>/);
-		expect(other).not.toContain('/workout?start=');
+		expect(count(html, 'data-testid="start-workout"')).toBe(1);
+		expect(html).toMatch(/<li data-testid="today-done"[^>]*>(<!--[^>]*-->)*<a class="line/);
+		expect(html).toMatch(
+			/href="\/progress\/workouts\/w1"[^>]*data-quiet="true"[^>]*aria-label="Morning, Full body, done"[^>]*data-testid="done-workout"/
+		);
+		expect(html).toContain('tick');
 	});
 
-	it('shows the starts and block-complete states, and a failed read with Retry', async () => {
-		const starts = await served({
-			failed: false,
-			week: null,
-			starts: { title: 'Starts Monday', description: 'Week 1 begins Monday 9 November.' },
-			complete: null,
-			upNext: []
-		});
-		expect(starts).toContain('data-testid="today-starts"');
-		expect(starts).toContain('Starts Monday');
-		const complete = await served({
-			failed: false,
-			week: null,
-			starts: null,
-			complete: { title: 'Nothing planned yet', description: 'Your next block is planned.' },
-			upNext: []
-		});
-		expect(complete).toContain('data-testid="today-block-complete"');
-		expect(complete).toContain('data-testid="today-up-next-empty"');
-		expect(complete).toContain('href="/train"');
+	it('a rest day offers no Start and logs something anyway', async () => {
+		const html = await served(
+			ready({
+				day: day({
+					state: 'rest',
+					title: 'Rest day',
+					when: 'Nothing planned. Recovery is part of the plan.',
+					coach: null,
+					lines: [later],
+					log: 'anyway'
+				})
+			})
+		);
+		expect(html).toContain('data-state="rest"');
+		expect(html).not.toContain('data-testid="start-workout"');
+		expect(html).toMatch(
+			/href="\/workout"[^>]*data-testid="log-something-else">\s*Log something anyway/
+		);
+	});
+
+	it('a bridge week and nothing yet: no dots, the day, and the way to log or look back', async () => {
+		const bridge = await served(
+			ready({
+				dots: null,
+				day: day({ state: 'bridge', title: 'Free week', coach: null, log: 'plain' })
+			})
+		);
+		expect(bridge).toMatch(/data-testid="today-title">Free week</);
+		expect(bridge).toMatch(/data-testid="log-something-else">\s*Log something\s*</);
+		expect(bridge).not.toContain('data-testid="week-dots"');
+
+		const complete = await served(
+			ready({
+				dots: null,
+				day: day({
+					state: 'complete',
+					title: 'Nothing yet',
+					coach: null,
+					rows: [
+						{
+							title: 'Look back at every week',
+							href: '/train',
+							secondary: false,
+							testId: 'today-train-link'
+						},
+						{
+							title: 'Log something',
+							href: '/workout',
+							secondary: false,
+							testId: 'log-something-else'
+						}
+					]
+				})
+			})
+		);
+		expect(complete).toMatch(/data-testid="today-title">Nothing yet</);
+		expect(complete).toMatch(/href="\/train" data-testid="today-train-link"/);
+		expect(complete).toMatch(/href="\/workout" data-testid="log-something-else"/);
+	});
+
+	it('keeps a review to do above the day, until v2/06b2 draws it as the day', async () => {
+		const html = await served(
+			ready({
+				review: {
+					kind: 'weekly',
+					state: 'due',
+					title: 'Your week in review is ready',
+					summary: 'Mon 26 Oct – Sun 1 Nov.',
+					href: null,
+					create: { action: '/progress/reviews?/create', fields: { weekStartsOn: '2026-10-26' } },
+					notReady: 'Not yet.'
+				}
+			})
+		);
+		expect(html.indexOf('data-testid="review-prompt"')).toBeGreaterThan(-1);
+		expect(html.indexOf('data-testid="review-prompt"')).toBeLessThan(
+			html.indexOf('data-testid="today-day"')
+		);
+	});
+
+	it('a failed read is one statement with Try again', async () => {
 		const failed = await served({ failed: true });
-		expect(failed).toContain('Couldn’t load today’s plan');
-		expect(failed).toContain('Try again');
-		expect(failed).not.toContain('today-up-next');
+		expect(failed).toContain('Couldn’t load today');
+		expect(failed).toContain('data-testid="today-retry"');
+		expect(failed).toContain('data-testid="today-plan-error"');
+		expect(failed).not.toContain('data-testid="today-day"');
 	});
 });
 

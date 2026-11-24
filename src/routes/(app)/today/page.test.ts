@@ -99,7 +99,15 @@ describe("Today's universal load", () => {
 	it('with a program, waits for the streamed plan on the server and renders it into the markup', async () => {
 		const module = await loadModule({ browser: false });
 		const setup = { complete: true, goals: [], week: {} };
-		const plan = { failed: false, week: null, starts: null, complete: null, upNext: [] };
+		const plan = {
+			failed: false,
+			today: '2026-11-05',
+			dots: null,
+			day: { state: 'rest', title: 'Rest day', lines: [], rows: [] },
+			others: [],
+			coming: [],
+			review: null
+		};
 		const loaded = await run(module, setup, 'active', Promise.resolve(plan));
 		expect(loaded).toMatchObject({ plan, served: { program: '<section>the panel</section>' } });
 		expect(preloadPanel).toHaveBeenCalledExactlyOnceWith(module.PANELS.program);

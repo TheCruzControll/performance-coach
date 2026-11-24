@@ -462,14 +462,16 @@ export function activeWorkouts(db: Executor, ownerId: string, limit: number) {
 
 /**
  * The newest completed, undeleted workout of the owner's logged against each of `lineages`, by
- * client id as History links to it: what a session that reads 'Done' opens. One row per lineage,
- * down the lineage index, the newest start first among a lineage's workouts.
+ * client id as History links to it, with its length in seconds (null when not recorded): what a
+ * session that reads 'Done' opens, and how long Today's done day took. One row per lineage, down
+ * the lineage index, the newest start first among a lineage's workouts.
  */
 export function completedWorkoutsFor(db: Executor, ownerId: string, lineages: string[]) {
 	return db
 		.selectDistinctOn([workouts.plannedLineageId], {
 			lineage: workouts.plannedLineageId,
-			id: workouts.clientId
+			id: workouts.clientId,
+			seconds: workouts.durationSeconds
 		})
 		.from(workouts)
 		.where(

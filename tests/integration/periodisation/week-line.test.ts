@@ -427,24 +427,26 @@ describe('Today’s plan', () => {
 		if (view.failed) throw new Error('the plan failed to load');
 		return { view, request };
 	};
+	/** The coach's sentence on each day of the week that has one: the week's kind names it. */
+	const coachLines = (
+		view: Extract<Awaited<ReturnType<typeof loadTodayPlan>>, { failed: false }>
+	) => [view.day, ...view.others].flatMap((d) => (d.coach ? [d.coach] : []));
+	const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 	it('names this week’s deload, M7’s and M3’s alike', async () => {
 		await withCommitted(async (db) => {
 			const { owner } = await seedM7(db);
 			const { view } = await todayOf(db, owner);
-			expect(view.weekKind).toEqual({
-				label: 'Deload week',
-				why: `${M7_DELOAD} · 10K race ${RACE_IN}`
-			});
-			expect(addedBy(view, ['weekKind'])).toBeLessThanOrEqual(PAGE_DATA_B);
+			expect(coachLines(view)).toContain(
+				`Deload week. ${capital(M7_DELOAD)} · 10K race ${RACE_IN}.`
+			);
 		});
 		await withCommitted(async (db) => {
 			const { owner } = await seedM3(db);
 			const { view } = await todayOf(db, owner);
-			expect(view.weekKind).toEqual({
-				label: 'Deload week',
-				why: `${M3_STRUCTURE} · 5K race ${RACE_IN}`
-			});
+			expect(coachLines(view)).toContain(
+				`Deload week. ${capital(M3_STRUCTURE)} · 5K race ${RACE_IN}.`
+			);
 		});
 	});
 
@@ -454,8 +456,8 @@ describe('Today’s plan', () => {
 			const { view, request } = await todayOf(db, owner, {
 				line: () => Promise.reject(new Error('decisions unreachable'))
 			});
-			expect(view.weekKind).toBeNull();
-			expect(view.week?.days).toHaveLength(7);
+			expect(coachLines(view).some((line) => line.startsWith('Deload week.'))).toBe(false);
+			expect(view.dots).toHaveLength(7);
 			const recorded = await findErrorsByRequestId(request.requestId, { db });
 			expect(recorded).toHaveLength(1);
 			expect(recorded[0]).toMatchObject({

@@ -307,10 +307,13 @@ test.describe('finishing a workout', () => {
 		await expect(card(page)).toHaveAttribute('data-status', 'completed');
 		// Train's line says it is done (a tick, and its name).
 		await expect(card(page)).toHaveAttribute('aria-label', /, done$/);
-		// Today lists the day's sessions once onboarding is done (the seeded program skips it).
+		// Today shows the day once onboarding is done (the seeded program skips it): the session
+		// done is its line, to the workout's History detail.
 		await query('update athlete_profiles set onboarding_completed_at = now()');
 		await page.goto('/today');
-		await expect(card(page).first()).toHaveAttribute('data-status', 'completed');
+		await expect(
+			page.getByTestId('today-done').filter({ hasText: session.title }).getByTestId('done-workout')
+		).toHaveAttribute('href', `/progress/workouts/${workoutId}`);
 	});
 
 	test('a visible Finish once a set is logged, beside the menu that keeps it', async ({

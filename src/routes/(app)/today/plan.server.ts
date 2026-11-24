@@ -1,28 +1,31 @@
 /**
- * Today's plan once a program exists: the week on the WeekStrip with each day's sessions (today
- * selected), 'Up next' (the next UP_NEXT_LIMIT sessions after today, across weeks), and the
- * states a day can be in: a rest day naming the next session, a program that starts later
- * ('Starts Monday', week 1 shown), a finished first block with nothing planned yet, until M6
- * plans the next one, or a bridge week between blocks (M6's late start), which names the day the
- * next block starts instead of seven rest days. When a week or a block completes, its review
- * prompt (progress/review-prompt.server.ts) comes with the plan. Words are composed here, with the data they
- * describe, so the panel ships none of the vocabulary. Kept out of +page.server.ts so integration
- * tests can run it with an unreachable database.
+ * Today once a program exists (Instrument v2, v2/06b): the day as one statement (its title, when,
+ * one sentence from the coach and one Start), the one line under it, and the week as seven dots,
+ * with every other day of the week composed too, so a tap on a dot shows that day with no request.
+ * The states a day can be in, in order: every planned week trained ('Nothing yet'), a bridge week
+ * between blocks ('Free week'), before week 1 (the start's day), then today's sessions: one to
+ * start, rest, all done, or all skipped. Words are composed here (day-words.ts), with the data
+ * they describe, so the panel ships none of the vocabulary. Kept out of +page.server.ts so
+ * integration tests can run it with an unreachable database.
  *
  * It is streamed, and it fails soft: a read that fails is recorded as a server error (kind
- * 'streamed', as Profile's are) and resolves to {failed: true}, which the panel shows as a
- * designed error with Retry.
+ * 'streamed', as Profile's are) and resolves to {failed: true}, which the panel shows as one
+ * statement with Try again.
  *
  * It reads from the program loadTodayProgram found, so the week it shows (today's, or week 1's
  * before the start) is known at once: the plan and that week are read together, each service on
  * its own pool connection (docs/architecture.md). So its `db` is the pool, never a transaction.
- * The review prompt is read once the plan is in, so a plan that fails records only its own error.
- * So is a light or special week's kind line, beside the prompt, as Train's header has it (m7/38,
- * services/periodisation/week-line.ts): a read that fails is recorded and the plan shows without.
+ * Once the plan is in, the review prompt (progress/review-prompt.server.ts, shown above the day
+ * until v2/06b2), the goals (the one line's goal), the week's kind (the coach's sentence on a
+ * light or special week, services/periodisation/week-line.ts) and the week's completed workouts
+ * (their History page and length) are read together: a read that fails is recorded and the day
+ * composes without it.
  */
-import { daysBetween, weekdayOf, type IsoDate } from '#lib/domain/calendar.ts';
-import { WEEKDAY_INFO } from '#lib/domain/profile/catalog.ts';
+import { resolve } from '$app/paths';
+import { daysBetween, type IsoDate } from '#lib/domain/calendar.ts';
+import type { Goal } from '#lib/domain/profile/types.ts';
 import type { SessionView } from '#lib/domain/training/types.ts';
+import { WEEKDAY_INFO } from '#lib/domain/weekdays.ts';
 import { recordServerError } from '#lib/server/services/errors.ts';
 import { getWeekLine } from '#lib/server/services/periodisation/week-line.ts';
 import { listGoals } from '#lib/server/services/profile/index.ts';
@@ -30,126 +33,143 @@ import {
 	getTodayPlan,
 	getTrainingWeek,
 	type CurrentProgram,
-	type TodayPlan
+	type TodayPlan,
+	type TrainingWeek
 } from '#lib/server/services/programs/index.ts';
-import { completedWorkoutIds } from '#lib/server/services/workouts/history.ts';
+import { completedWorkouts } from '#lib/server/services/workouts/history.ts';
 import type { ReviewPromptView } from '#lib/ui/analytics/review-prompt.ts';
-import { startLink, type StartLink } from '#lib/ui/program/start-link.ts';
-import {
-	cardView,
-	longDate,
-	shortDate,
-	stripDay,
-	type CardView,
-	type StripDayView
-} from '#lib/ui/program/words.ts';
+import { leadLineage, startLink, type StartLink } from '#lib/ui/program/start-link.ts';
+import { dayName } from '#lib/ui/program/words.ts';
 import { loadReviewPrompt } from '../progress/review-prompt.server';
+import {
+	bridgeLead,
+	coachLine,
+	completeLead,
+	doneLabel,
+	doneLine,
+	dotMark,
+	goalEnd,
+	lineLabel,
+	restLine,
+	skippedLine,
+	startsTitle,
+	STARTS_LEAD,
+	whenLine,
+	type DaySession,
+	type DotMark
+} from './day-words';
 import type { SetupDeps, SetupOrigin } from './setup.server';
 
-/**
- * A session as a card, by lineage; `baseline` on a strength session of a baseline week. Today's
- * sessions carry their way into the workout (start-link.ts): Start workout, or Done · View to
- * the History detail of the workout done; every other day's, none.
- */
-export type PlanCard = CardView & {
-	lineage: string;
-	baseline: boolean;
-	start: StartLink | null;
-};
-
-export interface PlanDay {
-	date: IsoDate;
-	/** 'Thursday 5 November'. */
-	heading: string;
-	cards: PlanCard[];
-	/** With no sessions: recovery is part of the plan, and the next session, across weeks. */
-	rest: string | null;
-}
-
-export interface PlanWeek {
-	/** The strip's accessible name: 'Week 1'. */
+/** One line under the day. */
+export interface DayLine {
+	kind: 'later' | 'goal' | 'done';
+	/** 'Tomorrow', 'Goal', 'Morning'. */
 	label: string;
-	/** The owner's today when it is in this week (the strip rings it), else null. */
-	today: IsoDate | null;
-	/** The day selected at first: today, or the program's first day before it starts. */
-	selected: IsoDate;
-	strip: StripDayView[];
-	days: PlanDay[];
+	/** 'Long run', 'None set yet', 'Full body'. */
+	title: string;
+	/** '45 min', 'Add one', '21 weeks to go'; null with a tick or nothing. */
+	end: string | null;
+	/** A done session's tick (the quiet done line under a session). */
+	tick: boolean;
+	/** Label and title tertiary (that same done line). */
+	quiet: boolean;
+	/** The session's page, /profile/goals, or the workout done. */
+	href: string | null;
+	/** The goal's line, and the done day's lines, which open something. */
+	chevron: boolean;
 }
 
-/** A state's card: 'Starts Monday', 'Nothing planned yet' or 'Between blocks'. */
-export interface PlanNote {
+/** A 60 px row: another day's 'Open the session' and 'Back to today'; nothing yet's two rows. */
+export interface DayRow {
 	title: string;
-	description: string;
+	/** Null for 'Back to today', a button. */
+	href: string | null;
+	secondary: boolean;
+	testId: string;
+}
+
+/** The day, as one statement. */
+export interface DayView {
+	state: 'session' | 'rest' | 'done' | 'skipped' | 'starts' | 'bridge' | 'complete' | 'other-day';
+	date: IsoDate;
+	title: string;
+	/** 17/26 secondary under the title; a rest, skipped, starts, bridge or complete day's sentence. */
+	when: string | null;
+	/** 17/26 text: the coach's one sentence. */
+	coach: string | null;
+	/** The one button: a session's way in (start-link.ts); the device's Resume is swapped in on
+	 * the client (resumeLink). */
+	lead: { lineage: string; link: StartLink } | null;
+	lines: DayLine[];
+	rows: DayRow[];
+	/** The quiet link to /workout: 'Log something anyway', 'Log something', or none. */
+	log: 'anyway' | 'plain' | null;
+}
+
+/** A day of the week's dots. */
+export interface Dot {
+	date: IsoDate;
+	letter: string;
+	/** Its accessible name (words.ts dayName): 'Thursday 5 November, today, 2 sessions, 1 done'. */
+	name: string;
+	mark: DotMark;
 }
 
 export interface ReadyPlan {
 	failed: false;
 	/** The owner's today: what the coming days' kits count from (coming-kits.ts). */
 	today: IsoDate;
-	/** Null once the first block is complete or in a bridge week: no session is planned. */
-	week: PlanWeek | null;
-	starts: PlanNote | null;
-	complete: PlanNote | null;
-	/** In a bridge week between blocks, in place of the week: when the next block starts. */
-	bridge?: PlanNote;
-	/** 'Tomorrow', 'Wednesday' or 'Mon 16 Nov' says when each is, on `date`. */
-	upNext: (PlanCard & { when: string; date: IsoDate })[];
+	/** The week's seven days, Monday first; null before week 1, between blocks, and once the
+	 * planned weeks are over. */
+	dots: Dot[] | null;
+	/** The day for today, and for each other day of `dots` (a tap shows it; no request). */
+	day: DayView;
+	others: DayView[];
+	/** The sessions still to come, for the coming-kits pass (coming-kits.ts DatedSession). */
+	coming: { lineage: string; date: IsoDate; status: SessionView['status'] }[];
 	/**
-	 * A week or block to review, or its review once written (review-prompt.server.ts), at the
-	 * top; null with none, or when its read failed (recorded: the plan shows without it).
+	 * A week or block to review, or its review once written (review-prompt.server.ts), above the
+	 * day until v2/06b2; null with none, or when its read failed (recorded: the day shows without).
 	 */
 	review: ReviewPromptView | null;
-	/**
-	 * The week's kind and why, with any countdown in the why ('Deload week', 'Deload in week 4 ·
-	 * Marathon in 18 days'); null for a week of another kind, or when its read failed (recorded).
-	 */
-	weekKind: { label: string; why: string } | null;
 }
 
 export type TodayPlanView = { failed: true } | ReadyPlan;
 
-/** 'tomorrow', a weekday within the coming six days ('Wednesday'), else 'Mon 16 Nov'. */
-function dayWords(date: IsoDate, from: IsoDate): string {
-	const ahead = daysBetween(from, date);
-	if (ahead === 1) return 'tomorrow';
-	return ahead > 1 && ahead < 7 ? WEEKDAY_INFO[weekdayOf(date)].label : shortDate(date);
+/** What the plan's reads came to, before the prompt, the goals and the week's kind. */
+type PlanRead =
+	| { blockComplete: true; plan: TodayPlan }
+	| {
+			blockComplete: false;
+			plan: TodayPlan;
+			week: Extract<TrainingWeek, { planned: true }>;
+			/** The week's completed sessions' lineages: their workouts are read beside the plan. */
+			completed: string[];
+	  };
+
+/** What the day reads beside the plan; any of them null (`done` empty) when its read failed. */
+interface Extras {
+	review: ReviewPromptView | null;
+	goals: Goal[] | null;
+	weekKind: { label: string; why: string } | null;
+	/** The week's completed sessions' workouts, by lineage: their History page and length. */
+	done: Record<string, { id: string; seconds: number | null }>;
 }
 
-const card = (session: SessionView, baselineWeek: boolean): PlanCard => ({
-	...cardView(session),
-	lineage: session.lineage,
-	baseline: baselineWeek && session.kind === 'strength',
-	start: null
-});
+const sessionHref = (lineage: string) => resolve('/(app)/train/session/[key]', { key: lineage });
+const isOpen = (s: Pick<SessionView, 'status'>) => s.status === 'planned' || s.status === 'moved';
 
 async function readPlan(
 	ownerId: string,
 	today: IsoDate,
 	program: CurrentProgram,
 	db: SetupDeps['db']
-): Promise<Omit<ReadyPlan, 'review' | 'weekKind'>> {
-	const upNextOf = (plan: TodayPlan) =>
-		plan.upNext.map((s) => {
-			const when = dayWords(s.date, today);
-			return { ...card(s, false), when: when[0]!.toUpperCase() + when.slice(1), date: s.date };
-		});
+): Promise<PlanRead> {
 	if (program.blockComplete) {
 		const plan = await getTodayPlan(ownerId, today, { db });
 		// loadTodayProgram found the program a moment ago; only a concurrent archive removes it.
 		if (!plan) throw new Error('the active program disappeared while Today loaded');
-		const { firstPlannedDay, lastPlannedDay } = program;
-		return {
-			failed: false,
-			today,
-			week: null,
-			starts: null,
-			complete: {
-				title: 'Nothing planned yet',
-				description: `You trained through every planned week, ${shortDate(firstPlannedDay)} – ${shortDate(lastPlannedDay)}. Your next block is planned from how this one went.`
-			},
-			upNext: upNextOf(plan)
-		};
+		return { blockComplete: true, plan };
 	}
 	const selected = program.notStarted ? program.firstPlannedDay : today;
 	// Two services together, each on its own pool connection; inside each, one query at a time.
@@ -159,76 +179,371 @@ async function readPlan(
 	]);
 	if (!plan) throw new Error('the active program disappeared while Today loaded');
 	if (!week?.planned) throw new Error(`no planned week holds ${selected}`);
-	const upNext = upNextOf(plan);
-	if (week.nextBlockStartsOn) {
-		const description = `Your next block starts ${shortDate(week.nextBlockStartsOn)}. Nothing is planned until then: what you log counts as off-plan.`;
-		const bridge = { title: 'Between blocks', description };
-		return { failed: false, today, week: null, starts: null, complete: null, bridge, upNext };
-	}
-	const baseline = week.kind === 'baseline';
-	const later = [...week.days.flatMap((d) => d.sessions), ...plan.upNext];
-	const inWeek = week.startsOn <= today && today <= week.endsOn ? today : null;
-	const todays = week.days.find((d) => d.date === inWeek)?.sessions ?? [];
-	const done = await completedWorkoutIds(
-		ownerId,
-		todays.filter((s) => s.status === 'completed').map((s) => s.lineage),
-		{ db }
-	);
-	return {
-		failed: false,
-		today,
-		week: {
-			label: `Week ${week.number}`,
-			today: inWeek,
-			selected,
-			strip: week.days.map((day) => stripDay(day, inWeek)),
-			days: week.days.map((day) => {
-				const next = later.find((s) => s.date > day.date);
-				return {
-					date: day.date,
-					heading: longDate(day.date),
-					cards: day.sessions.map((s) => ({
-						...card(s, baseline),
-						start: day.date === inWeek ? startLink(s, done[s.lineage]) : null
-					})),
-					rest: day.sessions.length
-						? null
-						: next
-							? `Recovery is part of the plan. Next: ${next.title}, ${dayWords(next.date, day.date)}.`
-							: 'Recovery is part of the plan. Nothing else is planned yet.'
-				};
-			})
-		},
-		starts: plan.startsOn
-			? {
-					title: `Starts ${WEEKDAY_INFO[weekdayOf(plan.startsOn)].label}`,
-					description: `Week 1 begins ${longDate(plan.startsOn)}${upNext[0] ? `. First up: ${upNext[0].title}` : ''}.`
-				}
-			: null,
-		complete: null,
-		upNext
-	};
+	const completed = week.days
+		.flatMap((d) => d.sessions)
+		.filter((s) => s.status === 'completed')
+		.map((s) => s.lineage);
+	return { blockComplete: false, plan, week, completed };
 }
 
 /** The kind line of the week shown, in words: its why, then any countdown. */
 async function readWeekKind(
 	ownerId: string,
-	{ today, program, week }: { today: IsoDate; program: CurrentProgram; week: PlanWeek },
+	{
+		today,
+		program,
+		week,
+		goals
+	}: { today: IsoDate; program: CurrentProgram; week: IsoDate; goals: Goal[] },
 	{ db, line }: { db: SetupDeps['db']; line: typeof getWeekLine }
-): Promise<ReadyPlan['weekKind']> {
-	const goals = await listGoals(ownerId, { db });
+): Promise<Extras['weekKind']> {
 	const at = { programId: program.id, version: program.version.number, today, goals };
-	const view = await line(ownerId, { ...at, weekStartsOn: week.days[0]!.date }, { db });
+	const view = await line(ownerId, { ...at, weekStartsOn: week }, { db });
 	if (!view.line) return null;
 	const { label, why, countdown } = view.line;
 	return { label, why: countdown ? `${why} · ${countdown}` : why };
 }
 
+/** A session still to come, as the line under the day: 'Tomorrow · Long run · 45 min'. */
+const later = (s: DaySession, today: IsoDate): DayLine => ({
+	kind: 'later',
+	label: lineLabel(s.date, today),
+	title: s.title,
+	end: `${s.estMinutes} min`,
+	tick: false,
+	quiet: false,
+	href: sessionHref(s.lineage),
+	chevron: false
+});
+
+/** The goal's line: none set ('Add one'), or the top goal's weeks to go. */
+const goalLine = (title: string, end: string): DayLine => ({
+	kind: 'goal',
+	label: 'Goal',
+	title,
+	end,
+	tick: false,
+	quiet: false,
+	href: resolve('/(app)/profile/[section]', { section: 'goals' }),
+	chevron: true
+});
+
+/**
+ * The one line under a session to start (D11), the first that applies: no open goal, the next
+ * session within six days, the top goal with a date to come, else the next session at any
+ * distance. Goals that could not be read add no goal line.
+ */
+function oneLine(next: DaySession | undefined, goals: Goal[] | null, today: IsoDate): DayLine[] {
+	const open = goals?.filter((g) => g.priority !== null) ?? null;
+	if (open && open.length === 0) return [goalLine('None set yet', 'Add one')];
+	if (next && daysBetween(today, next.date) <= 6) return [later(next, today)];
+	const top = open
+		?.filter((g) => g.status !== 'paused')
+		.sort((a, b) => a.priority! - b.priority!)[0];
+	const end = top ? goalEnd(top.eventDate ?? top.targetDate, today) : null;
+	if (top && end) return [goalLine(top.title, end)];
+	return next ? [later(next, today)] : [];
+}
+
+/** What a day has until its rule gives it more: no sentence, no button, no lines or rows. */
+const blank = (): Pick<DayView, 'coach' | 'lead' | 'lines' | 'rows' | 'log'> => ({
+	coach: null,
+	lead: null,
+	lines: [],
+	rows: [],
+	log: null
+});
+
+/** A day of the week but today, as a tap on its dot shows it (rule 6). */
+function otherDay(
+	day: { date: IsoDate; sessions: readonly SessionView[] },
+	ctx: {
+		today: IsoDate;
+		baseline: boolean;
+		weekKind: Extras['weekKind'];
+		done: Record<string, { seconds: number | null }>;
+	}
+): DayView {
+	const back: DayRow = {
+		title: 'Back to today',
+		href: null,
+		secondary: true,
+		testId: 'today-back'
+	};
+	const { sessions } = day;
+	if (!sessions.length)
+		return {
+			...blank(),
+			state: 'other-day',
+			date: day.date,
+			title: 'Rest day',
+			when: 'Nothing planned.',
+			rows: [back]
+		};
+	const rows: DayRow[] = sessions.map((s) => ({
+		title: sessions.length > 1 ? `Open ${s.title}` : 'Open the session',
+		href: sessionHref(s.lineage),
+		secondary: false,
+		testId: 'open-session'
+	}));
+	rows.push(back);
+	if (sessions.every((s) => s.status === 'completed')) {
+		const lengths = sessions.map((s) => ({ ...s, seconds: ctx.done[s.lineage]?.seconds ?? null }));
+		return {
+			...blank(),
+			state: 'other-day',
+			date: day.date,
+			title: sessions[0]!.title,
+			when: doneLine(lengths, ctx.today),
+			rows
+		};
+	}
+	// A past day with nothing done: each session was skipped or missed, so no sentence to train by.
+	if (day.date < ctx.today && sessions.every((s) => s.status !== 'completed'))
+		return {
+			...blank(),
+			state: 'other-day',
+			date: day.date,
+			title: sessions[0]!.title,
+			when: skippedLine(sessions.map((s) => s.title)),
+			rows
+		};
+	const s = sessions.find((x) => x.status !== 'completed') ?? sessions[0]!;
+	const coach = coachLine(s, { baseline: ctx.baseline, first: false, weekKind: ctx.weekKind });
+	return {
+		...blank(),
+		state: 'other-day',
+		date: day.date,
+		title: s.title,
+		when: whenLine(s, ctx.today),
+		coach,
+		rows
+	};
+}
+
+/** The day, its dots and the other days, from what was read (section 3.4.2's rules, in order). */
+function composeDay(
+	read: PlanRead,
+	{
+		today,
+		program,
+		review,
+		goals,
+		weekKind,
+		done
+	}: Extras & { today: IsoDate; program: CurrentProgram }
+): ReadyPlan {
+	const { plan } = read;
+	const coming = [
+		...(read.blockComplete ? [] : read.week.days.flatMap((d) => d.sessions)),
+		...plan.upNext
+	].map(({ lineage, date, status }) => ({ lineage, date, status }));
+	const ready = (day: DayView, dots: Dot[] | null = null, others: DayView[] = []): ReadyPlan => ({
+		failed: false,
+		today,
+		dots,
+		day,
+		others,
+		coming,
+		review
+	});
+	const nextAfter = plan.upNext.find(isOpen);
+
+	// 1. Every planned week trained: nothing is planned until the next block is.
+	if (read.blockComplete) {
+		const { firstPlannedDay: first, lastPlannedDay: last } = program;
+		const weeks = Math.ceil((daysBetween(first, last) + 1) / 7);
+		return ready({
+			...blank(),
+			state: 'complete',
+			date: today,
+			title: 'Nothing yet',
+			when: completeLead(weeks, first, last),
+			rows: [
+				{
+					title: 'Look back at every week',
+					href: resolve('/(app)/train'),
+					secondary: false,
+					testId: 'today-train-link'
+				},
+				{
+					title: 'Log something',
+					href: resolve('/workout'),
+					secondary: false,
+					testId: 'log-something-else'
+				}
+			]
+		});
+	}
+	const { week } = read;
+
+	// 2. A bridge week between blocks: the day the next block starts.
+	if (week.nextBlockStartsOn) {
+		const startsOn = week.nextBlockStartsOn;
+		const name = program.blocks.find((b) => b.startsOn === startsOn)?.name ?? null;
+		return ready({
+			...blank(),
+			state: 'bridge',
+			date: today,
+			title: 'Free week',
+			when: bridgeLead(name, startsOn),
+			lines: nextAfter ? [later(nextAfter, today)] : [],
+			log: 'plain'
+		});
+	}
+
+	// 3. Before week 1: the day it starts.
+	if (plan.startsOn) {
+		return ready({
+			...blank(),
+			state: 'starts',
+			date: today,
+			title: startsTitle(plan.startsOn, today),
+			when: STARTS_LEAD,
+			lines: nextAfter ? [later(nextAfter, today)] : [],
+			log: 'anyway'
+		});
+	}
+
+	// 4. A block to review as the day is v2/06b2's; until then its prompt sits above the day.
+	// 5. Today's sessions, in the week that holds today.
+	const baseline = week.kind === 'baseline';
+	const dots = week.days.map((d) => ({
+		date: d.date,
+		letter: WEEKDAY_INFO[d.weekday].letter,
+		name: dayName(d, today),
+		mark: dotMark(
+			d.sessions.map((s) => s.status),
+			d.date,
+			today
+		)
+	}));
+	const others = week.days
+		.filter((d) => d.date !== today)
+		.map((d) => otherDay(d, { today, baseline, weekKind, done }));
+	const todays = week.days.find((d) => d.date === today)?.sessions ?? [];
+	const ways = todays.map((s) => ({ lineage: s.lineage, link: startLink(s, done[s.lineage]?.id) }));
+	const leadId = leadLineage(ways);
+	const completed = todays.filter((s) => s.status === 'completed');
+	const weekLater = week.days.filter((d) => d.date > today).flatMap((d) => d.sessions);
+	/** The next session to do after `s` (today's later ones first), or after today. */
+	const after = (s?: SessionView) =>
+		(s && todays.slice(todays.indexOf(s) + 1).find(isOpen)) ?? weekLater.find(isOpen) ?? nextAfter;
+	const doneOf = (s: SessionView) => startLink(s, done[s.lineage]?.id)!.href;
+	const day = { ...blank(), date: today };
+
+	if (!todays.length) {
+		const doneThisWeek = week.days
+			.filter((d) => d.date <= today)
+			.flatMap((d) => d.sessions)
+			.filter((s) => s.status === 'completed').length;
+		const next = after();
+		return ready(
+			{
+				...day,
+				state: 'rest',
+				title: 'Rest day',
+				when: restLine(doneThisWeek),
+				lines: next ? [later(next, today)] : [],
+				log: 'anyway'
+			},
+			dots,
+			others
+		);
+	}
+
+	if (leadId) {
+		const s = todays.find((x) => x.lineage === leadId)!;
+		const first =
+			week.number === 1 &&
+			!week.days.some((d) => d.date <= today && d.sessions.some((x) => x.status === 'completed'));
+		const lines = completed.length
+			? completed.map((c): DayLine => ({
+					kind: 'done',
+					label: doneLabel(c),
+					title: c.title,
+					end: null,
+					tick: true,
+					quiet: true,
+					href: doneOf(c),
+					chevron: false
+				}))
+			: oneLine(after(s), goals, today);
+		return ready(
+			{
+				...day,
+				state: 'session',
+				title: s.title,
+				when: whenLine(s, today, first),
+				coach: coachLine(s, { baseline, first, weekKind }),
+				lead: { lineage: s.lineage, link: ways.find((w) => w.lineage === leadId)!.link! },
+				lines
+			},
+			dots,
+			others
+		);
+	}
+
+	if (completed.length) {
+		const next = after();
+		const lines: DayLine[] = todays.map((s) =>
+			s.status === 'completed'
+				? {
+						kind: 'done',
+						label: doneLabel(s),
+						title: s.title,
+						end: null,
+						tick: false,
+						quiet: false,
+						href: doneOf(s),
+						chevron: true
+					}
+				: {
+						kind: 'done',
+						label: doneLabel(s),
+						title: s.title,
+						end: 'Skipped',
+						tick: false,
+						quiet: false,
+						href: null,
+						chevron: false
+					}
+		);
+		if (next) lines.push(later(next, today));
+		const lengths = completed.map((s) => ({ ...s, seconds: done[s.lineage]?.seconds ?? null }));
+		return ready(
+			{
+				...day,
+				state: 'done',
+				title: completed.length === 1 ? 'Done' : 'All done',
+				when: doneLine(lengths, today),
+				lines
+			},
+			dots,
+			others
+		);
+	}
+
+	const next = after();
+	return ready(
+		{
+			...day,
+			state: 'skipped',
+			title: 'Skipped',
+			when: skippedLine(todays.map((s) => s.title)),
+			lines: next ? [later(next, today)] : [],
+			log: 'anyway'
+		},
+		dots,
+		others
+	);
+}
+
 /**
  * Today's plan at the owner's `today` (ownerToday, read once per request by loadTodayProgram),
- * from the `program` it found, for load.server.ts to stream, with the review prompt and the
- * week's kind line read together after it. Never rejects: a failed prompt or line read is
- * recorded and the plan shows without it.
+ * from the `program` it found, for load.server.ts to stream, with the review prompt, the goals,
+ * the week's kind and its completed workouts read together after it. Never rejects: a failed
+ * prompt, goals, kind or workouts read is recorded and the day composes without it.
  */
 export function loadTodayPlan(
 	ownerId: string,
@@ -240,29 +555,49 @@ export function loadTodayPlan(
 		line = getWeekLine
 	}: SetupDeps & { prompt?: typeof loadReviewPrompt; line?: typeof getWeekLine } = {}
 ): Promise<TodayPlanView> {
-	const record = (error: unknown, kind: 'todayPlan' | 'todayReviewPrompt' | 'todayWeekLine') =>
+	type Load =
+		'todayPlan' | 'todayReviewPrompt' | 'todayGoals' | 'todayWeekLine' | 'todayCompletedWorkouts';
+	const record = (error: unknown, kind: Load) =>
 		recordServerError(
 			{ error, kind: 'streamed', status: 500, ...origin, context: { load: kind } },
 			{ db: errorsDb }
 		);
+	/** A read beside the plan that fails: recorded, and the day composes without it. */
+	const soft = (kind: Load) => async (error: unknown) => {
+		await record(error, kind);
+		return null;
+	};
 	return readPlan(ownerId, today, program, db).then(
-		async (plan) => {
+		async (read) => {
 			// Each on its own pool connection, as the plan's reads are.
-			const [review, weekKind] = await Promise.all([
-				prompt(ownerId, today, { db }).catch(async (error: unknown) => {
-					await record(error, 'todayReviewPrompt');
-					return null;
-				}),
-				plan.week
-					? readWeekKind(ownerId, { today, program, week: plan.week }, { db, line }).catch(
-							async (error: unknown) => {
-								await record(error, 'todayWeekLine');
-								return null;
-							}
-						)
-					: null
+			const goals = listGoals(ownerId, { db }).catch(soft('todayGoals'));
+			const week = read.blockComplete ? null : read.week;
+			const [review, readGoals, weekKind, done] = await Promise.all([
+				prompt(ownerId, today, { db }).catch(soft('todayReviewPrompt')),
+				goals,
+				week && !week.nextBlockStartsOn && !program.notStarted
+					? goals
+							.then((g) =>
+								readWeekKind(
+									ownerId,
+									{ today, program, week: week.startsOn, goals: g ?? [] },
+									{ db, line }
+								)
+							)
+							.catch(soft('todayWeekLine'))
+					: null,
+				read.blockComplete
+					? null
+					: completedWorkouts(ownerId, read.completed, { db }).catch(soft('todayCompletedWorkouts'))
 			]);
-			return { ...plan, review, weekKind };
+			return composeDay(read, {
+				today,
+				program,
+				review,
+				goals: readGoals,
+				weekKind,
+				done: done ?? {}
+			});
 		},
 		async (error: unknown) => {
 			await record(error, 'todayPlan');

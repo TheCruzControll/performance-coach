@@ -831,14 +831,10 @@ test.describe('tabs answer before the server does', () => {
 			const next = new Date();
 			next.setDate(next.getDate() + 1);
 			next.setHours(0, 5, 0, 0);
-			return {
-				time: next.getTime(),
-				eyebrow: next.toLocaleDateString('en-GB', {
-					weekday: 'long',
-					day: 'numeric',
-					month: 'long'
-				})
-			};
+			// As today-date renders it: 'Weekday D Month'.
+			const weekday = next.toLocaleDateString('en-GB', { weekday: 'long' });
+			const month = next.toLocaleDateString('en-GB', { month: 'long' });
+			return { time: next.getTime(), date: `${weekday} ${next.getDate()} ${month}` };
 		});
 		await page.clock.setSystemTime(expected.time);
 		const reload = page.waitForRequest(
@@ -846,7 +842,7 @@ test.describe('tabs answer before the server does', () => {
 		);
 		await foreground();
 		await reload;
-		await expect(page.locator('.page-header .eyebrow')).toHaveText(expected.eyebrow);
+		await expect(page.getByTestId('today-date')).toHaveText(expected.date);
 		await expect(page.getByRole('heading', { level: 1, name: 'Today' })).toBeVisible();
 		expect(loads, 'one load: the return right after loading asked for none').toHaveLength(1);
 	});

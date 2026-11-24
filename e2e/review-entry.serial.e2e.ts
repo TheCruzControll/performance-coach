@@ -1,7 +1,7 @@
 /**
  * The review prompt on Today and Progress (m6 review-entry-points, ReviewPrompt): when a week or
- * a block completes, it leads Today's plan and Progress's Overview, one tap from creating and
- * opening its review, then 'See your review'.
+ * a block completes, it sits above Today's day (until v2/06b2 draws it as the day or its line) and
+ * leads Progress's Overview, one tap from creating and opening its review, then 'See your review'.
  *
  * - week-complete: Today's card creates and opens last week's review, then reads 'See your
  *   review'. Create's states: pending (aria-busy, a second tap posts nothing: one row), a 500
@@ -10,7 +10,7 @@
  * - block-end: the cycle card creates and opens the block's review.
  * - A program that started this week, mid-week with sessions to come: no prompt.
  * - Progress: the prompt at the top of Overview creates and opens the review.
- * - On a phone and in a desktop window: in the plan's column, nothing scrolls sideways, axe clean
+ * - On a phone and in a desktop window: in the day's column, nothing scrolls sideways, axe clean
  *   in both themes, the screens captured.
  *
  * Serial: the history is the one owner's, which every browser and worker shares.
@@ -64,7 +64,7 @@ test.describe('week-complete, on Today', () => {
 		seeded = await seedOnboarded(request, 'week-complete');
 	});
 
-	test('the week’s prompt leads the plan; axe is clean and the screen is captured', async ({
+	test('the week’s prompt sits above the day; axe is clean and the screen is captured', async ({
 		page
 	}, testInfo) => {
 		test.skip(isSunday(seeded), SUNDAY);
@@ -76,9 +76,9 @@ test.describe('week-complete, on Today', () => {
 		await expect(prompt).toContainText('Your week in review is ready');
 		await expect(prompt.locator(`input[name="weekStartsOn"]`)).toHaveValue(weekOf(seeded));
 		await expect(createButton(page)).toHaveText('Create review');
-		// First in the plan, above the week.
+		// Above the day, which stands at the column's foot.
 		const top = (await boxOf(prompt)).y;
-		expect(top).toBeLessThan((await boxOf(page.getByTestId('week-strip'))).y);
+		expect(top).toBeLessThan((await boxOf(page.getByTestId('today-day'))).y);
 		await expectNoSideScroll(page);
 		await auditBothThemes(page, 'Today, a week to review');
 		await captureScreen(page, testInfo, 'review-entry-today-phone');
@@ -87,15 +87,15 @@ test.describe('week-complete, on Today', () => {
 	test.describe('in a desktop window', () => {
 		test.use({ ...DESKTOP });
 
-		test('the prompt sits in the plan’s column, with nothing beside it', async ({
+		test('the prompt sits in the day’s column, with nothing beside it', async ({
 			page
 		}, testInfo) => {
 			test.skip(isSunday(seeded), SUNDAY);
 			await gotoHydrated(page, '/today');
 			const prompt = await boxOf(promptOf(page));
 			const day = await boxOf(page.getByTestId('today-day'));
-			expect(Math.abs(prompt.x - day.x), 'the plan’s column').toBeLessThan(2);
-			expect(Math.abs(prompt.width - day.width), 'the plan’s width').toBeLessThan(2);
+			expect(Math.abs(prompt.x - day.x), 'the day’s column').toBeLessThan(2);
+			expect(Math.abs(prompt.width - day.width), 'the day’s width').toBeLessThan(2);
 			// The goals and This week left Today's side column (v2/06a): nothing sits beside it.
 			await expect(page.getByTestId('today-side')).toHaveCount(0);
 			await createButton(page).hover();
@@ -242,7 +242,7 @@ test('mid-week, with sessions to come in a program that started this week: no pr
 	await seedProgram(request, { fixture: 'today', start: 'this_week' });
 	await onboard();
 	await gotoHydrated(page, '/today');
-	await expect(page.getByTestId('today-session').first()).toBeVisible();
+	await expect(page.getByTestId('today-day')).toHaveAttribute('data-state', 'session');
 	await expect(promptOf(page)).toHaveCount(0);
 });
 

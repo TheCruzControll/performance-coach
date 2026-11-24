@@ -67,9 +67,22 @@ Last reviewed: 2026-11-23, against `main` at the merge of #634.
   `[data-testid='save-bar']` stands in until the section screen sets `--toast-lift` itself.
   Closes in `v2/22` (`src/routes/(app)/profile/[section]/SectionScreen.svelte`).
 - **The resume line still shows a workout in progress on every screen and 'Continue here' on
-  Today; `v2/06` moves both into Today's hero.** Paper draws the line for waiting changes only
+  Today; `v2/06b2` moves both into Today's day.** Paper draws the line for waiting changes only
   (3 · Today), so its active and remote states are derived from it until then. Closes when Today
   claims them (`src/routes/(app)/resume-state.svelte.ts`).
+- **Today's reviews are not yet its day or its line (`v2/06b2`).** `v2/06b1` built the day and its
+  states but left a review to do as it was: `ReviewPrompt` above the day, a block's with Create
+  review where Paper draws 'Done · Six weeks of Build' with Review the block as the day, and a
+  week's where Paper draws one line, 'Last week · Review ready', to Progress → Reviews. On a
+  393 × 659 phone a weekly review's prompt pushes the day down, so Start opens under the tab bar.
+  Closes when `v2/06b2` builds them (`src/routes/(app)/today/plan.server.ts` and
+  `src/routes/(app)/today/panels/Program.svelte`).
+- **Today's coach sentence is chosen from the plan's own words, not written per session.** It is
+  the session's move, its baseline week, the week's kind or the session's exercises
+  (`coachLine` in `src/routes/(app)/today/day-words.ts`); Paper's per-session sentences ('Six
+  hard 400s with a slow jog between each one') need a coach-written note on the plan.
+- **Today shows no clock time for a class ('7:00 pm').** Sessions store a time of day, not a clock
+  time, so the day and its line say 'This evening' and the length only.
 - **Profile has no 'What the coach knows' or 'About this app' row yet (Paper draws both).** The
   coach's knowledge opens from Coach (`v2/20`), and About this app's contents stay on Profile, as
   a group of status rows, until `v2/22`. Found building `v2/21a`.

@@ -1,14 +1,17 @@
 /**
  * Every way into a workout (start-entry-points): M3's 'workout-day' program, seeded this week,
  * has a strength session, an interval run and a Muay Thai class today.
- * - Today's sessions offer Start workout, which opens /workout?start=<lineage>; back on Today the
- *   one in progress reads Resume. The session screen's Start and Resume do the same.
+ * - Today's day leads with the first session to do and its one Start, which opens
+ *   /workout?start=<lineage>; back on Today the one in progress reads Resume. The session
+ *   screen's Start workout and Resume do the same.
  * - Today saves the kits of today's sessions once idle, so Start works with no signal.
- * - A completed session reads Done · View and opens its History detail.
- * - Today's 'Log something else' and Train's 'Log a session' open the ad-hoc options; History's
- *   empty state links to Today.
- * - The states are axe-clean in both themes and captured; on a desktop window the Start links
- *   have hover and focus states and work by keyboard.
+ * - A completed session is a done line on Today that opens its History detail; the session
+ *   screen reads Done · View.
+ * - A training day has no 'Log something' link (it is in Train's More); a rest day's 'Log
+ *   something anyway' and Train's 'Log a session' open the ad-hoc options; History's empty state
+ *   links to Today.
+ * - The states are axe-clean in both themes and captured; on a desktop window Today's Start and
+ *   the session's have hover and focus states and work by keyboard.
  * Serial: it stores a program, which empties the workouts. A test that fails requests with
  * page.route blocks the service worker (WebKit's page.route does not see a controlled page's
  * requests).
@@ -41,9 +44,11 @@ test.afterAll(async () => {
 const lineageOf = (title: string) =>
 	seeded.sessions.find((s) => s.title === title && s.date === seeded.today)!.lineage;
 
-/** Today's session titled `title`: its card and its action. */
-const todaySession = (page: Page, title: string) =>
-	page.getByTestId('today-session').filter({ has: page.getByText(title, { exact: true }) });
+/** Today's day: its title, when, one sentence and its one Start (or Resume). */
+const todayDay = (page: Page) => page.getByTestId('today-day');
+/** A session done today, as its line under the day: the link to its History detail. */
+const doneLine = (page: Page, title: string) =>
+	page.getByTestId('today-done').filter({ hasText: title }).getByTestId('done-workout');
 
 const exerciseHeading = (page: Page) =>
 	page.getByTestId('exercise').getByRole('heading', { level: 2 });
@@ -123,17 +128,14 @@ async function openToday(page: Page) {
 
 test('Today starts the strength session, then reads Resume for it', async ({ page }, testInfo) => {
 	await openToday(page);
-	const strength = todaySession(page, STRENGTH);
-	const start = strength.getByTestId('start-workout');
-	await expect(start).toHaveText('Start workout');
+	// One Start on the day: the first session to do. The later ones are on Train.
+	await expect(page.getByTestId('today-title')).toHaveText(STRENGTH);
+	const start = todayDay(page).getByTestId('start-workout');
+	await expect(page.getByTestId('start-workout')).toHaveCount(1);
+	await expect(start).toHaveText('Start');
 	await expect(start).toHaveAttribute('href', `/workout?start=${lineageOf(STRENGTH)}`);
-	// Each of today's sessions offers it: the next as the primary button, the later two as a quiet
-	// trailing Start named for their session.
-	const starts = page.getByTestId('today-session').getByTestId('start-workout');
-	await expect(starts).toHaveText(['Start workout', 'Start', 'Start']);
-	await expect(todaySession(page, RUN).getByTestId('start-workout')).toHaveAccessibleName(
-		`Start ${RUN}`
-	);
+	// A training day offers no 'Log something': that is in Train's More.
+	await expect(page.getByTestId('log-something-else')).toHaveCount(0);
 	await captureScreen(page, testInfo, 'today-start');
 	await audit(page, 'Today with Start workout');
 
@@ -143,12 +145,12 @@ test('Today starts the strength session, then reads Resume for it', async ({ pag
 	expect(await activeLineage(page)).toBe(lineageOf(STRENGTH));
 
 	await openToday(page);
-	const resume = todaySession(page, STRENGTH).getByTestId('resume-workout');
+	const resume = todayDay(page).getByTestId('resume-workout');
 	await expect(resume).toHaveText('Resume');
 	await expect(resume).toHaveAttribute('href', '/workout');
 	await expect(resume).toHaveAttribute('data-variant', 'primary');
-	// The workout in progress leads; the others keep their quiet Start.
-	await expect(todaySession(page, RUN).getByTestId('start-workout')).toHaveText('Start');
+	// The workout in progress is the day's one button.
+	await expect(page.getByTestId('start-workout')).toHaveCount(0);
 	await resume.click();
 	await expect(page).toHaveURL(/\/workout$/);
 	await expect(exerciseHeading(page)).toHaveText('Back squat');
@@ -175,13 +177,18 @@ test('the session screen’s Start starts it at its kind’s page, then reads Re
 	await expect(resume).toHaveAttribute('href', '/workout/run');
 });
 
-test('a completed session reads Done · View and opens its History detail', async ({ page }) => {
+test('a completed session is a done line on Today that opens its History detail', async ({
+	page
+}) => {
 	const workoutId = await completeStrength(page);
 	const detail = `/progress/workouts/${workoutId}`;
 
 	await openToday(page);
-	const done = todaySession(page, STRENGTH).getByTestId('done-workout');
-	await expect(done).toHaveText('Done · View');
+	// The next session leads the day; the done one is a quiet line under it.
+	await expect(page.getByTestId('today-title')).toHaveText(RUN);
+	const done = doneLine(page, STRENGTH);
+	await expect(done).toContainText('Morning');
+	await expect(done).toContainText(STRENGTH);
 	await expect(done).toHaveAttribute('href', detail);
 	await audit(page, 'Today with a session done');
 	await done.click();
@@ -193,12 +200,12 @@ test('a completed session reads Done · View and opens its History detail', asyn
 	await expect(page.getByTestId('start-workout')).toHaveCount(0);
 });
 
-test('a session finished here reads Done · View on Today reached in the app, before the bar looks again', async ({
+test('a session finished here is done on Today reached in the app, before the bar looks again', async ({
 	page
 }) => {
 	await openToday(page);
 	await expect(page.getByTestId('resume-slot')).toBeAttached();
-	await todaySession(page, STRENGTH).getByTestId('start-workout').click();
+	await todayDay(page).getByTestId('start-workout').click();
 	await expect(exerciseHeading(page)).toHaveText('Back squat');
 	// The shell never loads its bar again in this document: Today reads only what it left behind.
 	await page.evaluate(() => (window.requestIdleCallback = () => 0));
@@ -214,15 +221,22 @@ test('a session finished here reads Done · View on Today reached in the app, be
 		.getByRole('link', { name: 'Today' })
 		.click();
 
-	const strength = todaySession(page, STRENGTH);
-	await expect(strength.getByTestId('done-workout')).toHaveText('Done · View');
-	await expect(strength.getByTestId('resume-workout')).toHaveCount(0);
+	await expect(doneLine(page, STRENGTH)).toHaveAttribute('href', /^\/progress\/workouts\//);
+	await expect(page.getByTestId('resume-workout')).toHaveCount(0);
 	await expect(page.getByTestId('resume-slot')).toHaveCount(0);
 });
 
-test('Log something else and Train’s Log a session open the ad-hoc options', async ({ page }) => {
+test('a rest day’s Log something anyway and Train’s Log a session open the ad-hoc options', async ({
+	page,
+	request
+}) => {
+	await seedProgram(request, { fixture: 'today-rest', start: 'this_week' });
+	await query('update athlete_profiles set onboarding_completed_at = now()');
 	await gotoHydrated(page, '/today');
-	await page.getByTestId('log-something-else').click();
+	await expect(page.getByTestId('today-day')).toHaveAttribute('data-state', 'rest');
+	const log = page.getByTestId('log-something-else');
+	await expect(log).toHaveText('Log something anyway');
+	await log.click();
 	await expect(page).toHaveURL(/\/workout$/);
 	await expect(page.getByTestId('adhoc-run')).toBeVisible();
 	await expect(page.getByTestId('adhoc-other')).toBeVisible();
@@ -247,7 +261,7 @@ test.describe('with no signal', () => {
 	test('after Today loads online, Start still starts from the kit it saved', async ({ page }) => {
 		await openToday(page);
 		await page.route('**/api/workouts/**', (route) => route.abort('internetdisconnected'));
-		await todaySession(page, STRENGTH).getByTestId('start-workout').click();
+		await todayDay(page).getByTestId('start-workout').click();
 		await expect(page).toHaveURL(/\/workout$/);
 		await expect(exerciseHeading(page)).toHaveText('Back squat');
 		await expect
@@ -259,8 +273,8 @@ test.describe('with no signal', () => {
 test.describe('in a desktop window', () => {
 	test.use(DESKTOP);
 
-	// A primary fills and a ghost (the quiet trailing Start) only brightens its text, so the
-	// paint is the fill and the text colour together.
+	// A primary's hover changes its fill, a quiet link only its text, so the paint is the fill and
+	// the text colour together.
 	const paint = (locator: Locator) =>
 		locator.evaluate((el) => {
 			const style = getComputedStyle(el);
@@ -285,10 +299,10 @@ test.describe('in a desktop window', () => {
 	}, testInfo) => {
 		await openToday(page);
 		await expectNoSideScroll(page);
-		const start = todaySession(page, STRENGTH).getByTestId('start-workout');
+		const start = todayDay(page).getByTestId('start-workout');
+		// Today's one Start is 260 px wide at a desk (Paper, 11 · Desktop).
+		expect(Math.abs((await start.boundingBox())!.width - 260)).toBeLessThanOrEqual(1);
 		await captureScreen(page, testInfo, 'desktop-today-start');
-		// A later session's quiet trailing Start has the same states.
-		await expectHoverAndFocus(page, todaySession(page, RUN).getByTestId('start-workout'));
 		await expectHoverAndFocus(page, start);
 		await page.keyboard.press('Enter');
 		await expect(page).toHaveURL(/\/workout$/);

@@ -1,50 +1,34 @@
 <!--
   @component
-  Today once a program exists (plan.server.ts): the week on a WeekStrip with today selected and
-  its sessions as cards, each opening its detail, then 'Up next' across weeks. A rest day names
-  the next session; before week 1, 'Starts Monday' over week 1, with Change start date (Train's Start date screen); once the first block is over,
-  'Nothing planned yet' with its summary, an empty Up next and the way to Train. The plan is
-  streamed: its skeleton holds the room until it arrives, and a failed read is a designed error
-  with Retry. Today's sessions each offer Start workout or Done · View (start-link.ts, composed
-  on the server), or Resume for the workout in progress on this device: only the lead session
-  (leadLineage) has the primary button, the others a quiet trailing Start. Today is named by the
-  page's eyebrow date, so its day carries no visible date of its own. The day offers 'Log
-  something else'. Once the plan shows and the browser is idle, Today saves the kits of the
-  sessions still to do today and in the next two days, so they start in a gym with no signal, even
-  one looked at the night before: with Train, the only places outside the workout pages that
-  create the device's database (coming-kits.ts). Last, Ask the coach opens Coach with 'What should
-  I focus on next week?' (a link: ui/ask-link.ts). In a bridge week between blocks, 'Between
-  blocks' names the day the next block starts, with 'Log something else', in place of the week.
-  When a week or a block completes, its review prompt leads (ReviewPrompt: create and open it, or
-  'See your review'). A light or special week is named at the top of the day with its why, as
-  Train's header names it ('Deload week', server text). Code-split behind PanelLoader.
+  Today once a program exists (Instrument v2, v2/06b; plan.server.ts composes every word): the
+  week as seven dots, then, at the column's foot, the day as one statement: its title, when, one
+  sentence from the coach and one Start (start-link.ts; Resume when it is the device's workout in
+  progress), then one line under it (the next session, or a goal) or the quiet link to log
+  something. A tap on a dot shows that day, composed on the server with the rest, with no
+  request: its session, Open the session and Back to today. Rest, done, skipped, before week 1,
+  between blocks and nothing yet are each a day of their own. A week or a block to review keeps
+  its prompt above the day (ReviewPrompt) until v2/06b2, and the resume line keeps the workout in
+  progress. The plan is streamed: 'Getting today' at the foot until it arrives, and a failed read
+  is one statement with Try again. Once the plan shows and the browser is idle, Today saves the
+  kits of the sessions still to do today and in the next two days, so they start in a gym with no
+  signal (coming-kits.ts). Code-split behind PanelLoader.
 -->
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { navigating } from '$app/state';
 	import { deviceWorkout } from '#lib/client/workout/device-workout.svelte.ts';
 	import type { IsoDate } from '#lib/domain/calendar.ts';
 	import ReviewPrompt from '#lib/ui/analytics/ReviewPrompt.svelte';
-	import { ASK_QUESTIONS, askHref } from '#lib/ui/ask-link.ts';
-	import Badge from '#lib/ui/components/Badge.svelte';
 	import Button from '#lib/ui/components/Button.svelte';
-	import Card from '#lib/ui/components/Card.svelte';
-	import EmptyState from '#lib/ui/components/EmptyState.svelte';
-	import ListRow from '#lib/ui/components/ListRow.svelte';
-	import Section from '#lib/ui/components/Section.svelte';
-	import Skeleton from '#lib/ui/components/Skeleton.svelte';
-	import Surface from '#lib/ui/components/Surface.svelte';
-	import SessionCard from '#lib/ui/program/SessionCard.svelte';
-	import { leadLineage, resumeLink } from '#lib/ui/program/start-link.ts';
-	import WeekStrip from '#lib/ui/program/WeekStrip.svelte';
+	import Icon from '#lib/ui/components/Icon.svelte';
+	import { resumeLink } from '#lib/ui/program/start-link.ts';
 	import type { PageData } from '../$types';
 
 	type TodayPlanView = Awaited<NonNullable<PageData['plan']>>;
-	type PlanCard = Omit<
-		Extract<TodayPlanView, { failed: false }>['upNext'][number],
-		'when' | 'date'
-	>;
+	type Ready = Extract<TodayPlanView, { failed: false }>;
+	type Day = Ready['day'];
+	type Line = Day['lines'][number];
 
 	interface Props {
 		/** Settled when Today was server-rendered; a promise after a client navigation. */
@@ -53,12 +37,24 @@
 
 	let { plan }: Props = $props();
 
-	/** The day the owner tapped on the strip; until then the plan's (today, or week 1's first). */
-	let chosen = $state<IsoDate | null>(null);
+	/** The day tapped in the week; null shows today. */
+	let picked = $state<IsoDate | null>(null);
+	// A new plan (a refresh, Try again) shows today again.
+	$effect.pre(() => {
+		void plan;
+		picked = null;
+	});
 
-	const sessionHref = (lineage: string) => resolve('/(app)/train/session/[key]', { key: lineage });
-	const TRAIN_HREF = resolve('/(app)/train');
-	const START_HREF = resolve('/(app)/train/start');
+	const pick = (date: IsoDate, today: IsoDate) => (picked = date === today ? null : date);
+	const shown = (view: Ready): Day =>
+		(picked && view.others.find((d) => d.date === picked)) || view.day;
+
+	/** Back to today from another day: today's dot takes the focus. */
+	async function backToToday() {
+		picked = null;
+		await tick();
+		document.querySelector<HTMLElement>('[data-testid="week-dots"] [aria-current="date"]')?.focus();
+	}
 
 	/**
 	 * Once the idle pass has run: 'saved' with the coming days' kits on this device (coming-kits.ts),
@@ -69,13 +65,13 @@
 	/** Once the plan shows and the browser is idle: never on the server, once a plan. */
 	$effect(() => {
 		let live = true;
-		const shown = plan;
+		const showing = plan;
 		const save = async () => {
-			const view = await shown;
+			const view = await showing;
 			let saved: string[] = [];
 			if (!view.failed) {
 				const coming = await import('#lib/client/workout/coming-kits.ts');
-				saved = await coming.saveComingKits(datedSessions(view), view.today);
+				saved = await coming.saveComingKits(view.coming, view.today);
 			}
 			if (live) kits = saved.length ? 'saved' : 'none';
 		};
@@ -85,336 +81,491 @@
 		return () => (live = false);
 	});
 
-	/** The week's sessions on their days, then Up next's, which may cross into the next week. */
-	const datedSessions = (view: Extract<TodayPlanView, { failed: false }>) => [
-		...(view.week?.days.flatMap((d) => d.cards.map((c) => ({ ...c, date: d.date }))) ?? []),
-		...view.upNext
-	];
-
 	let retrying = $state(false);
 	async function retry() {
 		retrying = true;
 		await invalidateAll();
 		retrying = false;
 	}
+
+	/** A line's accessible name: its visible words, with a tick read as 'done'. */
+	const lineName = (line: Line) =>
+		[line.label, line.title, line.end, line.tick ? 'done' : null].filter(Boolean).join(', ');
 </script>
 
-{#snippet go(card: PlanCard, lead: string | null)}
-	{@const next = resumeLink(card.lineage, card.start, deviceWorkout.active)}
-	{#if next?.id === 'start-workout' && card.lineage !== lead}
-		<span class="trailing">
-			<Button
-				variant="ghost"
-				href={next.href}
-				aria-label={`Start ${card.title}`}
-				data-testid={next.id}>Start</Button
+{#snippet dots(view: Ready)}
+	<div class="dots" role="group" aria-label="This week" data-testid="week-dots">
+		{#each view.dots ?? [] as dot (dot.date)}
+			<button
+				type="button"
+				class="dot-day"
+				data-mark={dot.mark}
+				data-date={dot.date}
+				aria-pressed={dot.date === (picked ?? view.today)}
+				aria-current={dot.date === view.today ? 'date' : undefined}
+				aria-label={dot.name}
+				onclick={() => pick(dot.date, view.today)}
 			>
-		</span>
-	{:else if next}
-		<Button
-			variant={next.icon === 'check' ? 'secondary' : 'primary'}
-			icon={next.icon}
-			href={next.href}
-			block
-			data-testid={next.id}>{next.label}</Button
-		>
+				<span class="letter" aria-hidden="true">{dot.letter}</span>
+				<span class="mark" aria-hidden="true"></span>
+			</button>
+		{/each}
+	</div>
+{/snippet}
+
+{#snippet lineParts(line: Line)}
+	<span class="label">{line.label}</span>
+	<span class="name">{line.title}</span>
+	{#if line.end}
+		<span class="end">{line.end}</span>
+	{:else if line.tick}
+		<Icon name="check" size={16} class="tick" />
+	{/if}
+	{#if line.chevron}
+		<Icon name="chevron-right" size={14} class="chevron" />
 	{/if}
 {/snippet}
 
-{#snippet cardFor(card: PlanCard, testId: string)}
-	{@const href = sessionHref(card.lineage)}
-	<SessionCard
-		session={card}
-		{href}
-		baseline={card.baseline}
-		pending={navigating.to?.url.pathname === href}
-		data-testid={testId}
-	/>
+{#snippet dayLine(line: Line)}
+	{@const testId = line.kind === 'done' || line.tick ? 'done-workout' : 'today-line'}
+	{#if line.href}
+		<!-- eslint-disable svelte/no-navigation-without-resolve -- resolved in plan.server.ts -->
+		<a
+			class="line"
+			href={line.href}
+			data-kind={line.kind}
+			data-quiet={line.quiet || undefined}
+			aria-label={lineName(line)}
+			data-testid={testId}>{@render lineParts(line)}</a
+		>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
+	{:else}
+		<div
+			class="line"
+			data-kind={line.kind}
+			data-quiet={line.quiet || undefined}
+			data-testid={testId}
+		>
+			{@render lineParts(line)}
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet action(day: Day)}
+	{#if day.lead}
+		{@const link = resumeLink(day.lead.lineage, day.lead.link, deviceWorkout.active)!}
+		<div class="go">
+			<Button size="lg" block href={link.href} data-testid={link.id}>
+				{link.id === 'resume-workout' ? 'Resume' : 'Start'}
+			</Button>
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet theDay(day: Day)}
+	<section class="day" data-state={day.state} data-testid="today-day" aria-labelledby="today-title">
+		<h2 id="today-title" class="title" data-testid="today-title">{day.title}</h2>
+		{#if day.when}<p class="when" data-testid="today-when">{day.when}</p>{/if}
+		{#if day.coach}<p class="coach" data-testid="today-coach">{day.coach}</p>{/if}
+		{@render action(day)}
+	</section>
+	{#if day.lines.length}
+		<ul class="lines" data-many={(day.lines.length > 1 && day.state === 'done') || undefined}>
+			{#each day.lines as line, i (i)}
+				<li data-testid={line.kind === 'done' ? 'today-done' : undefined}>
+					{@render dayLine(line)}
+				</li>
+			{/each}
+		</ul>
+	{/if}
+	{#if day.rows.length}
+		<ul class="rows">
+			{#each day.rows as row, i (i)}
+				<li>
+					{#if row.href}
+						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved in plan.server.ts -->
+						<a class="row" href={row.href} data-testid={row.testId}>
+							<span>{row.title}</span>
+							<Icon name="chevron-right" size={14} class="chevron" />
+						</a>
+					{:else}
+						<button
+							type="button"
+							class="row"
+							data-secondary={row.secondary || undefined}
+							onclick={backToToday}
+							data-testid={row.testId}>{row.title}</button
+						>
+					{/if}
+				</li>
+			{/each}
+		</ul>
+	{/if}
+	{#if day.log}
+		<a class="log" href={resolve('/workout')} data-testid="log-something-else">
+			{day.log === 'anyway' ? 'Log something anyway' : 'Log something'}
+		</a>
+	{/if}
 {/snippet}
 
 <div class="plan" data-testid="today-plan" data-kits={kits}>
 	{#await plan}
-		<div class="pending" aria-busy="true">
-			<span class="visually-hidden">Loading today’s plan…</span>
-			<!-- The strip's room: Today's STRIP_ROOM on a desktop screen, where it spans the columns. -->
-			<Skeleton height="var(--today-strip-room, 4.5rem)" radius="var(--radius-md)" />
-			<Skeleton height="12rem" radius="var(--radius-lg)" />
-			<Skeleton height="16rem" radius="var(--radius-lg)" />
-		</div>
+		<p class="getting" aria-busy="true" data-testid="today-loading">Getting today</p>
 	{:then view}
 		{#if view.failed}
-			<Card padding="lg" data-testid="today-plan-error">
-				<EmptyState
-					compact
-					icon="alert"
-					tone="combat"
-					title="Couldn’t load today’s plan"
-					description="Your plan is safe. Check your connection, then try again."
+			<section class="statement-wrap" data-testid="today-plan-error" aria-labelledby="today-failed">
+				<h2 id="today-failed" class="statement">Couldn’t load today</h2>
+				<p class="lead">Your plan is safe. Check your connection and try again.</p>
+				<Button
+					variant="secondary"
+					size="lg"
+					block
+					loading={retrying}
+					onclick={retry}
+					data-testid="today-retry">Try again</Button
 				>
-					{#snippet actions()}
-						<Button variant="secondary" icon="refresh" loading={retrying} onclick={retry}>
-							Try again
-						</Button>
-					{/snippet}
-				</EmptyState>
-			</Card>
+			</section>
 		{:else}
+			{#if view.dots}{@render dots(view)}{/if}
 			{#if view.review}
-				<ReviewPrompt review={view.review} />
+				<!-- A week or a block to review, above the day until v2/06b2 draws it as the day. -->
+				<div class="prompt"><ReviewPrompt review={view.review} /></div>
 			{/if}
-
-			{#if view.starts}
-				<Card tone="accent" padding="lg" data-testid="today-starts">
-					<div class="note">
-						<Badge tone="accent" icon="today">Week 1</Badge>
-						<h2 class="note-title">{view.starts.title}</h2>
-						<p class="note-copy">{view.starts.description}</p>
-					</div>
-				</Card>
-				<ListRow
-					icon="today"
-					title="Change start date"
-					subtitle="Any time before you begin training"
-					href={START_HREF}
-					data-testid="today-change-start"
-				/>
-			{/if}
-
-			{#if view.complete}
-				<Surface padding="none" radius="xl">
-					<EmptyState
-						icon="check"
-						tone="accent"
-						title={view.complete.title}
-						description={view.complete.description}
-						data-testid="today-block-complete"
-					/>
-				</Surface>
-				<ListRow
-					icon="train"
-					title="Open Train"
-					subtitle="Look back at every planned week"
-					href={TRAIN_HREF}
-					data-testid="today-train-link"
-				/>
-			{/if}
-
-			{#if view.bridge}
-				<Surface padding="none" radius="xl">
-					<EmptyState
-						icon="clock"
-						tone="neutral"
-						title={view.bridge.title}
-						description={view.bridge.description}
-						data-testid="today-bridge"
-					>
-						{#snippet actions()}
-							<Button
-								variant="secondary"
-								icon="plus"
-								href={resolve('/workout')}
-								data-testid="log-something-else"
-							>
-								Log something else
-							</Button>
-						{/snippet}
-					</EmptyState>
-				</Surface>
-			{/if}
-
-			{#if view.week}
-				{@const week = view.week}
-				{@const selected = chosen ?? week.selected}
-				{@const day = week.days.find((d) => d.date === selected) ?? week.days[0]!}
-				{@const isToday = day.date === week.today}
-				{@const lead = isToday
-					? leadLineage(
-							day.cards.map((c) => ({
-								lineage: c.lineage,
-								link: resumeLink(c.lineage, c.start, deviceWorkout.active)
-							}))
-						)
-					: null}
-				<WeekStrip
-					days={week.strip}
-					today={week.today}
-					{selected}
-					label={week.label}
-					onselect={(date) => (chosen = date)}
-					data-testid="week-strip"
-				/>
-				<Section
-					title={isToday ? (day.cards.length ? 'Today’s sessions' : 'Today') : day.heading}
-					titleHidden={isToday}
-					gap={isToday ? 'md' : 'sm'}
-					data-testid="today-day"
-				>
-					<!-- Inside the day's section: on a desktop screen the plan's rows are Today's (subgrid). -->
-					{#if view.weekKind}
-						<p class="kind" data-testid="today-week-kind">
-							<Badge data-testid="week-kind-label">{view.weekKind.label}</Badge>
-							{view.weekKind.why}
-						</p>
-					{/if}
-					{#each day.cards as card (card.lineage)}
-						{#if isToday}
-							<div class="session" data-testid="today-session">
-								{@render cardFor(card, 'session-card')}
-								{@render go(card, lead)}
-							</div>
-						{:else}
-							{@render cardFor(card, 'session-card')}
-						{/if}
-					{:else}
-						<Surface padding="none" radius="lg">
-							<EmptyState
-								compact
-								icon="moon"
-								tone="neutral"
-								title="Rest day"
-								description={day.rest ?? undefined}
-								data-testid="today-rest"
-							/>
-						</Surface>
-					{/each}
-					{#if isToday}
-						<Button
-							variant="ghost"
-							icon="plus"
-							href={resolve('/workout')}
-							data-testid="log-something-else"
-						>
-							Log something else
-						</Button>
-					{/if}
-				</Section>
-			{/if}
-
-			<Section title="Up next" data-testid="today-up-next">
-				{#if view.upNext.length}
-					<ol class="up-next">
-						{#each view.upNext as card (card.lineage)}
-							<li class="next">
-								<span class="when">{card.when}</span>
-								{@render cardFor(card, 'up-next-card')}
-							</li>
-						{/each}
-					</ol>
-				{:else}
-					<Surface padding="none" radius="lg">
-						<EmptyState
-							compact
-							icon="clock"
-							tone="neutral"
-							title="Nothing up next"
-							description="Your next sessions appear here once they are planned."
-							data-testid="today-up-next-empty"
-						/>
-					</Surface>
-				{/if}
-			</Section>
-
-			<ListRow
-				icon="coach"
-				title="Ask the coach"
-				subtitle={ASK_QUESTIONS.today}
-				href={askHref(ASK_QUESTIONS.today, 'today')}
-				data-testid="ask-coach"
-			/>
+			{@render theDay(shown(view))}
 		{/if}
 	{/await}
 </div>
 
 <style>
-	.plan,
-	.pending {
-		display: grid;
-		gap: var(--space-6);
-	}
-
-	.note {
-		display: grid;
-		justify-items: start;
-		gap: var(--space-3);
-	}
-
-	.note-title {
-		font-size: var(--text-2xl);
-		font-weight: var(--weight-bold);
-		letter-spacing: var(--tracking-display);
-		line-height: var(--leading-tight);
-	}
-
-	.note-copy {
-		font-size: var(--text-sm);
-		color: var(--color-text-secondary);
-	}
-
-	/* The week's kind and why, a quiet line atop the day, as Train's header has it. */
-	.kind {
+	.plan {
 		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: var(--space-1) var(--space-2);
-		font-size: var(--text-sm);
+		flex-direction: column;
+		flex: 1;
+	}
+
+	/* Loading: one quiet line where the day will stand, no grey blocks (Paper's 180 px foot). */
+	.getting {
+		margin-top: auto;
+		padding-bottom: calc(var(--space-20) * 2 + var(--space-5));
+		font: var(--type-secondary);
+		color: var(--color-text-quiet);
+	}
+
+	/* The week: seven columns, the first and last days' marks on the gutters (Paper's
+	   space-between); each day a 44 px tall button over its letter and its 8 px mark. */
+	.dots {
+		display: grid;
+		grid-template-columns: repeat(7, minmax(0, 1fr));
+		margin-top: var(--space-9);
+	}
+
+	.dot-day {
+		display: grid;
+		grid-template-columns: 1.5rem;
+		justify-content: center;
+		justify-items: center;
+		align-content: center;
+		gap: var(--space-2-5);
+		min-height: var(--touch-target);
+		padding: 0;
+		background: none;
+		border: 0;
+		color: var(--color-text-tertiary);
+		font: var(--type-caption);
+		line-height: 1rem;
+	}
+
+	.dot-day:first-child {
+		justify-content: start;
+	}
+
+	.dot-day:last-child {
+		justify-content: end;
+	}
+
+	.mark {
+		width: 0.5rem;
+		height: 0.5rem;
+		border-radius: var(--radius-full);
+	}
+
+	[data-mark='done'] .mark {
+		background: var(--color-text-tertiary);
+	}
+
+	[data-mark='today'] .mark {
+		background: var(--color-accent);
+	}
+
+	[data-mark='today-done'] .mark {
+		background: var(--color-text);
+	}
+
+	[data-mark='planned'] .mark {
+		box-shadow: inset 0 0 0 1.5px var(--color-text-disabled);
+	}
+
+	[data-mark='skipped'] .mark {
+		height: 2px;
+		border-radius: 1px;
+		background: var(--color-text-disabled);
+	}
+
+	[data-mark='rest'] .mark {
+		visibility: hidden;
+	}
+
+	[data-mark='rest'] {
+		color: var(--color-text-quiet);
+	}
+
+	.dot-day[aria-current='date'],
+	.dot-day[aria-pressed='true']:not([aria-current]) {
+		color: var(--color-text);
+		font-weight: var(--weight-semibold);
+	}
+
+	/* A tapped day: a ring over its own mark (a done day keeps its fill). */
+	.dot-day[aria-pressed='true']:not([aria-current]) .mark {
+		visibility: visible;
+		box-shadow: inset 0 0 0 1.5px var(--color-text);
+	}
+
+	/* While another day is tapped, today keeps its dot and its letter goes quiet. */
+	.dots:has([aria-pressed='true']:not([aria-current])) [aria-current] {
+		color: var(--color-text-tertiary);
+		font-weight: var(--weight-regular);
+	}
+
+	.prompt {
+		margin-top: var(--space-7);
+	}
+
+	/* The day stands at the foot, the empty room above it. */
+	.day {
+		margin-top: auto;
+		padding-top: var(--space-7);
+		padding-bottom: var(--space-7);
+	}
+
+	.title {
+		font: var(--type-display);
+		letter-spacing: var(--tracking-display-lg);
+		color: var(--color-text);
+		overflow-wrap: anywhere;
+	}
+
+	.when {
+		margin-top: var(--space-2);
+		font: var(--type-body);
 		color: var(--color-text-secondary);
 	}
 
-	.session {
-		display: grid;
-		gap: var(--space-2);
+	.coach {
+		padding-top: var(--space-7);
+		font: var(--type-body);
+		color: var(--color-text);
 	}
 
-	/* A later session's Start: quiet, at the row's trailing edge, under its card. */
-	.trailing {
-		justify-self: end;
-		margin-top: calc(var(--space-2) * -1);
+	/* 28 above Start, with a coach sentence or without. */
+	.go {
+		margin-top: var(--space-7);
 	}
 
-	.up-next {
-		display: grid;
-		gap: var(--space-3);
+	.lines,
+	.rows {
 		margin: 0;
 		padding: 0;
 		list-style: none;
 	}
 
-	.next {
-		display: grid;
-		gap: var(--space-1-5);
+	.lines {
+		padding-bottom: var(--space-8);
 	}
 
-	.when {
-		font-size: var(--text-xs);
-		font-weight: var(--weight-semibold);
+	/* The one line: a 96 px label, the title, its end and a chevron when it opens something. */
+	.line {
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+		min-height: var(--touch-target);
+		color: var(--color-text);
+		text-decoration: none;
+	}
+
+	.label {
+		flex: none;
+		width: calc(6rem - var(--space-3));
+		font: var(--type-secondary);
+		color: var(--color-text-tertiary);
+	}
+
+	.name {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		font: var(--type-body);
+		line-height: 1.5rem;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.end {
+		flex: none;
+		font: var(--type-secondary);
 		color: var(--color-text-secondary);
 	}
 
-	/*
-	 * Desktop: the plan lies on Today's tracks (+page.svelte) as a subgrid, so its week strip spans
-	 * both columns in the first row while the day and Up next take the main column beside Today's
-	 * side column. Its skeleton does the same: the strip's room across, the rest in the column.
-	 */
+	.line :global(.chevron),
+	.line :global(.tick),
+	.row :global(.chevron) {
+		flex: none;
+		color: var(--color-text-tertiary);
+	}
+
+	.line[data-quiet] .name {
+		color: var(--color-text-tertiary);
+	}
+
+	/* Every line of a done day: 60 px, a hairline between. */
+	.lines[data-many] .line {
+		min-height: 3.75rem;
+	}
+
+	.lines[data-many] .label {
+		line-height: 1.2;
+	}
+
+	.lines[data-many] .name {
+		font: var(--type-row);
+	}
+
+	.lines[data-many] li + li,
+	.rows li + li {
+		border-top: 1px solid var(--color-hairline);
+	}
+
+	.rows {
+		padding-bottom: var(--space-3);
+	}
+
+	.row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-3);
+		width: 100%;
+		min-height: 3.75rem;
+		padding: 0;
+		background: none;
+		border: 0;
+		font: var(--type-row);
+		color: var(--color-text);
+		text-align: start;
+		text-decoration: none;
+	}
+
+	.row[data-secondary] {
+		color: var(--color-text-secondary);
+	}
+
+	/* Logging off the plan: one quiet link with a 44 px hit area. */
+	.log {
+		display: inline-flex;
+		align-items: center;
+		align-self: flex-start;
+		min-height: var(--touch-target);
+		margin-bottom: var(--space-5);
+		font: var(--type-secondary);
+		color: var(--color-text-secondary);
+		text-decoration: underline 1px var(--color-text-disabled);
+		text-underline-offset: 4px;
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.line:is(a):hover .name,
+		.row:hover,
+		.log:hover {
+			color: var(--color-text);
+		}
+	}
+
+	/* Couldn't load: one statement at the foot, with Try again. */
+	.statement-wrap {
+		margin-top: auto;
+		padding-bottom: var(--space-14);
+	}
+
+	.statement {
+		font: var(--type-statement);
+		letter-spacing: var(--tracking-statement);
+		color: var(--color-text);
+	}
+
+	.lead {
+		padding: var(--space-3) 0 var(--space-7);
+		font: var(--type-body);
+		color: var(--color-text-secondary);
+	}
+
+	/* At a desk (Paper, 11 · Desktop): the 72/76 title, a 420 px sentence, a 260 px Start, and
+	   the one line as a 60 px row with a hairline above. */
 	@media (width >= 64rem) {
-		.plan,
-		.pending {
-			grid-column: 1 / -1;
-			grid-row: 1 / -1;
-			grid-template-columns: subgrid;
-			grid-template-rows: subgrid;
-			gap: normal;
-			align-items: start;
+		.dots {
+			max-width: 20.75rem;
+			margin-top: var(--space-7);
 		}
 
-		.plan > :global(*:not(.pending)),
-		.pending > :global(*) {
-			grid-column: 1;
+		.title {
+			font-size: 4.5rem;
+			line-height: 4.75rem;
 		}
 
-		.plan > :global([role='radiogroup']),
-		.pending > :global(.visually-hidden + *) {
-			grid-column: 1 / -1;
-			grid-row: 1;
+		.when {
+			margin-top: var(--space-2-5);
+		}
+
+		.coach {
+			max-width: 26.25rem;
+			padding-bottom: var(--space-9);
+		}
+
+		.go {
+			margin-top: 0;
+			margin-bottom: var(--space-10);
+		}
+
+		.day:has(.go) {
+			padding-bottom: 0;
+		}
+
+		.go :global(.btn) {
+			width: 16.25rem;
+		}
+
+		.lines {
+			padding-bottom: 0;
+		}
+
+		.line {
+			min-height: 3.75rem;
+			border-top: 1px solid var(--color-hairline);
+		}
+
+		.lines[data-many] li + li {
+			border-top: 0;
+		}
+
+		.label {
+			line-height: 1.2;
+		}
+
+		.name {
+			font: var(--type-row);
+		}
+
+		.log {
+			margin-top: var(--space-3);
 		}
 	}
 </style>

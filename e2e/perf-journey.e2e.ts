@@ -85,9 +85,8 @@ function tapClock() {
 	);
 }
 
-const todaySession = (page: Page) =>
-	page.getByTestId('today-session').filter({ has: page.getByText(STRENGTH, { exact: true }) });
-const startLink = (page: Page) => todaySession(page).getByTestId('start-workout');
+/** Today's one Start: the day leads with the strength session, the first to do. */
+const startLink = (page: Page) => page.getByTestId('today-day').getByTestId('start-workout');
 const logger = (page: Page) => page.getByTestId('set-logger');
 const nav = (page: Page) => page.getByRole('navigation', { name: 'Primary' });
 
@@ -127,6 +126,7 @@ async function install(context: BrowserContext): Promise<string> {
 	await expect(page.locator('[data-testid="today-plan"][data-kits="saved"]')).toBeAttached({
 		timeout: 15_000
 	});
+	await expect(page.getByTestId('today-title')).toHaveText(STRENGTH);
 	const href = (await startLink(page).getAttribute('href'))!;
 	expect(href).toMatch(/^\/workout\?start=/);
 	await page.close();
@@ -233,8 +233,7 @@ test.describe('the gym journey on a poor connection (4× CPU)', () => {
 
 			await page.goto('/today', { waitUntil: 'commit' });
 			const today =
-				(await shownAt(page, '[data-testid="start-workout"]', 'Start workout')) -
-				(await origin(page));
+				(await shownAt(page, '[data-testid="start-workout"]', 'Start')) - (await origin(page));
 			steps.push(`launch to Today's Start ${ms(today)}`);
 
 			await startLink(page).click();
@@ -246,7 +245,8 @@ test.describe('the gym journey on a poor connection (4× CPU)', () => {
 			steps.push(`first set confirmed ${ms(confirmed)}`);
 
 			await page.getByTestId('workout-header').getByRole('link', { name: 'Minimise' }).click();
-			const back = (await shownAt(page, 'h1', 'Today')) - (await lastTap(page));
+			// The h1 is for screen readers (a 1 px box from the first paint): Today shows with its day.
+			const back = (await shownAt(page, '[data-testid="today-day"]', null)) - (await lastTap(page));
 			steps.push(`Minimise to Today ${ms(back)}`);
 			for (const tab of [...TABS.slice(1), TABS[0]!]) {
 				steps.push(`${tab.label} ${ms(await switchTab(page, tab))}`);
@@ -291,7 +291,7 @@ test.describe('the gym journey on a poor connection (4× CPU)', () => {
 
 			await page.getByTestId('workout-header').getByRole('link', { name: 'Minimise' }).click();
 			const noAnswer = `no answer in ${TAB_CAP_MS} ms`;
-			const back = await shownAt(page, 'h1', 'Today', TAB_CAP_MS)
+			const back = await shownAt(page, '[data-testid="today-day"]', null, TAB_CAP_MS)
 				.then(async (at) => ms(at - (await lastTap(page))))
 				.catch(() => noAnswer);
 			steps.push(`Minimise to Today ${back}`);

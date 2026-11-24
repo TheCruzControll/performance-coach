@@ -1,13 +1,15 @@
 /**
- * Today in a desktop window (docs/design-system.md, Responsive layout → Screens): a wide screen.
- * The week runs across the top; the state's panel (the setup card, the Build card, Build my
- * program, or today's plan) takes one column at most the readable width, with nothing beside it:
- * the goals and schedule live in Profile and This week on Progress (v2/06a), and the plate
- * calculator lives in Train and the workout. Every designed
- * state keeps that frame: setup, ready, the program (a session day, a rest day, starting Monday,
- * the first block complete), a failed read, offline, a panel whose code fails, and each of Build
- * my program's states (pending, a generator failure, the three conflicts, offline). Start week 1 is column chrome. Serial: each test sets up the one
- * owner's training profile or program (e2e/program-support.ts), and the last leaves it blank.
+ * Today in a desktop window (docs/design-system.md, Responsive layout → Screens): a readable
+ * screen (v2/06b), the 560 px column 200 px from the rail with the right side empty. The date
+ * heads it; with a program, the week as dots, then the day at the column's foot with its 260 px
+ * Start, and the page does not scroll. The goals and schedule live in Profile and This week on
+ * Progress (v2/06a), and the plate calculator lives in Train and the workout. Every designed state
+ * keeps that frame: setup, ready, the program (a session day, a rest day, starting Monday, the
+ * first block complete), a failed read, offline and a panel whose code fails. Build my program
+ * still lays out across the wide main (until v2/06c), in each of its states (pending, a generator
+ * failure, the three conflicts, offline), with Start week 1 as column chrome. Serial: each test
+ * sets up the one owner's training profile or program (e2e/program-support.ts), and the last
+ * leaves it blank.
  */
 import AxeBuilder from '@axe-core/playwright';
 import {
@@ -21,6 +23,7 @@ import {
 } from '@playwright/test';
 import { localDay } from '../src/lib/domain/dates';
 import type { ProgramFixture } from '../src/lib/server/test-support/program-fixtures';
+import { startsTitle } from '../src/routes/(app)/today/day-words';
 import {
 	BELOW_DESKTOP_WIDTH,
 	DESKTOP,
@@ -57,20 +60,22 @@ const THEMES = ['dark', 'light'] as const;
 type Theme = (typeof THEMES)[number];
 
 const heading = (page: Page) => page.getByRole('heading', { level: 1, name: 'Today' });
-const strip = (page: Page) => page.getByTestId('week-strip');
+/** The date line: where the column's content starts (the h1 is for screen readers only). */
+const dateLine = (page: Page) => page.getByTestId('today-date');
+const dots = (page: Page) => page.getByTestId('week-dots');
 /**
  * The live panel's day, not its served copy: after a reload (Chromium's Retry, or the offline
- * screen's recovery when it falls back to one) the server's markup shows first, cards and all,
+ * screen's recovery when it falls back to one) the server's markup shows first, the day and all,
  * and the live panel replaces that element once it mounts, so a box read from the copy is null.
  */
 const day = (page: Page) => page.locator('[data-testid="today-day"]:not([data-served] *)');
-const cards = (page: Page) => day(page).getByTestId('session-card');
-const plan = (page: Page) => page.getByTestId('today-plan');
+const title = (page: Page) => day(page).getByTestId('today-title');
+const startLink = (page: Page) => day(page).getByTestId('start-workout');
 const rail = (page: Page) => page.getByRole('navigation', { name: 'Primary' });
 const railLink = (page: Page, name: string) => rail(page).getByRole('link', { name });
 const panelError = (page: Page) => page.getByTestId('today-panel-error');
 /** The plan's own room while its code loads or fails. */
-const planRoom = (page: Page) => page.locator('[data-layout="wide"] > [data-testid="today-panel"]');
+const planRoom = (page: Page) => page.locator('main#main [data-testid="today-panel"]');
 
 const buildCard = (page: Page) => page.getByTestId('today-build');
 /** The Build card's live button, not its served copy (inert until the card's code arrives). */
@@ -125,21 +130,27 @@ async function expectBeside(main: Locator, beside: Locator) {
 }
 
 /**
- * The screen is wide (--content-wide, centred beside the rail but at most 200 px from it to the
- * text, as expectMainCentred places every screen) and nothing scrolls sideways.
+ * Build my program is wide (--content-wide, centred beside the rail but at most 200 px from it to
+ * the text, as expectMainCentred places every screen) and nothing scrolls sideways.
  */
 async function expectWideFrame(page: Page) {
 	await expectMainCentred(page, await tokenPx(page, '--content-wide'));
 	await expectNoSideScroll(page);
 }
 
+/** Today is readable (v2/06b): the 560 px column, and nothing scrolls sideways. */
+async function expectReadableFrame(page: Page) {
+	await expectMainCentred(page, await tokenPx(page, '--content-readable'));
+	await expectNoSideScroll(page);
+}
+
 /**
  * `target` keeps to the one column (v2/06a: nothing beside it), at most the readable width and
- * starting at the content's edge, where the page's title starts (±1 px).
+ * starting at the content's edge, where the date starts (±1 px).
  */
 async function expectInColumnAlone(page: Page, target: Locator) {
-	const [box, title] = [await boxOf(target), await boxOf(heading(page))];
-	expect(Math.abs(box.x - title.x), `${target} starts at the content’s edge`).toBeLessThan(1);
+	const [box, edge] = [await boxOf(target), await boxOf(dateLine(page))];
+	expect(Math.abs(box.x - edge.x), `${target} starts at the content’s edge`).toBeLessThan(1);
 	expect(box.width, `${target} keeps to the readable column`).toBeLessThanOrEqual(
 		(await tokenPx(page, '--content-readable')) + 1
 	);
@@ -243,25 +254,24 @@ async function routeChunk(
 	});
 }
 
-/** Only the Program panel's chunk carries its empty Up next's test id. */
-const PROGRAM_MARKUP = 'today-up-next-empty';
+/** Only the Program panel's chunk carries the day's test id. */
+const PROGRAM_MARKUP = '"today-day"';
 /** Only the BuildPreview panel's chunk carries its pending state's test id. */
 const PREVIEW_MARKUP = 'build-preview-pending';
 
-test('setup: the week across the top, the setup card in the column under it', async ({
-	page
-}, testInfo) => {
+test('setup: the date, then the setup card in the column under it', async ({ page }, testInfo) => {
 	const errors = trackConsoleErrors(page);
 	await gotoHydrated(page, '/today');
 	const card = page.getByTestId('today-setup');
 	await expect(card).toBeVisible();
-	await expectWideFrame(page);
+	await expectReadableFrame(page);
 
-	// The week spans the content, wider than any readable column; the card keeps to its column.
-	const week = await boxOf(page.getByRole('list', { name: 'This week' }));
-	expect(week.width).toBeGreaterThan(await tokenPx(page, '--content-readable'));
-	expect((await boxOf(card)).y, 'the card sits under the week').toBeGreaterThan(
-		week.y + week.height
+	// No week before a program (v2/06b): the card sits under the date line, in its column.
+	await expect(page.getByRole('list', { name: 'This week' })).toHaveCount(0);
+	await expect(dots(page)).toHaveCount(0);
+	const date = await boxOf(dateLine(page));
+	expect((await boxOf(card)).y, 'the card sits under the date').toBeGreaterThan(
+		date.y + date.height
 	);
 	await expectInColumnAlone(page, card);
 	// As tall as what it says: no empty band between its words and its progress.
@@ -289,7 +299,7 @@ test('ready: the Build card alone in its column', async ({ page, request }, test
 	}
 	await expectInView(page, buildCta(page));
 	await expectHoverAndFocus(page, buildCta(page), 'background');
-	await expectWideFrame(page);
+	await expectReadableFrame(page);
 	await auditBothThemes(page, testInfo, 'ready');
 });
 
@@ -298,24 +308,45 @@ test.describe('a program with sessions today', () => {
 		await seed(request, 'today', 'this_week');
 	});
 
-	test('the strip, the day and Up next share one column', async ({ page }, testInfo) => {
+	test('the dots and the day share one column, its Start 260 px wide, and nothing scrolls', async ({
+		page
+	}, testInfo) => {
 		const errors = trackConsoleErrors(page);
 		await gotoHydrated(page, '/today');
-		await expect(cards(page)).toHaveCount(2);
-		await expectWideFrame(page);
+		await expect(title(page)).toHaveText('Full body');
+		await expectReadableFrame(page);
 
-		// The strip heads the column; the day follows it in the same column.
-		const [week, dayBox] = [await boxOf(strip(page)), await boxOf(day(page))];
-		expect(Math.abs(week.x - dayBox.x), 'the strip starts at the day’s column').toBeLessThan(1);
-		expect(dayBox.y, 'the day sits under the strip').toBeGreaterThan(week.y + week.height - 1);
-		await expectInColumnAlone(page, strip(page));
+		// The dots head the column; the day stands at its foot, on the same left edge, 560 px wide.
+		const [week, dayBox] = [await boxOf(dots(page)), await boxOf(day(page))];
+		expect(Math.abs(week.x - dayBox.x), 'the dots start at the day’s column').toBeLessThanOrEqual(
+			1
+		);
+		expect(dayBox.y, 'the day sits under the dots').toBeGreaterThan(week.y + week.height - 1);
+		expect(Math.abs(dayBox.width - 560), `the day is ${dayBox.width}px wide`).toBeLessThanOrEqual(
+			1
+		);
+		await expectInColumnAlone(page, dots(page));
 		await expectInColumnAlone(page, day(page));
-		const upNext = await boxOf(page.getByTestId('today-up-next'));
-		expect(Math.abs(upNext.x - dayBox.x), 'Up next shares the day’s column').toBeLessThan(1);
-		expect(upNext.y).toBeGreaterThan(dayBox.y + dayBox.height);
+		for (const gone of ['week-strip', 'today-up-next', 'ask-coach', 'today-side']) {
+			await expect(page.getByTestId(gone)).toHaveCount(0);
+		}
+		// The right side is left empty on purpose: nothing lies right of main.
+		const main = await boxOf(page.locator('main#main'));
+		for (const part of [dots(page), day(page), page.getByTestId('today-line')]) {
+			const box = await boxOf(part);
+			expect(box.x + box.width, `${part} keeps inside main`).toBeLessThanOrEqual(
+				main.x + main.width + 1
+			);
+		}
+		expect(
+			await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1),
+			'the page does not scroll at 1440 × 900'
+		).toBe(true);
 
-		await expectInView(page, cards(page).first());
-		await expectHoverAndFocus(page, cards(page).first(), 'border');
+		const go = startLink(page);
+		expect(Math.abs((await boxOf(go)).width - 260), 'Start is 260 px wide').toBeLessThanOrEqual(1);
+		await expectInView(page, go);
+		await expectHoverAndFocus(page, go, 'background');
 		await expectNoSideScrollAtEveryWidth(page);
 		// After this slice; Today's program state before it is today-session-desktop
 		// (today-plan.serial.e2e.ts on the base branch).
@@ -346,23 +377,27 @@ test.describe('a program with sessions today', () => {
 			await railLink(page, 'Today').click();
 			await expect(page).toHaveURL(/\/today$/);
 			await expect(planRoom(page)).toHaveAttribute('aria-busy', 'true');
+			await expect(planRoom(page)).toContainText('Getting today');
 			await expect.poll(() => requested, { message: 'the plan’s code is on its way' }).toBe(true);
 			await page.waitForFunction(() => document.fonts.status === 'loaded');
 			const reserved = await boxOf(planRoom(page));
 			await expectInColumnAlone(page, planRoom(page));
 
 			await expectNoShift(page, {
-				boxes: [heading(page)],
+				boxes: [dateLine(page)],
 				action: async () => {
 					release();
-					await expect(cards(page)).toHaveCount(2);
+					await expect(title(page)).toHaveText('Full body');
 				}
 			});
 			await expect(planRoom(page)).toHaveCount(0);
-			const week = await boxOf(strip(page));
-			expect(Math.abs(week.y - reserved.y), 'the strip starts where the skeleton did').toBeLessThan(
-				1
-			);
+			await expect(page.getByTestId('today-loading')).toHaveCount(0);
+			// The day stands where the loading room ended: at the column's foot.
+			const dayBox = await boxOf(day(page));
+			expect(
+				Math.abs(dayBox.y + dayBox.height - (reserved.y + reserved.height)),
+				'the day ends where the room did'
+			).toBeLessThanOrEqual(await tokenPx(page, '--space-20'));
 		});
 
 		test('the plan’s code failing is a designed notice in the main column; Retry loads it', async ({
@@ -375,18 +410,18 @@ test.describe('a program with sessions today', () => {
 			});
 			await gotoHydrated(page, '/today');
 			const failed = panelError(page);
-			await expect(failed).toContainText('Couldn’t load this part of Today');
+			await expect(failed).toContainText('Couldn’t load today');
 			await expectInColumnAlone(page, failed);
 			const retry = failed.getByRole('button', { name: 'Try again' });
 			await expectInView(page, retry);
 			await expectHoverAndFocus(page, retry, 'background');
-			await expectWideFrame(page);
+			await expectReadableFrame(page);
 			await auditBothThemes(page, testInfo, 'program-retry');
 
 			// WebKit imports the chunk again in place; Chromium keeps the failed fetch and reloads.
 			failing = false;
 			await retry.click();
-			await expect(cards(page)).toHaveCount(2);
+			await expect(title(page)).toHaveText('Full body');
 			await expect(panelError(page)).toHaveCount(0);
 			await expectInColumnAlone(page, day(page));
 		});
@@ -415,8 +450,8 @@ test.describe('a program with sessions today', () => {
 
 			await page.unrouteAll({ behavior: 'ignoreErrors' });
 			await tryAgain.click();
-			await expect(cards(page)).toHaveCount(2);
-			await expectWideFrame(page);
+			await expect(title(page)).toHaveText('Full body');
+			await expectReadableFrame(page);
 		});
 
 		test('offline, Today is the designed offline state, and the rail still navigates', async ({
@@ -438,8 +473,8 @@ test.describe('a program with sessions today', () => {
 			await expect(page).toHaveURL(/\/train$/);
 			await expect(page.getByTestId('program-header')).toBeVisible();
 			await railLink(page, 'Today').click();
-			await expect(cards(page)).toHaveCount(2);
-			await expectWideFrame(page);
+			await expect(title(page)).toHaveText('Full body');
+			await expectReadableFrame(page);
 		});
 
 		test('back online, the offline screen loads Today again by itself, with its styles', async ({
@@ -456,10 +491,10 @@ test.describe('a program with sessions today', () => {
 			// stylesheet URL the page already has a (failed) link for, so only the recovery's
 			// reload of those links can style it.
 			await context.setOffline(false);
-			await expect(cards(page)).toHaveCount(2, { timeout: 20_000 });
-			await expect(page.locator('[data-layout="wide"]')).toHaveCSS('display', 'grid');
+			await expect(title(page)).toHaveText('Full body', { timeout: 20_000 });
+			await expect(page.getByTestId('today-screen')).toHaveCSS('display', 'flex');
 			await expectInColumnAlone(page, day(page));
-			await expectWideFrame(page);
+			await expectReadableFrame(page);
 		});
 	});
 });
@@ -467,47 +502,42 @@ test.describe('a program with sessions today', () => {
 test('a rest day is designed in the one column', async ({ page, request }, testInfo) => {
 	await seed(request, 'today-rest', 'this_week');
 	await gotoHydrated(page, '/today');
-	const rest = page.getByTestId('today-rest');
-	await expect(rest).toContainText('Rest day');
+	await expect(day(page)).toHaveAttribute('data-state', 'rest');
+	await expect(title(page)).toHaveText('Rest day');
 	await expectInColumnAlone(page, day(page));
-	await expectInView(page, rest);
-	await expectWideFrame(page);
+	await expectInView(page, page.getByTestId('log-something-else'));
+	await expectReadableFrame(page);
 	await auditBothThemes(page, testInfo, 'rest-day');
 });
 
-test('a program that starts next Monday says so under the strip, in the one column', async ({
+test('a program that starts next Monday names the day at the column’s foot, with no week', async ({
 	page,
 	request
 }, testInfo) => {
-	await seed(request, 'hybrid', 'next_week');
+	const seeded = await seed(request, 'hybrid', 'next_week');
 	await gotoHydrated(page, '/today');
-	const starts = page.getByTestId('today-starts');
-	await expect(starts.getByRole('heading', { level: 2 })).toHaveText('Starts Monday');
-	const week = await boxOf(strip(page));
-	expect((await boxOf(starts)).y, 'the note sits under the strip').toBeGreaterThan(
-		week.y + week.height
-	);
-	await expectInColumnAlone(page, starts);
-	await expectInView(page, starts);
-	await expectWideFrame(page);
+	await expect(day(page)).toHaveAttribute('data-state', 'starts');
+	await expect(title(page)).toHaveText(startsTitle(seeded.weekStart, seeded.today));
+	await expect(dots(page)).toHaveCount(0);
+	await expectInColumnAlone(page, day(page));
+	await expectInView(page, title(page));
+	await expectReadableFrame(page);
 	await auditBothThemes(page, testInfo, 'starts');
 });
 
-test('the first block complete: its summary heads the one column', async ({
+test('the first block complete: Nothing yet in the one column, with the way back to every week', async ({
 	page,
 	request
 }, testInfo) => {
 	await seed(request, 'one-week', 'last_week');
 	await gotoHydrated(page, '/today');
-	const complete = page.getByTestId('today-block-complete');
-	await expect(complete.getByRole('heading')).toHaveText('Nothing planned yet');
-	await expect(strip(page)).toHaveCount(0);
-	// The plan's first block (the Surface around the summary) heads the column, under the title.
-	const first = plan(page).locator(':scope > *').first();
-	await expectInColumnAlone(page, first);
-	expect((await boxOf(first)).y).toBeGreaterThan((await boxOf(heading(page))).y);
+	await expect(day(page)).toHaveAttribute('data-state', 'complete');
+	await expect(title(page)).toHaveText('Nothing yet');
+	await expect(dots(page)).toHaveCount(0);
+	await expectInColumnAlone(page, day(page));
+	expect((await boxOf(day(page))).y).toBeGreaterThan((await boxOf(dateLine(page))).y);
 	await expectInView(page, page.getByTestId('today-train-link'));
-	await expectWideFrame(page);
+	await expectReadableFrame(page);
 	await auditBothThemes(page, testInfo, 'block-complete');
 });
 
@@ -726,11 +756,11 @@ test.describe('Build my program', () => {
 			await gotoHydrated(page, '/today');
 			await buildCta(page).click();
 			const failed = panelError(page);
-			await expect(failed).toContainText('Couldn’t load this part of Today');
-			const [box, title] = [await boxOf(failed), await boxOf(heading(page))];
+			await expect(failed).toContainText('Couldn’t load today');
+			const [box, edge] = [await boxOf(failed), await boxOf(dateLine(page))];
 			const readable = await tokenPx(page, '--content-readable');
 			expect(box.width, 'the notice keeps to the main column').toBeLessThanOrEqual(readable + 1);
-			expect(Math.abs(box.x - title.x), 'the notice starts at the content’s edge').toBeLessThan(1);
+			expect(Math.abs(box.x - edge.x), 'the notice starts at the content’s edge').toBeLessThan(1);
 			await expectInView(page, failed.getByRole('button', { name: 'Try again' }));
 			await expectWideFrame(page);
 			await auditBothThemes(page, testInfo, 'preview-retry');

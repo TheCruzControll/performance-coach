@@ -44,8 +44,11 @@ const QUESTION = 'How is my squat going?';
 
 // ---- The screens ------------------------------------------------------------------------------
 
-const todaySession = (page: Page) =>
-	page.getByTestId('today-session').filter({ has: page.getByText(STRENGTH, { exact: true }) });
+/** Today's day: the first session to do, with its one Start. */
+const todayDay = (page: Page) => page.getByTestId('today-day');
+/** The strength session done today, as its line under the day. */
+const strengthDone = (page: Page) =>
+	page.getByTestId('today-done').filter({ hasText: STRENGTH }).getByTestId('done-workout');
 const main = (page: Page) => page.getByTestId('workout-main');
 const card = (page: Page) => main(page).getByTestId('exercise');
 const heading = (page: Page) => card(page).getByRole('heading', { level: 2 });
@@ -107,8 +110,9 @@ async function ask(page: Page, text: string) {
 /** Today → Start workout → three sets → a machine swap → Finish: the workout's client id. */
 async function logWorkout(page: Page, testInfo: TestInfo, fault: CoachFault): Promise<string> {
 	await gotoHydrated(page, '/today');
-	const start = todaySession(page).getByTestId('start-workout');
-	await expect(start).toHaveText('Start workout');
+	await expect(page.getByTestId('today-title')).toHaveText(STRENGTH);
+	const start = todayDay(page).getByTestId('start-workout');
+	await expect(start).toHaveText('Start');
 	await start.click();
 	await expect(page).toHaveURL(/\/workout$/);
 	await expect(heading(page)).toHaveText('Back squat');
@@ -197,10 +201,7 @@ async function expectAppWorks(
 ) {
 	await nav(page).getByRole('link', { name: 'Today' }).click();
 	await expect(page.getByRole('heading', { level: 1 })).toContainText('Today');
-	await expect(todaySession(page).getByTestId('done-workout')).toHaveAttribute(
-		'href',
-		`/progress/workouts/${workoutId}`
-	);
+	await expect(strengthDone(page)).toHaveAttribute('href', `/progress/workouts/${workoutId}`);
 	await nav(page).getByRole('link', { name: 'Train' }).click();
 	await expect(page.getByRole('heading', { level: 1, name: 'Train' })).toBeVisible();
 	await gotoHydrated(page, '/progress/workouts');
