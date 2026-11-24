@@ -241,21 +241,28 @@ export function a11ySuite(theme: 'dark' | 'light'): void {
 			expect(await audit(page), 'errors').toEqual([]);
 		});
 
-		test('an injury card with an error and a resolved badge has no violations', async ({
+		test('Injuries’ Better now and an injury’s screen with an error have no violations', async ({
 			page
 		}) => {
-			await page.goto('/profile/injuries');
-			await page.waitForLoadState('networkidle');
+			await gotoHydrated(page, '/profile/injuries');
 			await expect(page.getByTestId('section-editor')).toHaveAttribute('aria-busy', 'false');
-			// Changes that are never saved: the browser refuses the card before posting it.
-			await page.getByRole('button', { name: /^Add (an injury or limitation|another)$/ }).click();
-			const card = page.getByTestId('injury').last();
-			await card.getByRole('switch', { name: 'Still affecting training' }).uncheck();
-			await expect(card.getByTestId('injury-resolved')).toBeVisible();
+			// Changes that are never saved: the browser refuses the injury before posting it.
+			await page.getByTestId('add-injury').click();
+			await expect(page.getByRole('heading', { level: 1, name: 'New injury' })).toBeVisible();
+			await page.getByTestId('injury-better').click();
+			const better = page.getByRole('region', { name: 'Better now' });
+			await expect(better.getByTestId('injury').last()).toHaveAccessibleName('New injury');
 			await page.getByTestId('save-section').click();
-			await expect(card.getByRole('group', { name: 'Where?' }).getByRole('alert')).toBeVisible();
+			const row = better.getByTestId('injury').last();
+			await expect(row).toHaveAttribute('aria-invalid', 'true');
 			await page.waitForTimeout(300);
-			expect(await audit(page)).toEqual([]);
+			expect(await audit(page), 'list').toEqual([]);
+			await row.click();
+			const where = page.getByTestId('injury-where');
+			await expect(where).toHaveAttribute('aria-invalid', 'true');
+			await expect(page.getByText('Where is it?')).toBeVisible();
+			await page.waitForTimeout(300);
+			expect(await audit(page), 'injury').toEqual([]);
 		});
 
 		test('Schedule’s stepper and commitment errors have no violations', async ({ page }) => {
